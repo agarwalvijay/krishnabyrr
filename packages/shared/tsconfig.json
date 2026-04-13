@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "module": "CommonJS",
+    "moduleResolution": "Node"
+  },
+  "include": ["types/**/*", "validators/**/*", "constants/**/*", "index.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(psql -U vijayagarwal -lqt)",
+      "Bash(npm install:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(npx jest:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"http://localhost:3001/api/products?limit=2\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); p=d['data'][0] if d['data'] else {}; print\\('keys:', list\\(p.keys\\(\\)\\)[:12]\\)\")",
+      "Bash(curl -s \"http://localhost:3001/api/settings/public\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); p=d['data'][0] if d['data'] else None; print\\('total:', d['meta']['total']\\); print\\('fields:', list\\(p.keys\\(\\)\\) if p else 'NO PRODUCTS'\\)\")",
+      "Bash(psql:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); p=d['data'][0] if d['data'] else None; print\\('total:', d['meta']['total']\\); print\\('fields:', list\\(p.keys\\(\\)\\) if p else 'NONE'\\)\")",
+      "Bash(curl -s \"http://localhost:3001/api/products/maheshwari-silk-ivory-bel-buti\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\('keys:', [k for k in d.keys\\(\\)]\\)\")",
+      "Bash(pkill -f \"ts-node-dev\")",
+      "Bash(pkill -f \"nodemon\")",
+      "Bash(DB_NAME=krishnabyrr_test npx ts-node /Users/vijayagarwal/vijay/vijay/krishnabyrr/api/src/db/migrate.ts)",
+      "Bash(npm test:*)",
+      "Bash(PGPASSWORD= psql:*)"
+    ]
+  }
+}

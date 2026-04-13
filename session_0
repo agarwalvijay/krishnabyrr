@@ -1,0 +1,367 @@
+PROJECT: KrishnaByrr — Indian ethnic wear e-commerce, India only
+DOMAIN: krishnabyrr.com
+STACK: Next.js 14 (App Router), Node.js + Express, PostgreSQL 14, 
+       Redis, Tailwind CSS, TypeScript throughout
+SESSION: 0 — Scaffold & Database Schema
+
+LOCAL ENVIRONMENT:
+- Working directory: /Users/vijayagarwal/vijay/vijay/krishnabyrr
+- PostgreSQL 14 on localhost:5432, user: vijayagarwal (no password)
+- Redis on localhost:6379
+- Databases: krishnabyrr_dev (development), krishnabyrr_test (testing)
+- Node 25.2.1, npm workspaces for monorepo
+- No Docker needed for local dev
+
+CONSTRAINTS (govern all decisions in all sessions):
+- No payment gateway in Phase 1. Orders use "Pay on Confirmation" — 
+  admin contacts customer via WhatsApp with UPI link.
+- No bulk upload, no blog, no international shipping (all Phase 2)
+- Products: unstitched fabric sets only, 1–4 units stock per product
+- Exchange only (no cash refunds). Exchange window = admin-configurable.
+- Shipping: Zone A = Delhi NCR, Zone B = Rest of India. 
+  Rates and free-shipping thresholds = admin-configurable.
+- One coupon per order, no stacking
+- Indian number formatting everywhere: toLocaleString('en-IN')
+- All policies snapshot to orders at creation time (immutable)
+
+REPO STRUCTURE TO SCAFFOLD:
+krishnabyrr/
+├── apps/
+│   ├── web/                    # Next.js 14 customer storefront
+│   │   ├── app/                # App Router pages
+│   │   ├── components/         # Shared UI components
+│   │   ├── lib/                # API client, auth helpers, utils
+│   │   └── public/             # Static assets, logo SVG
+│   └── admin/                  # React SPA — merchant portal
+│       └── src/
+│           ├── pages/
+│           ├── components/
+│           └── lib/
+├── packages/
+│   └── shared/                 # Shared types, constants, validators
+│       ├── types/              # TypeScript interfaces
+│       ├── validators/         # Zod schemas
+│       └── constants/          # Shipping zones, GST rates, Indian states
+├── api/                        # Node.js + Express backend
+│   └── src/
+│       ├── routes/
+│       ├── middleware/
+│       ├── services/
+│       ├── db/                 # pg client, migrations, seed
+│       └── utils/
+└── docs/
+    └── session_checkpoints/
+
+DATA MODELS — create migrations for all these tables:
+
+products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE NOT NULL,
+  sku VARCHAR(100) UNIQUE NOT NULL,
+  short_desc TEXT,
+  description TEXT,
+  care_instr TEXT,
+  mrp DECIMAL(10,2) NOT NULL,
+  sale_price DECIMAL(10,2),
+  cost_price DECIMAL(10,2),
+  gst_rate DECIMAL(4,2) NOT NULL DEFAULT 5.00,
+  hsn_code VARCHAR(20),
+  track_inventory BOOLEAN DEFAULT TRUE,
+  stock_qty INTEGER DEFAULT 0,
+  low_stock_threshold INTEGER DEFAULT 2,
+  oos_behavior VARCHAR(20) DEFAULT 'show_sold_out',
+  video_url VARCHAR(500),
+  meta_title VARCHAR(255),
+  meta_desc TEXT,
+  status VARCHAR(20) DEFAULT 'draft',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+product_images (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  gcs_path VARCHAR(500),
+  alt_text VARCHAR(255),
+  display_order INTEGER DEFAULT 0,
+  is_primary BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(100) NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  parent_id UUID REFERENCES categories(id),
+  description TEXT,
+  banner_img VARCHAR(500),
+  meta_title VARCHAR(255),
+  meta_desc TEXT,
+  nav_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE
+)
+
+product_categories (
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+  PRIMARY KEY (product_id, category_id)
+)
+
+tags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_name VARCHAR(50) NOT NULL,  -- fabric, weave, occasion, color
+  value VARCHAR(100) NOT NULL,
+  hex_color VARCHAR(7),
+  UNIQUE(group_name, value)
+)
+
+product_tags (
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (product_id, tag_id)
+)
+
+collections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE NOT NULL,
+  description TEXT,
+  banner_img VARCHAR(500),
+  tagline VARCHAR(500),
+  is_homepage BOOLEAN DEFAULT FALSE,
+  homepage_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE
+)
+
+collection_products (
+  collection_id UUID REFERENCES collections(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  display_order INTEGER DEFAULT 0,
+  PRIMARY KEY (collection_id, product_id)
+)
+
+customers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  phone VARCHAR(20),
+  name VARCHAR(255),
+  password_hash VARCHAR(500),
+  email_verified BOOLEAN DEFAULT FALSE,
+  default_address_id UUID,
+  total_orders INTEGER DEFAULT 0,
+  lifetime_value DECIMAL(12,2) DEFAULT 0,
+  marketing_email BOOLEAN DEFAULT FALSE,
+  marketing_whatsapp BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+addresses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+  name VARCHAR(255),
+  phone VARCHAR(20),
+  line1 VARCHAR(255),
+  line2 VARCHAR(255),
+  city VARCHAR(100),
+  state VARCHAR(100),
+  pincode VARCHAR(10),
+  country VARCHAR(50) DEFAULT 'India',
+  is_default BOOLEAN DEFAULT FALSE
+)
+
+orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_number VARCHAR(20) UNIQUE NOT NULL,
+  customer_id UUID REFERENCES customers(id),
+  guest_email VARCHAR(255),
+  guest_phone VARCHAR(20),
+  line_items JSONB NOT NULL,
+  subtotal DECIMAL(10,2) NOT NULL,
+  discount_amount DECIMAL(10,2) DEFAULT 0,
+  coupon_code VARCHAR(50),
+  shipping_amount DECIMAL(10,2) DEFAULT 0,
+  gst_amount DECIMAL(10,2) DEFAULT 0,
+  total DECIMAL(10,2) NOT NULL,
+  shipping_address JSONB NOT NULL,
+  billing_gstin VARCHAR(20),
+  payment_status VARCHAR(20) DEFAULT 'pending_confirmation',
+  payment_method VARCHAR(50),
+  fulfillment_status VARCHAR(20) DEFAULT 'unfulfilled',
+  courier_name VARCHAR(100),
+  tracking_number VARCHAR(100),
+  tracking_url VARCHAR(500),
+  fulfilled_at TIMESTAMPTZ,
+  exchange_eligible_until TIMESTAMPTZ,
+  policy_snapshot JSONB NOT NULL DEFAULT '{}',
+  admin_notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+exchange_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  exchange_number VARCHAR(20) UNIQUE NOT NULL,
+  order_id UUID REFERENCES orders(id),
+  customer_id UUID REFERENCES customers(id),
+  items JSONB NOT NULL,
+  reason VARCHAR(50) NOT NULL,
+  customer_notes TEXT,
+  status VARCHAR(30) DEFAULT 'requested',
+  admin_notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+inventory_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID REFERENCES products(id),
+  change_type VARCHAR(30) NOT NULL,
+  qty_before INTEGER NOT NULL,
+  qty_change INTEGER NOT NULL,
+  qty_after INTEGER NOT NULL,
+  reason TEXT,
+  order_id UUID REFERENCES orders(id),
+  admin_user_id UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+coupons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code VARCHAR(50) UNIQUE NOT NULL,
+  description TEXT,
+  type VARCHAR(20) NOT NULL,
+  value DECIMAL(10,2),
+  valid_from TIMESTAMPTZ,
+  valid_until TIMESTAMPTZ,
+  max_uses_total INTEGER,
+  max_uses_per_customer INTEGER DEFAULT 1,
+  current_use_count INTEGER DEFAULT 0,
+  min_order_value DECIMAL(10,2),
+  max_discount_cap DECIMAL(10,2),
+  applies_to VARCHAR(30) DEFAULT 'ALL',
+  category_ids UUID[],
+  collection_ids UUID[],
+  customer_eligibility VARCHAR(30) DEFAULT 'ALL',
+  customer_ids UUID[],
+  is_public BOOLEAN DEFAULT TRUE,
+  auto_apply BOOLEAN DEFAULT FALSE,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+coupon_redemptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coupon_id UUID REFERENCES coupons(id),
+  customer_id UUID REFERENCES customers(id),
+  guest_email VARCHAR(255),
+  order_id UUID REFERENCES orders(id),
+  discount_amount DECIMAL(10,2) NOT NULL,
+  redeemed_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+admin_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  role VARCHAR(30) NOT NULL,
+  password_hash VARCHAR(500) NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  last_login TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+settings (
+  key VARCHAR(100) PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+pages (
+  slug VARCHAR(100) PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  content TEXT,
+  meta_title VARCHAR(255),
+  meta_desc TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+wishlist_items (
+  customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (customer_id, product_id)
+)
+
+newsletter_subscribers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  whatsapp VARCHAR(20),
+  consent_given BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+testimonials (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_name VARCHAR(100) NOT NULL,
+  city VARCHAR(100),
+  star_rating INTEGER NOT NULL CHECK (star_rating BETWEEN 1 AND 5),
+  quote TEXT NOT NULL,
+  product_name VARCHAR(255),
+  display_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+SESSION GOAL — do these five things, nothing more:
+
+1. Scaffold the monorepo with npm workspaces. Create package.json at root 
+   and in each app/package. TypeScript configured in all packages.
+
+2. Create a migration runner in api/src/db/migrate.ts that runs SQL files 
+   in order from api/src/db/migrations/. Create one migration file per 
+   logical group (001_core_products, 002_customers, 003_orders, 
+   004_coupons, 005_admin_content).
+
+3. Create all tables above as migrations. Use PostgreSQL 14 compatible SQL 
+   only (no features added after PG14).
+
+4. Create a seed script api/src/db/seed.ts that inserts:
+   - 3 admin users: super@krishnabyrr.com (super_admin), 
+     catalog@krishnabyrr.com (catalog_manager), 
+     orders@krishnabyrr.com (order_manager). 
+     Password for all: "KBAdmin2026!" (bcrypt hashed)
+   - 4 parent categories: Silks, Handlooms, Casuals, Festive
+   - 6 child categories: Maheshwari Silk (under Silks), Banarasi (Silks),
+     Chanderi (Handlooms), Mulmul (Casuals), Georgette (Casuals), 
+     Brocade (Festive)
+   - 8 tags: fabric/Maheshwari Silk, fabric/Banarasi, weave/Hand-Block Print,
+     weave/Jamdani, occasion/Wedding, occasion/Everyday, color/Ivory, color/Teal
+   - 3 products in draft status with realistic Indian ethnic wear names,
+     MRP between ₹2,500 and ₹18,000, stock 2–4 units each
+   - 2 coupons: WELCOME20 (20% off, first order only, no expiry) and 
+     FREESHIP (free shipping, valid for 30 days from today)
+   - Default settings rows for: exchange_window_days (7), exchange_active (true),
+     zone_a_rate (80), zone_a_free_above (999), zone_b_rate (120), 
+     zone_b_free_above (1499), store_name ("KrishnaByrr"), 
+     whatsapp_number (""), support_email ("")
+
+5. Write a test file api/src/db/migrations.test.ts using Jest that:
+   - Connects to krishnabyrr_test database
+   - Runs all migrations fresh (drop and recreate schema)
+   - Runs the seed script
+   - Verifies: all 20 tables exist, admin_users has 3 rows, 
+     products has 3 rows, coupons has 2 rows, settings has 9 rows
+   - Verifies Redis connection (redis-cli ping equivalent in Node)
+   - Tears down after (drops test schema)
+
+Do NOT build any API routes, UI, or application code in this session.
+Infrastructure and schema only.
+
+At the end, provide a SESSION CHECKPOINT summarising:
+- Every file created
+- Test results (pass/fail)
+- Exact commands to verify the setup
+- What Session 1 should know before starting

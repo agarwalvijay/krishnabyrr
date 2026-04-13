@@ -1,0 +1,510 @@
+'use client';
+
+import { useState, useCallback, useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import ProductCard from '@/components/ui/ProductCard';
+import { apiClient, type ProductListItem, type CategoryItem, type TagItem, type ApiMeta } from '@/lib/api';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface Filters {
+  q?: string;
+  category?: string;
+  fabric?: string;
+  weave?: string;
+  occasion?: string;
+  color?: string;
+  price_min?: string;
+  price_max?: string;
+  in_stock?: string;
+  sort?: string;
+}
+
+interface Props {
+  initialProducts: ProductListItem[];
+  initialMeta: ApiMeta;
+  categories: CategoryItem[];
+  tags: Record<string, TagItem[]>;
+  currentFilters: Filters;
+  /** When set, the category filter is locked to this slug (category page) */
+  lockedCategory?: { name: string; slug: string };
+}
+
+// ── Filter sidebar ────────────────────────────────────────────────────────────
+
+interface FilterGroupProps {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}
+
+function FilterGroup({ title, children, defaultOpen = true }: FilterGroupProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-gray-100 py-4">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center justify-between w-full text-sm font-semibold text-kb-charcoal mb-3"
+      >
+        {title}
+        <svg
+          className={`w-4 h-4 text-kb-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="space-y-2">{children}</div>}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function ShopClient({
+  initialProducts,
+  initialMeta,
+  categories,
+  tags,
+  currentFilters,
+  lockedCategory,
+}: Props) {
+  const router     = useRouter();
+  const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
+
+  // Local state for "Load More"
+  const [products, setProducts] = useState<ProductListItem[]>(initialProducts);
+  const [meta, setMeta]         = useState<ApiMeta>(initialMeta);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+
+  // Reset products when filters change (URL change triggers server re-render → new initialProducts)
+  const prevFiltersRef = JSON.stringify(currentFilters);
+  const [lastFilters, setLastFilters] = useState(prevFiltersRef);
+  if (prevFiltersRef !== lastFilters) {
+    setLastFilters(prevFiltersRef);
+    setProducts(initialProducts);
+    setMeta(initialMeta);
+  }
+
+  // ── URL update helpers ──────────────────────────────────────────────────────
+
+  const updateFilter = useCallback((key: string, value: string | undefined) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    params.delete('page'); // Reset page on filter change
+    startTransition(() => {
+      router.push(`?${params.toString()}`, { scroll: false });
+    });
+  }, [router, searchParams]);
+
+  const clearAll = useCallback(() => {
+    const keep = lockedCategory ? `?category=${lockedCategory.slug}` : '';
+    startTransition(() => {
+      router.push(keep || '/shop', { scroll: false });
+    });
+  }, [router, lockedCategory]);
+
+  // ── Active filter count ─────────────────────────────────────────────────────
+
+  const activeFilterCount = [
+    currentFilters.q,
+    !lockedCategory && currentFilters.category,
+    currentFilters.fabric,
+    currentFilters.weave,
+    currentFilters.occasion,
+    currentFilters.color,
+    currentFilters.price_min,
+    currentFilters.price_max,
+    currentFilters.in_stock,
+  ].filter(Boolean).length;
+
+  // ── Load More ───────────────────────────────────────────────────────────────
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const nextPage = meta.page + 1;
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('page', String(nextPage));
+      const res = await apiClient.get<{ data: ProductListItem[]; meta: ApiMeta }>(
+        `/products?${params.toString()}`
+      );
+      setProducts(prev => [...prev, ...res.data.data]);
+      setMeta(res.data.meta);
+    } catch {
+      // fail silently
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // ── Filter sidebar content ──────────────────────────────────────────────────
+
+  const fabricTags   = tags.fabric   ?? [];
+  const weaveTags    = tags.weave    ?? [];
+  const occasionTags = tags.occasion ?? [];
+  const colorTags    = tags.color    ?? [];
+
+  const FilterContent = () => (
+    <div className="text-sm">
+      {/* Search */}
+      <div className="pb-4 border-b border-gray-100">
+        <input
+          type="search"
+          placeholder="Search products…"
+          defaultValue={currentFilters.q ?? ''}
+          onChange={e => {
+            const val = e.target.value;
+            const t = setTimeout(() => updateFilter('q', val || undefined), 400);
+            return () => clearTimeout(t);
+          }}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-kb-teal"
+        />
+      </div>
+
+      {/* Category (only when not locked) */}
+      {!lockedCategory && categories.length > 0 && (
+        <FilterGroup title="Category">
+          {categories.map(cat => (
+            <label key={cat.id} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="category"
+                value={cat.slug}
+                checked={currentFilters.category === cat.slug}
+                onChange={() => updateFilter('category', cat.slug)}
+                className="accent-kb-teal"
+              />
+              <span className="text-kb-charcoal">{cat.name}</span>
+            </label>
+          ))}
+          {currentFilters.category && (
+            <button
+              onClick={() => updateFilter('category', undefined)}
+              className="text-xs text-kb-teal underline mt-1"
+            >
+              Clear
+            </button>
+          )}
+        </FilterGroup>
+      )}
+
+      {/* Fabric */}
+      {fabricTags.length > 0 && (
+        <FilterGroup title="Fabric">
+          {fabricTags.map(tag => (
+            <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={currentFilters.fabric === tag.value}
+                onChange={() => updateFilter('fabric', currentFilters.fabric === tag.value ? undefined : tag.value)}
+                className="accent-kb-teal rounded"
+              />
+              <span className="text-kb-charcoal">{tag.value}</span>
+            </label>
+          ))}
+        </FilterGroup>
+      )}
+
+      {/* Weave / Craft */}
+      {weaveTags.length > 0 && (
+        <FilterGroup title="Weave / Craft">
+          {weaveTags.map(tag => (
+            <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={currentFilters.weave === tag.value}
+                onChange={() => updateFilter('weave', currentFilters.weave === tag.value ? undefined : tag.value)}
+                className="accent-kb-teal rounded"
+              />
+              <span className="text-kb-charcoal">{tag.value}</span>
+            </label>
+          ))}
+        </FilterGroup>
+      )}
+
+      {/* Occasion */}
+      {occasionTags.length > 0 && (
+        <FilterGroup title="Occasion">
+          {occasionTags.map(tag => (
+            <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={currentFilters.occasion === tag.value}
+                onChange={() => updateFilter('occasion', currentFilters.occasion === tag.value ? undefined : tag.value)}
+                className="accent-kb-teal rounded"
+              />
+              <span className="text-kb-charcoal">{tag.value}</span>
+            </label>
+          ))}
+        </FilterGroup>
+      )}
+
+      {/* Color */}
+      {colorTags.length > 0 && (
+        <FilterGroup title="Color">
+          <div className="flex flex-wrap gap-2">
+            {colorTags.map(tag => (
+              <button
+                key={tag.id}
+                onClick={() => updateFilter('color', currentFilters.color === tag.value ? undefined : tag.value)}
+                className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border transition-colors ${
+                  currentFilters.color === tag.value
+                    ? 'border-kb-teal bg-kb-teal/10 text-kb-teal font-medium'
+                    : 'border-gray-200 hover:border-kb-teal'
+                }`}
+                title={tag.value}
+              >
+                <span
+                  className="w-3.5 h-3.5 rounded-full border border-black/10 flex-shrink-0"
+                  style={{ backgroundColor: tag.hex_color ?? '#9CA3AF' }}
+                />
+                {tag.value}
+              </button>
+            ))}
+          </div>
+        </FilterGroup>
+      )}
+
+      {/* Price range */}
+      <FilterGroup title="Price Range">
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            placeholder="Min ₹"
+            defaultValue={currentFilters.price_min ?? ''}
+            onBlur={e => updateFilter('price_min', e.target.value || undefined)}
+            min={0}
+            className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-kb-teal"
+          />
+          <span className="text-kb-muted">–</span>
+          <input
+            type="number"
+            placeholder="Max ₹"
+            defaultValue={currentFilters.price_max ?? ''}
+            onBlur={e => updateFilter('price_max', e.target.value || undefined)}
+            min={0}
+            className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-kb-teal"
+          />
+        </div>
+      </FilterGroup>
+
+      {/* In Stock Only */}
+      <div className="py-4">
+        <label className="flex items-center justify-between cursor-pointer">
+          <span className="text-sm font-semibold text-kb-charcoal">In Stock Only</span>
+          <div
+            onClick={() => updateFilter('in_stock', currentFilters.in_stock === 'true' ? undefined : 'true')}
+            className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${
+              currentFilters.in_stock === 'true' ? 'bg-kb-teal' : 'bg-gray-200'
+            }`}
+          >
+            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+              currentFilters.in_stock === 'true' ? 'left-5' : 'left-0.5'
+            }`} />
+          </div>
+        </label>
+      </div>
+
+      {/* Clear all */}
+      {activeFilterCount > 0 && (
+        <button
+          onClick={clearAll}
+          className="w-full py-2 text-sm text-kb-error border border-kb-error/30 rounded-lg hover:bg-kb-error/5 transition-colors mt-2"
+        >
+          Clear All Filters ({activeFilterCount})
+        </button>
+      )}
+    </div>
+  );
+
+  // ── Active filter chips ─────────────────────────────────────────────────────
+
+  const chips: Array<{ label: string; key: string }> = [
+    currentFilters.q         ? { label: `Search: ${currentFilters.q}`, key: 'q' }                    : null,
+    !lockedCategory && currentFilters.category ? { label: `Category: ${currentFilters.category}`, key: 'category' } : null,
+    currentFilters.fabric    ? { label: `Fabric: ${currentFilters.fabric}`, key: 'fabric' }           : null,
+    currentFilters.weave     ? { label: `Weave: ${currentFilters.weave}`, key: 'weave' }              : null,
+    currentFilters.occasion  ? { label: `Occasion: ${currentFilters.occasion}`, key: 'occasion' }     : null,
+    currentFilters.color     ? { label: `Color: ${currentFilters.color}`, key: 'color' }              : null,
+    currentFilters.price_min ? { label: `Min: ₹${currentFilters.price_min}`, key: 'price_min' }       : null,
+    currentFilters.price_max ? { label: `Max: ₹${currentFilters.price_max}`, key: 'price_max' }       : null,
+    currentFilters.in_stock === 'true' ? { label: 'In Stock Only', key: 'in_stock' }                  : null,
+  ].filter(Boolean) as Array<{ label: string; key: string }>;
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      {/* Mobile filter button */}
+      <div className="flex items-center justify-between mb-4 md:hidden">
+        <button
+          onClick={() => setMobileFilterOpen(true)}
+          className="flex items-center gap-2 text-sm font-medium border border-gray-200 rounded-lg px-3 py-2 hover:border-kb-teal transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="w-5 h-5 rounded-full bg-kb-teal text-white text-xs font-bold flex items-center justify-center">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+
+        {/* Sort (mobile) */}
+        <select
+          value={currentFilters.sort ?? 'newest'}
+          onChange={e => updateFilter('sort', e.target.value)}
+          className="text-sm border border-gray-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-kb-teal bg-white"
+        >
+          <option value="newest">Newest First</option>
+          <option value="price_asc">Price: Low–High</option>
+          <option value="price_desc">Price: High–Low</option>
+          <option value="best_selling">Best Selling</option>
+          <option value="discount_pct">Discount %</option>
+        </select>
+      </div>
+
+      <div className="flex gap-8">
+        {/* Desktop filter sidebar */}
+        <aside className="hidden md:block w-60 flex-shrink-0">
+          <div className="sticky top-24">
+            <h2 className="font-semibold text-kb-charcoal mb-4 text-sm uppercase tracking-wider">Filters</h2>
+            <FilterContent />
+          </div>
+        </aside>
+
+        {/* Mobile filter drawer */}
+        {mobileFilterOpen && (
+          <>
+            <div className="filter-drawer-backdrop" onClick={() => setMobileFilterOpen(false)} />
+            <div className="filter-drawer">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h2 className="font-semibold text-kb-charcoal">Filters</h2>
+                <button onClick={() => setMobileFilterOpen(false)}>
+                  <svg className="w-5 h-5 text-kb-charcoal" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="px-5 py-4 overflow-y-auto h-[calc(100vh-64px)]">
+                <FilterContent />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          {/* Sort bar + active chips (desktop) */}
+          <div className="hidden md:flex items-center justify-between mb-4">
+            <div className="flex flex-wrap gap-2">
+              {chips.map(chip => (
+                <span
+                  key={chip.key}
+                  className="inline-flex items-center gap-1 text-xs bg-kb-teal/10 text-kb-teal px-2.5 py-1 rounded-full font-medium"
+                >
+                  {chip.label}
+                  <button
+                    onClick={() => updateFilter(chip.key, undefined)}
+                    className="ml-0.5 hover:text-kb-error transition-colors"
+                    aria-label={`Remove ${chip.label} filter`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {chips.length > 1 && (
+                <button onClick={clearAll} className="text-xs text-kb-muted hover:text-kb-error underline">
+                  Clear all
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <span className="text-xs text-kb-muted">
+                {meta.total} product{meta.total !== 1 ? 's' : ''}
+              </span>
+              <select
+                value={currentFilters.sort ?? 'newest'}
+                onChange={e => updateFilter('sort', e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-kb-teal bg-white"
+              >
+                <option value="newest">Newest First</option>
+                <option value="price_asc">Price: Low–High</option>
+                <option value="price_desc">Price: High–Low</option>
+                <option value="best_selling">Best Selling</option>
+                <option value="discount_pct">Discount %</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Mobile chips */}
+          {chips.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4 md:hidden">
+              {chips.map(chip => (
+                <span
+                  key={chip.key}
+                  className="inline-flex items-center gap-1 text-xs bg-kb-teal/10 text-kb-teal px-2.5 py-1 rounded-full font-medium"
+                >
+                  {chip.label}
+                  <button onClick={() => updateFilter(chip.key, undefined)}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Product grid */}
+          {products.length === 0 ? (
+            <div className="py-24 text-center">
+              {activeFilterCount > 0 ? (
+                <>
+                  <p className="text-kb-muted mb-3">No products match your filters.</p>
+                  <button onClick={clearAll} className="text-sm text-kb-teal underline">
+                    Clear Filters
+                  </button>
+                </>
+              ) : (
+                <p className="text-kb-muted">No products available yet. Check back soon.</p>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {products.map(product => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+
+              {/* Load More */}
+              {meta.page < meta.pages && (
+                <div className="mt-10 text-center">
+                  <p className="text-sm text-kb-muted mb-4">
+                    Showing {products.length} of {meta.total} products
+                  </p>
+                  <button
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    className="px-8 py-3 border-2 border-kb-teal text-kb-teal font-medium rounded-lg hover:bg-kb-teal hover:text-white transition-colors disabled:opacity-50"
+                  >
+                    {loadingMore ? 'Loading…' : 'Load More'}
+                  </button>
+                </div>
+              )}
+              {meta.page >= meta.pages && meta.total > 24 && (
+                <p className="mt-8 text-center text-sm text-kb-muted">
+                  Showing all {meta.total} products
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

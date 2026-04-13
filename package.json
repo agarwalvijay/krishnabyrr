@@ -1,0 +1,23 @@
+{
+  "name": "krishnabyrr",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/admin",
+    "packages/shared",
+    "api"
+  ],
+  "scripts": {
+    "dev:web": "npm -w apps/web run dev",
+    "dev:admin": "npm -w apps/admin run dev",
+    "dev:api": "npm -w api run dev",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm -w api run test",
+    "db:migrate": "npm -w api run db:migrate",
+    "db:seed": "npm -w api run db:seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --kb-teal:       #1A6B6B;
+  --kb-blue:       #1E3F8B;
+  --kb-gold:       #C8971A;
+  --kb-emerald:    #2D7A4F;
+  --kb-iridescent: #5BBCB0;
+  --kb-cream:      #FAF6EF;
+  --kb-warm-white: #FFFFFF;
+  --kb-charcoal:   #1C1C1C;
+  --kb-muted:      #6E6E6E;
+  --kb-error:      #C0392B;
+  --kb-success:    #27AE60;
+  --kb-amber:      #E67E22;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--kb-cream);
+  color: var(--kb-charcoal);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Typography ─────────────────────────────────────────────── */
+
+.font-display {
+  font-family: var(--font-cormorant), Georgia, serif;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-cormorant), Georgia, serif;
+}
+
+/* ── Focus rings ─────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--kb-teal);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbar (thin on webkit) ─────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+
+/* ── Product card image container ────────────────────────────── */
+
+.product-card-image {
+  position: relative;
+  overflow: hidden;
+}
+
+.product-card-image img {
+  transition: transform 300ms ease;
+}
+
+@media (hover: hover) {
+  .product-card-image:hover img.primary-img {
+    transform: scale(1.03);
+  }
+  .product-card-image:hover img.secondary-img {
+    opacity: 1 !important;
+  }
+  .product-card-image:hover .quick-view-btn {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ── Accordion (details/summary) ─────────────────────────────── */
+
+details > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ── Mobile filter drawer ────────────────────────────────────── */
+
+.filter-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 40;
+}
+
+.filter-drawer {
+  position: fixed;
+  inset-y: 0;
+  left: 0;
+  width: min(85vw, 320px);
+  background: white;
+  z-index: 50;
+  overflow-y: auto;
+  transition: transform 300ms ease;
+}
+
+/* ── Scroll snap for PDP image gallery (mobile) ─────────────── */
+
+.image-scroll-snap {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.image-scroll-snap > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
+/* ── Price styles ─────────────────────────────────────────────── */
+
+.price-sale  { color: var(--kb-gold); font-weight: 600; }
+.price-mrp   { color: var(--kb-muted); text-decoration: line-through; }
+
+/* ── Badge utility ───────────────────────────────────────────── */
+
+.badge-new  { background: var(--kb-teal); color: white; }
+.badge-sale { background: var(--kb-gold); color: white; }
+.badge-stock-low  { background: #FEF3C7; color: var(--kb-amber); }
+.badge-sold-out   { background: #FEE2E2; color: var(--kb-error); }

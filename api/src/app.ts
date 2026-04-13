@@ -1,0 +1,61 @@
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+
+import healthRouter from './routes/health';
+import productsRouter, {
+  categoriesRouter,
+  collectionsRouter,
+  tagsRouter,
+  searchRouter,
+} from './routes/products';
+import settingsRouter from './routes/settings';
+import adminRouter from './routes/admin/index';
+import cartRouter from './routes/cart';
+import authRouter from './routes/auth';
+import ordersRouter from './routes/orders';
+import { errorHandler } from './middleware/error';
+
+const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim());
+
+const app = express();
+
+app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Serve locally-uploaded product images (dev only — use GCS in production)
+app.use('/uploads', express.static('/tmp/kb_uploads'));
+
+// ── Public routes ─────────────────────────────────────────────────────────────
+app.use('/api/health', healthRouter);
+app.use('/api/products', productsRouter);
+app.use('/api/categories', categoriesRouter);
+app.use('/api/collections', collectionsRouter);
+app.use('/api/tags', tagsRouter);
+app.use('/api/search', searchRouter);
+app.use('/api/settings', settingsRouter);
+
+// ── Customer auth routes ──────────────────────────────────────────────────────
+app.use('/api/auth', authRouter);
+
+// ── Cart routes ───────────────────────────────────────────────────────────────
+app.use('/api/cart', cartRouter);
+
+// ── Order routes ──────────────────────────────────────────────────────────────
+app.use('/api/orders', ordersRouter);
+
+// ── Admin routes (all require auth via their own middleware) ──────────────────
+app.use('/api/admin', adminRouter);
+
+// ── 404 handler ───────────────────────────────────────────────────────────────
+app.use((_req, res) => {
+  res.status(404).json({ error: { message: 'Route not found', code: 'NOT_FOUND' } });
+});
+
+// ── Global error handler ──────────────────────────────────────────────────────
+app.use(errorHandler);
+
+export default app;
