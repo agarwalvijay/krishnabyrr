@@ -4,10 +4,12 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/components/cart/CartContext';
 import CartDrawer from '@/components/cart/CartDrawer';
+import { useCustomerAuth } from '@/contexts/AuthContext';
 
 export default function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { cart, openCart } = useCart();
+  const { customer } = useCustomerAuth();
 
   const itemCount = cart?.items.reduce((s, i) => s + i.quantity, 0) ?? 0;
 
@@ -70,16 +72,25 @@ export default function Header() {
               )}
             </button>
 
-            {/* Account (placeholder) */}
+            {/* Account */}
             <Link
-              href="/account"
-              aria-label="Account"
+              href={customer ? '/account' : '/account/login'}
+              aria-label={customer ? `My account (${customer.name})` : 'Sign in'}
               className="hidden md:flex w-9 h-9 items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-kb-charcoal"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
+              {customer ? (
+                <span
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                  style={{ background: 'var(--kb-teal)' }}
+                >
+                  {customer.name.charAt(0).toUpperCase()}
+                </span>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              )}
             </Link>
 
             {/* Mobile hamburger */}
@@ -120,11 +131,11 @@ export default function Header() {
                 About
               </Link>
               <Link
-                href="/account"
+                href={customer ? '/account' : '/account/login'}
                 className="block px-3 py-2.5 text-sm font-medium text-kb-charcoal hover:text-kb-teal hover:bg-gray-50 rounded-lg transition-colors"
                 onClick={() => setMobileOpen(false)}
               >
-                Account
+                {customer ? `My Account (${customer.name})` : 'Sign In'}
               </Link>
             </nav>
           </div>

@@ -177,6 +177,34 @@ export async function runSeed(pool: Pool): Promise<void> {
       `, [key, JSON.stringify(value)]);
     }
 
+    // ----------------------------------------------------------------
+    // 7. Default CMS pages
+    // ----------------------------------------------------------------
+    await client.query(`
+      INSERT INTO pages (slug, title, content)
+      VALUES (
+        'exchanges',
+        'Exchange Policy',
+        '<h2>Our Exchange Policy</h2>
+<p>We believe you deserve to love what you wear. That is why KrishnaByrr offers hassle-free exchanges within the policy window from your delivery date.</p>
+<h3>How It Works</h3>
+<ol>
+  <li>Log in to your account and visit your order page.</li>
+  <li>Click "Request Exchange" and select the items you would like to exchange.</li>
+  <li>We will contact you within 24 hours to arrange pickup and dispatch.</li>
+</ol>
+<h3>Conditions</h3>
+<ul>
+  <li>Items must be unused, unwashed, and in original packaging with all tags intact.</li>
+  <li>Exchanges are for the same or higher value item only.</li>
+  <li>Sale items may not be eligible for exchange — check your order details.</li>
+</ul>
+<h3>Questions?</h3>
+<p>WhatsApp us and we will be happy to help. We aim to respond within 2 hours on business days.</p>'
+      )
+      ON CONFLICT (slug) DO NOTHING
+    `);
+
     await client.query('COMMIT');
     console.log('Seed complete.');
   } catch (err) {

@@ -135,4 +135,100 @@ router.get('/me', requireCustomerAuth, async (req, res, next) => {
   }
 });
 
+// ── POST /api/auth/link-order ─────────────────────────────────────────────────
+// Called from registration page: links a guest order to the newly-created customer.
+// Only links if order.guest_email === email AND order.customer_id IS NULL.
+
+router.post('/link-order', async (req, res, next) => {
+  try {
+    const { orderNumber, email } = req.body as { orderNumber?: string; email?: string };
+
+    if (!orderNumber || !email) {
+      res.status(400).json({ error: { message: 'orderNumber and email are required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    const normalEmail = email.toLowerCase().trim();
+
+    // Find the customer who just registered with this email
+    const { rows: [customer] } = await pool.query<{ id: string }>(
+      'SELECT id FROM customers WHERE email = $1',
+      [normalEmail],
+    );
+
+    if (!customer) {
+      res.status(404).json({ error: { message: 'Customer not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    // Only link if the order is unlinked and guest_email matches
+    const { rows: [order] } = await pool.query<{ id: string }>(
+      `SELECT id FROM orders
+       WHERE order_number = $1
+         AND customer_id IS NULL
+         AND LOWER(guest_email) = $2`,
+      [orderNumber.toUpperCase(), normalEmail],
+    );
+
+    if (!order) {
+      // Silent success — order may already be linked or not belong to this email
+      res.json({ data: { linked: false } });
+      return;
+    }
+
+    await pool.query(
+      `UPDATE orders SET customer_id = $1, updated_at = NOW() WHERE id = $2`,
+      [customer.id, order.id],
+    );
+
+    res.json({ data: { linked: true } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/auth/change-password ────────────────────────────────────────────
+
+router.post('/change-password', requireCustomerAuth, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body as {
+      currentPassword?: string;
+      newPassword?:     string;
+    };
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: { message: 'currentPassword and newPassword are required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: { message: 'New password must be at least 8 characters', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    const { rows: [customer] } = await pool.query<{ password_hash: string | null }>(
+      'SELECT password_hash FROM customers WHERE id = $1',
+      [req.customer!.id],
+    );
+
+    if (!customer?.password_hash) {
+      res.status(400).json({ error: { message: 'No password set for this account', code: 'NO_PASSWORD' } });
+      return;
+    }
+
+    const valid = await bcrypt.compare(currentPassword, customer.password_hash);
+    if (!valid) {
+      res.status(401).json({ error: { message: 'Current password is incorrect', code: 'INVALID_CREDENTIALS' } });
+      return;
+    }
+
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await pool.query('UPDATE customers SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, req.customer!.id]);
+
+    res.json({ data: { message: 'Password updated successfully' } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

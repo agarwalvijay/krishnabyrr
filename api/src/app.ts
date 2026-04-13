@@ -14,9 +14,12 @@ import adminRouter from './routes/admin/index';
 import cartRouter from './routes/cart';
 import authRouter from './routes/auth';
 import ordersRouter from './routes/orders';
+import exchangesRouter from './routes/exchanges';
+import accountRouter from './routes/account';
+import pagesRouter from './routes/pages';
 import { errorHandler } from './middleware/error';
 
-const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173')
+const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:3002,http://localhost:5173')
   .split(',')
   .map((o) => o.trim());
 
@@ -46,6 +49,15 @@ app.use('/api/cart', cartRouter);
 
 // ── Order routes ──────────────────────────────────────────────────────────────
 app.use('/api/orders', ordersRouter);
+
+// ── Exchange routes ───────────────────────────────────────────────────────────
+app.use('/api/exchanges', exchangesRouter);
+
+// ── Account routes (wishlist, addresses, profile) ─────────────────────────────
+app.use('/api/account', accountRouter);
+
+// ── Pages (CMS static pages) ──────────────────────────────────────────────────
+app.use('/api/pages', pagesRouter);
 
 // ── Admin routes (all require auth via their own middleware) ──────────────────
 app.use('/api/admin', adminRouter);

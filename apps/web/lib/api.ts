@@ -131,6 +131,16 @@ export interface ApiMeta {
   pages: number;
 }
 
+export interface Customer {
+  id:             string;
+  email:          string;
+  name:           string;
+  phone:          string | null;
+  total_orders:   number;
+  lifetime_value: string;
+  created_at:     string;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const API_ORIGIN =
@@ -209,3 +219,15 @@ export const apiClient = axios.create({
   baseURL:         '/api',
   withCredentials: true,
 });
+
+// Attach customer JWT if present in localStorage
+if (typeof window !== 'undefined') {
+  apiClient.interceptors.request.use((config) => {
+    const token = localStorage.getItem('kb_customer_token');
+    if (token) {
+      config.headers = config.headers ?? {};
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  });
+}

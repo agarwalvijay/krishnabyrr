@@ -55,6 +55,31 @@ const SORT_MAP: Record<string, string> = {
 // ── GET /api/products ─────────────────────────────────────────────────────────
 router.get('/', async (req, res, next) => {
   try {
+    // ?ids=uuid1,uuid2,... shortcut for wishlist/batch fetch
+    const idsParam = (req.query as Record<string, string>).ids;
+    if (idsParam) {
+      const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 100);
+      if (ids.length === 0) {
+        res.json({ data: [], meta: { total: 0, page: 1, limit: 100, pages: 0 } });
+        return;
+      }
+      const { rows } = await pool.query(
+        `SELECT
+           p.id, p.name, p.slug, p.sku, p.short_desc,
+           p.mrp, p.sale_price, p.gst_rate,
+           p.stock_qty, p.low_stock_threshold, p.oos_behavior,
+           p.status, p.created_at,
+           ${PRIMARY_IMAGE_SUB},
+           ${SECOND_IMAGE_SUB},
+           ${TAGS_SUB}
+         FROM products p
+         WHERE p.id = ANY($1::uuid[])`,
+        [ids],
+      );
+      res.json({ data: rows, meta: { total: rows.length, page: 1, limit: rows.length, pages: 1 } });
+      return;
+    }
+
     const {
       q,
       category,

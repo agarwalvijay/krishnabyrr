@@ -21,7 +21,8 @@
       "Bash(pkill -f \"nodemon\")",
       "Bash(DB_NAME=krishnabyrr_test npx ts-node /Users/vijayagarwal/vijay/vijay/krishnabyrr/api/src/db/migrate.ts)",
       "Bash(npm test:*)",
-      "Bash(PGPASSWORD= psql:*)"
+      "Bash(PGPASSWORD= psql:*)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|js|json\\)$\")"
     ]
   }
 }
