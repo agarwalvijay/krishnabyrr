@@ -75,8 +75,13 @@ npm run build -w apps/web --silent
 echo "      done."
 
 # ── 3. Ensure remote dir structure exists ──────────────────────────────────────
-echo "==> [3/6] Preparing remote directories..."
-$SSH "$GCP_HOST" "mkdir -p $REMOTE_DIR/api/uploads $REMOTE_DIR/apps/web $REMOTE_DIR/apps/admin $REMOTE_DIR/deploy"
+echo "==> [3/6] Preparing remote directories and clearing stale cache..."
+$SSH "$GCP_HOST" "
+  mkdir -p $REMOTE_DIR/api/uploads $REMOTE_DIR/apps/web $REMOTE_DIR/apps/admin $REMOTE_DIR/deploy
+  # Wipe Next.js fetch cache and pre-rendered pages so production DB data is used fresh
+  rm -rf $REMOTE_DIR/apps/web/.next/cache
+  rm -rf $REMOTE_DIR/apps/web/.next/server/app
+"
 
 # Copy SQL migrations into dist so compiled migrate.js can find them
 echo "      copying SQL migrations into api/dist/db/migrations..."
