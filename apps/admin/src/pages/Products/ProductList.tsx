@@ -116,6 +116,11 @@ function BulkOrgModal({
     queryFn: () => api.get('/tags').then((r) => r.data),
     staleTime: 5 * 60 * 1000,
   });
+  const { data: categoriesData } = useQuery<{ data: Array<{ id: string; name: string; children?: Array<{ id: string; name: string }> }> }>({
+    queryKey: ['categories'],
+    queryFn: () => api.get('/categories').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const allCollections = collectionsData?.data ?? [];
   const tagGroupEntries = Object.entries(tagsData?.data ?? {})
@@ -123,18 +128,32 @@ function BulkOrgModal({
     .filter((g) => g.tags.length > 0);
   const allTags = tagGroupEntries.flatMap((g) => g.tags);
 
-  const [selTags, setSelTags]           = useState<string[]>([]);
+  // Flatten category tree
+  const flatCategories: Array<{ id: string; name: string; indent: boolean }> = [];
+  for (const cat of categoriesData?.data ?? []) {
+    flatCategories.push({ id: cat.id, name: cat.name, indent: false });
+    for (const child of cat.children ?? []) {
+      flatCategories.push({ id: child.id, name: child.name, indent: true });
+    }
+  }
+
+  const [selTags, setSelTags]               = useState<string[]>([]);
   const [selCollections, setSelCollections] = useState<string[]>([]);
-  const [tagMode, setTagMode]           = useState<'add' | 'replace'>('add');
-  const [collMode, setCollMode]         = useState<'add' | 'replace'>('add');
-  const [applying, setApplying]         = useState(false);
+  const [selCategories, setSelCategories]   = useState<string[]>([]);
+  const [tagMode, setTagMode]               = useState<'add' | 'replace'>('add');
+  const [collMode, setCollMode]             = useState<'add' | 'replace'>('add');
+  const [catMode, setCatMode]               = useState<'add' | 'replace'>('add');
+  const [applying, setApplying]             = useState(false);
 
   const toggleTag  = (id: string) => setSelTags((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
   const toggleColl = (id: string) => setSelCollections((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const toggleCat  = (id: string) => setSelCategories((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+
+  const nothingSelected = selTags.length === 0 && selCollections.length === 0 && selCategories.length === 0;
 
   const handleApply = async () => {
-    if (selTags.length === 0 && selCollections.length === 0) {
-      toast.error('Select at least one tag or collection to apply');
+    if (nothingSelected) {
+      toast.error('Select at least one tag, category, or collection to apply');
       return;
     }
     setApplying(true);
@@ -147,11 +166,9 @@ function BulkOrgModal({
             if (tagMode === 'replace') {
               tasks.push(api.put(`/admin/products/${productId}/tags`, { tag_ids: selTags }));
             } else {
-              // Fetch current tags then merge
               const cur = await api.get(`/admin/products/${productId}`);
               const existing: string[] = (cur.data.data.tags ?? []).map((t: { id: string }) => t.id);
-              const merged = [...new Set([...existing, ...selTags])];
-              tasks.push(api.put(`/admin/products/${productId}/tags`, { tag_ids: merged }));
+              tasks.push(api.put(`/admin/products/${productId}/tags`, { tag_ids: [...new Set([...existing, ...selTags])] }));
             }
           }
 
@@ -161,8 +178,17 @@ function BulkOrgModal({
             } else {
               const cur = await api.get(`/admin/products/${productId}`);
               const existing: string[] = (cur.data.data.collections ?? []).map((c: { id: string }) => c.id);
-              const merged = [...new Set([...existing, ...selCollections])];
-              tasks.push(api.put(`/admin/products/${productId}/collections`, { collection_ids: merged }));
+              tasks.push(api.put(`/admin/products/${productId}/collections`, { collection_ids: [...new Set([...existing, ...selCollections])] }));
+            }
+          }
+
+          if (selCategories.length > 0) {
+            if (catMode === 'replace') {
+              tasks.push(api.put(`/admin/products/${productId}/categories`, { category_ids: selCategories }));
+            } else {
+              const cur = await api.get(`/admin/products/${productId}`);
+              const existing: string[] = (cur.data.data.categories ?? []).map((c: { id: string }) => c.id);
+              tasks.push(api.put(`/admin/products/${productId}/categories`, { category_ids: [...new Set([...existing, ...selCategories])] }));
             }
           }
 
@@ -243,6 +269,47 @@ function BulkOrgModal({
             )}
           </div>
 
+          {/* Categories section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-kb-charcoal">Categories</h3>
+              <div className="flex items-center gap-3 text-xs text-kb-muted">
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="cat-mode" value="add" checked={catMode === 'add'}
+                    onChange={() => setCatMode('add')} className="accent-kb-teal" />
+                  Add to existing
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="cat-mode" value="replace" checked={catMode === 'replace'}
+                    onChange={() => setCatMode('replace')} className="accent-kb-teal" />
+                  Replace all
+                </label>
+              </div>
+            </div>
+            {flatCategories.length === 0 ? (
+              <p className="text-sm text-kb-muted">No categories configured.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {flatCategories.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleCat(c.id)}
+                    className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                      c.indent ? 'ml-2' : ''
+                    } ${
+                      selCategories.includes(c.id)
+                        ? 'bg-kb-teal text-white border-kb-teal'
+                        : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                    }`}
+                  >
+                    {c.indent ? '↳ ' : ''}{c.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Collections section */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -282,21 +349,17 @@ function BulkOrgModal({
             )}
           </div>
 
-          {(selTags.length > 0 || selCollections.length > 0) && (
-            <div className="rounded-lg p-3 text-xs text-kb-muted bg-gray-50 border border-gray-100">
-              <strong>Preview:</strong>{' '}
+          {!nothingSelected && (
+            <div className="rounded-lg p-3 text-xs text-kb-muted bg-gray-50 border border-gray-100 space-y-1">
+              <strong className="text-kb-charcoal">Will apply:</strong>
+              {selCategories.length > 0 && (
+                <div>{catMode === 'add' ? 'Add' : 'Replace with'} <strong>{selCategories.length}</strong> categor{selCategories.length === 1 ? 'y' : 'ies'}.</div>
+              )}
               {selTags.length > 0 && (
-                <span>
-                  {tagMode === 'add' ? 'Add' : 'Replace with'}{' '}
-                  <strong>{selTags.length}</strong> tag(s)
-                  {allTags.filter(t => selTags.includes(t.id)).map(t => ` "${t.value}"`).join(',')}.{' '}
-                </span>
+                <div>{tagMode === 'add' ? 'Add' : 'Replace with'} <strong>{selTags.length}</strong> tag(s): {allTags.filter(t => selTags.includes(t.id)).map(t => `"${t.value}"`).join(', ')}.</div>
               )}
               {selCollections.length > 0 && (
-                <span>
-                  {collMode === 'add' ? 'Add' : 'Replace with'}{' '}
-                  <strong>{selCollections.length}</strong> collection(s).
-                </span>
+                <div>{collMode === 'add' ? 'Add' : 'Replace with'} <strong>{selCollections.length}</strong> collection(s).</div>
               )}
             </div>
           )}
@@ -307,7 +370,7 @@ function BulkOrgModal({
           <button
             className="btn-primary"
             onClick={handleApply}
-            disabled={applying || (selTags.length === 0 && selCollections.length === 0)}
+            disabled={applying || nothingSelected}
           >
             {applying ? `Applying to ${selectedIds.length}…` : `Apply to ${selectedIds.length} product(s)`}
           </button>
