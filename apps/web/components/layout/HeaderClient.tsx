@@ -250,7 +250,7 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
           <Link href="/" className="flex-shrink-0 flex items-center" aria-label="KrishnaByrr home">
             <Image
               src="/krishnabyrr_logo.svg"
-              alt="KrishnaByrr"
+              alt="Krishna's Bliss"
               width={150}
               height={34}
               priority

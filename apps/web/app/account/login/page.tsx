@@ -43,7 +43,7 @@ function LoginPage() {
         {/* Logo */}
         <div className="text-center">
           <Link href="/" className="font-display text-2xl font-semibold" style={{ color: 'var(--kb-teal)' }}>
-            KrishnaByrr
+            Krishna's Bliss
           </Link>
           <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>Sign in to your account</p>
         </div>

@@ -7,14 +7,14 @@ import { CustomerAuthProvider } from '@/contexts/AuthContext';
 
 export const metadata: Metadata = {
   title: {
-    default: 'KrishnaByrr — Handcrafted Indian Ethnic Wear',
-    template: '%s | KrishnaByrr',
+    default: "Krishna's Bliss — Handcrafted Indian Ethnic Wear",
+    template: "%s | Krishna's Bliss",
   },
   description:
     'Discover handcrafted Indian ethnic wear — sarees, dupattas, kurta sets and more. Authentic weaves, timeless elegance.',
-  keywords: ['Indian ethnic wear', 'handcrafted sarees', 'Maheshwari silk', 'Chanderi', 'KrishnaByrr'],
+  keywords: ['Indian ethnic wear', 'handcrafted sarees', 'Maheshwari silk', 'Chanderi', "Krishna's Bliss"],
   openGraph: {
-    siteName: 'KrishnaByrr',
+    siteName: "Krishna's Bliss",
     locale: 'en_IN',
     type: 'website',
   },

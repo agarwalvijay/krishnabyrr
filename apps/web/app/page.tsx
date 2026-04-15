@@ -6,8 +6,8 @@ import HomepageProductSection, { type ProductSectionPayload } from './components
 export const revalidate = 300;
 
 export const metadata = {
-  title: 'KrishnaByrr — Handcrafted Indian Ethnic Wear',
-  description: 'Timeless weaves and authentic craftsmanship. Shop handwoven silks, handlooms, and heritage fabrics.',
+  title: "Krishna's Bliss — Handcrafted Indian Ethnic Wear",
+  description: "Timeless weaves and authentic craftsmanship. Shop handwoven silks, handlooms, and heritage fabrics.",
 };
 
 interface HomepageBlock {
@@ -66,7 +66,7 @@ export default async function HomePage() {
         <HomepageBanner
           priority
           payload={{
-            heading: 'KrishnaByrr',
+            heading: "Krishna's Bliss",
             subheading: 'Handcrafted Indian Ethnic Wear',
             cta_label: 'Shop Now',
             cta_href: '/shop',

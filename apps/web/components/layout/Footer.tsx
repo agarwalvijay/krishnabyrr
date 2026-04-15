@@ -5,7 +5,7 @@ export default function Footer() {
     <footer className="bg-kb-charcoal text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm">
         <div className="text-center sm:text-left space-y-1">
-          <p className="text-white/90">© {new Date().getFullYear()} KrishnaByrr. All rights reserved.</p>
+          <p className="text-white/90">© {new Date().getFullYear()} Krishna's Bliss. All rights reserved.</p>
           <p className="text-white/50 text-xs">Handcrafted with ♥ in India</p>
         </div>
         <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-white/70">
