@@ -1,10 +1,10 @@
 #!/bin/bash
-# Usage: ./deploy/deploy.sh
-# Run from /var/www/krishnabyrr after pulling latest code.
+# Run from ~/krishnabyrr after pulling latest code.
+# Usage: cd ~/krishnabyrr && ./deploy/deploy.sh
 
 set -e
 
-APP_DIR="/var/www/krishnabyrr"
+APP_DIR="$HOME/krishnabyrr"
 cd "$APP_DIR"
 
 echo "==> Pulling latest code..."
@@ -26,10 +26,11 @@ echo "==> Building web..."
 npm run build -w apps/web
 
 echo "==> Running DB migrations..."
-cd api && NODE_ENV=production node -r dotenv/config node_modules/.bin/ts-node src/db/migrate.ts; cd ..
+cd "$APP_DIR/api" && NODE_ENV=production npx ts-node src/db/migrate.ts
+cd "$APP_DIR"
 
 echo "==> Restarting services..."
-pm2 reload deploy/ecosystem.config.js --update-env
+pm2 reload "$APP_DIR/deploy/ecosystem.config.js" --update-env
 
-echo "==> Done. Status:"
+echo "==> Done."
 pm2 list

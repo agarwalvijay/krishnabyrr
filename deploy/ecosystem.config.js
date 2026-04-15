@@ -1,8 +1,11 @@
+const path = require('path');
+const APP_DIR = path.join(require('os').homedir(), 'krishnabyrr');
+
 module.exports = {
   apps: [
     {
       name: 'kb-api',
-      cwd: '/var/www/krishnabyrr/api',
+      cwd: path.join(APP_DIR, 'api'),
       script: 'dist/index.js',
       interpreter: 'node',
       instances: 1,
@@ -16,7 +19,7 @@ module.exports = {
     },
     {
       name: 'kb-web',
-      cwd: '/var/www/krishnabyrr/apps/web',
+      cwd: path.join(APP_DIR, 'apps/web'),
       script: 'node_modules/.bin/next',
       args: 'start -p 3000',
       instances: 1,
