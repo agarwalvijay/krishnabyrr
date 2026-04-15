@@ -24,12 +24,25 @@ if [[ -z "$GCP_HOST" ]]; then
   exit 1
 fi
 
-SSH_KEY="$HOME/.ssh/id_ed25519_personal"
 REMOTE_DIR="~/krishnabyrr"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-SSH="ssh -i $SSH_KEY -o StrictHostKeyChecking=no"
-RSYNC="rsync -az --no-owner --no-group -e \"ssh -i $SSH_KEY -o StrictHostKeyChecking=no\""
+# Auto-detect which key works for this host.
+# GCP instances typically use id_rsa or id_ed25519 (added via gcloud/console).
+# id_ed25519_personal is for GitHub only.
+SSH_OPTS="-o StrictHostKeyChecking=no"
+for KEY in "$HOME/.ssh/id_rsa" "$HOME/.ssh/id_ed25519" "$HOME/.ssh/id_ed25519_personal"; do
+  if [[ -f "$KEY" ]]; then
+    if ssh -i "$KEY" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 "$GCP_HOST" true 2>/dev/null; then
+      SSH_OPTS="-i $KEY -o StrictHostKeyChecking=no"
+      echo "  Using SSH key: $KEY"
+      break
+    fi
+  fi
+done
+
+SSH="ssh $SSH_OPTS"
+RSYNC="rsync -az --no-owner --no-group -e \"ssh $SSH_OPTS\""
 
 echo ""
 echo "╔══════════════════════════════════════════════╗"
