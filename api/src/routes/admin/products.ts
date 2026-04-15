@@ -11,7 +11,7 @@ import { ProductSchema } from '@krishnabyrr/shared';
 const router = Router();
 
 // ── File upload setup ─────────────────────────────────────────────────────────
-const UPLOAD_DIR = '/tmp/kb_uploads';
+const UPLOAD_DIR = path.resolve(__dirname, '../../../uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
@@ -41,6 +41,9 @@ router.get('/', requireAuth, async (req, res, next) => {
       status = 'all',
       q,
       category,
+      in_stock,
+      stock_min,
+      stock_max,
       page = '1',
       limit = '24',
       sort = 'newest',
@@ -61,15 +64,16 @@ router.get('/', requireAuth, async (req, res, next) => {
     const params: unknown[] = [];
     let i = 1;
 
-    if (status !== 'all') {
+    const normalizedStatus = status.toLowerCase().trim();
+    if (normalizedStatus !== 'all' && ['active', 'draft', 'archived'].includes(normalizedStatus)) {
       conditions.push(`p.status = $${i}`);
-      params.push(status); i++;
+      params.push(normalizedStatus); i++;
     }
 
-    if (q) {
+    if (q?.trim()) {
       conditions.push(`to_tsvector('english', p.name || ' ' || COALESCE(p.short_desc, ''))
         @@ plainto_tsquery('english', $${i})`);
-      params.push(q); i++;
+      params.push(q.trim()); i++;
     }
 
     if (category) {
@@ -79,6 +83,22 @@ router.get('/', requireAuth, async (req, res, next) => {
         WHERE pc2.product_id = p.id AND c.slug = $${i}
       )`);
       params.push(category); i++;
+    }
+
+    if (in_stock === 'true') {
+      conditions.push(`p.stock_qty > 0`);
+    }
+
+    const minStock = stock_min ? parseInt(stock_min, 10) : null;
+    if (minStock != null && Number.isFinite(minStock)) {
+      conditions.push(`p.stock_qty >= $${i}`);
+      params.push(minStock); i++;
+    }
+
+    const maxStock = stock_max ? parseInt(stock_max, 10) : null;
+    if (maxStock != null && Number.isFinite(maxStock)) {
+      conditions.push(`p.stock_qty <= $${i}`);
+      params.push(maxStock); i++;
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -366,6 +386,24 @@ router.put('/:id/images/reorder', requireAuth, async (req, res, next) => {
           [display_order, imgId, id]
         );
       }
+
+      // Keep exactly one primary image: whichever is first in display order.
+      await client.query(
+        'UPDATE product_images SET is_primary = false WHERE product_id = $1',
+        [id]
+      );
+      await client.query(
+        `UPDATE product_images
+         SET is_primary = true
+         WHERE id = (
+           SELECT id
+           FROM product_images
+           WHERE product_id = $1
+           ORDER BY display_order ASC, created_at ASC
+           LIMIT 1
+         )`,
+        [id]
+      );
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');

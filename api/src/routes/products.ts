@@ -80,13 +80,10 @@ router.get('/', async (req, res, next) => {
       return;
     }
 
+    const query = req.query as Record<string, string>;
     const {
       q,
       category,
-      fabric,
-      weave,
-      occasion,
-      color,
       collection,
       price_min,
       price_max,
@@ -94,7 +91,7 @@ router.get('/', async (req, res, next) => {
       sort = 'newest',
       page = '1',
       limit = '24',
-    } = req.query as Record<string, string>;
+    } = query;
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 24));
@@ -116,14 +113,22 @@ router.get('/', async (req, res, next) => {
       conditions.push(`EXISTS (
         SELECT 1 FROM product_categories pc2
         JOIN categories c ON c.id = pc2.category_id
-        WHERE pc2.product_id = p.id AND c.slug = $${i}
+        LEFT JOIN categories parent ON parent.id = c.parent_id
+        WHERE pc2.product_id = p.id
+          AND (c.slug = $${i} OR parent.slug = $${i})
       )`);
       params.push(category); i++;
     }
 
-    for (const group of ['fabric', 'weave', 'occasion', 'color'] as const) {
-      const val = { fabric, weave, occasion, color }[group];
-      if (val) {
+    // Dynamic tag group filters: any query param whose key is a known tag group name
+    const NON_TAG_KEYS = new Set(['q', 'category', 'collection', 'price_min', 'price_max', 'in_stock', 'sort', 'page', 'limit', 'ids']);
+    const { rows: tagGroupRows } = await pool.query<{ name: string }>(
+      'SELECT name FROM tag_groups WHERE is_filter = TRUE'
+    );
+    const validGroups = new Set(tagGroupRows.map((r) => r.name));
+
+    for (const [groupName, val] of Object.entries(query)) {
+      if (!NON_TAG_KEYS.has(groupName) && validGroups.has(groupName) && val) {
         conditions.push(`EXISTS (
           SELECT 1 FROM product_tags pt3
           JOIN tags t3 ON t3.id = pt3.tag_id
@@ -131,7 +136,7 @@ router.get('/', async (req, res, next) => {
             AND t3.group_name = $${i}
             AND t3.value = $${i + 1}
         )`);
-        params.push(group, val); i += 2;
+        params.push(groupName, val); i += 2;
       }
     }
 
@@ -455,14 +460,28 @@ export const tagsRouter = Router();
 
 tagsRouter.get('/', async (_req, res, next) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT id, group_name, value, hex_color FROM tags ORDER BY group_name, value`
-    );
+    // Fetch groups (ordered) and tags in parallel
+    const [groupsResult, tagsResult] = await Promise.all([
+      pool.query<{ name: string; label: string; display_order: number; is_filter: boolean }>(
+        `SELECT name, label, display_order, is_filter
+         FROM tag_groups ORDER BY display_order`
+      ),
+      pool.query<{ id: string; group_name: string; value: string; hex_color: string | null }>(
+        `SELECT id, group_name, value, hex_color FROM tags ORDER BY group_name, value`
+      ),
+    ]);
 
-    const grouped: Record<string, typeof rows> = {};
-    for (const tag of rows) {
-      if (!grouped[tag.group_name]) grouped[tag.group_name] = [];
-      grouped[tag.group_name].push(tag);
+    // Build enriched shape: { [groupName]: { label, is_filter, tags: [] } }
+    const grouped: Record<string, { label: string; is_filter: boolean; tags: typeof tagsResult.rows }> = {};
+
+    for (const g of groupsResult.rows) {
+      grouped[g.name] = { label: g.label, is_filter: g.is_filter, tags: [] };
+    }
+    for (const tag of tagsResult.rows) {
+      if (!grouped[tag.group_name]) {
+        grouped[tag.group_name] = { label: tag.group_name, is_filter: true, tags: [] };
+      }
+      grouped[tag.group_name].tags.push(tag);
     }
 
     res.json({ data: grouped });

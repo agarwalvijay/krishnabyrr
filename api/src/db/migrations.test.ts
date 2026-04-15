@@ -34,6 +34,8 @@ const EXPECTED_TABLES = [
   'newsletter_subscribers',
   'testimonials',
   'related_products',
+  'tag_groups',
+  'homepage_blocks',
 ] as const;
 
 let pool: Pool;
@@ -127,13 +129,13 @@ describe('Seed data integrity', () => {
     expect(rows[0].max_s).toBeLessThanOrEqual(4);
   });
 
-  test('WELCOME20 coupon is percentage type, new_only eligibility', async () => {
+  test('WELCOME20 coupon is percent type, first_order eligibility', async () => {
     const { rows } = await pool.query(
       "SELECT type, customer_eligibility, value FROM coupons WHERE code = 'WELCOME20'"
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].type).toBe('percentage');
-    expect(rows[0].customer_eligibility).toBe('NEW_ONLY');
+    expect(rows[0].type).toBe('percent');
+    expect(rows[0].customer_eligibility).toBe('FIRST_ORDER');
     expect(parseFloat(rows[0].value)).toBe(20);
   });
 
@@ -176,11 +178,31 @@ describe('Seed data integrity', () => {
     expect(rows[0].n).toBe(8);
   });
 
-  test('schema_migrations table tracks 7 migration files', async () => {
+  test('schema_migrations table tracks 9 migration files', async () => {
     const { rows } = await pool.query(
       'SELECT COUNT(*)::int AS n FROM schema_migrations'
     );
-    expect(rows[0].n).toBe(7);
+    expect(rows[0].n).toBe(9);
+  });
+
+  test('tag_groups has 4 rows', async () => {
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM tag_groups');
+    expect(rows[0].n).toBe(4);
+  });
+
+  test('homepage_blocks has 1 starter banner', async () => {
+    const { rows } = await pool.query(
+      "SELECT COUNT(*)::int AS n FROM homepage_blocks WHERE type = 'banner'"
+    );
+    expect(rows[0].n).toBe(1);
+  });
+
+  test('tags.group_name FK to tag_groups exists', async () => {
+    const { rows } = await pool.query(`
+      SELECT COUNT(*)::int AS n FROM information_schema.table_constraints
+      WHERE constraint_name = 'fk_tags_group_name' AND table_name = 'tags'
+    `);
+    expect(rows[0].n).toBe(1);
   });
 });
 

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import StockAdjustModal from '../../components/StockAdjustModal';
-import { api } from '../../lib/api';
+import { api, imageUrl } from '../../lib/api';
 import { formatINR, discountPct, stockColorClass, stockLabel } from '../../lib/format';
 import { useDebounce } from '../../lib/hooks';
 
@@ -28,6 +29,10 @@ interface Product {
 interface ProductsResponse {
   data: Product[];
   meta: { total: number; page: number; limit: number; pages: number };
+}
+
+interface ApiErrorBody {
+  error?: { message?: string };
 }
 
 function StatusBadge({ status }: { status: Product['status'] }) {
@@ -73,7 +78,7 @@ function ProductThumb({ image, name }: { image: Product['primary_image']; name: 
   }
   return (
     <img
-      src={image.gcs_path}
+      src={imageUrl(image.gcs_path)}
       alt={image.alt_text ?? name}
       className="w-12 h-12 rounded-md object-cover flex-shrink-0 bg-gray-100"
       onError={(e) => { (e.target as HTMLImageElement).src = ''; }}
@@ -108,7 +113,7 @@ export default function ProductList() {
   if (stockFilter === 'out_of_stock')  { params.stock_max = '0'; }
   if (stockFilter === 'low_stock')     { params.stock_min = '1'; params.stock_max = '3'; }
 
-  const { data, isLoading, isFetching } = useQuery<ProductsResponse>({
+  const { data, isLoading, isFetching, isError, error } = useQuery<ProductsResponse, AxiosError>({
     queryKey: ['admin-products', params],
     queryFn: () => api.get('/admin/products', { params }).then((r) => r.data),
   });
@@ -130,6 +135,9 @@ export default function ProductList() {
 
   const products: Product[] = data?.data ?? [];
   const meta = data?.meta ?? { total: 0, pages: 1 };
+  const errorMessage =
+    ((error?.response?.data as ApiErrorBody | undefined)?.error?.message) ??
+    'Please try again.';
 
   const allSelected = products.length > 0 && products.every((p) => selected.has(p.id));
   const toggleAll   = () => {
@@ -233,6 +241,11 @@ export default function ProductList() {
 
       {/* Table */}
       <div className="card overflow-hidden">
+        {isError && (
+          <div className="px-4 py-3 text-sm border-b border-red-100 bg-red-50 text-red-700">
+            Failed to load filtered products. {errorMessage}
+          </div>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-kb-teal border-t-transparent rounded-full animate-spin" />

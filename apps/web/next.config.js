@@ -14,6 +14,15 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: '/collections/:slug',
+        destination: '/shop?collection=:slug',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

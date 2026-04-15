@@ -7,27 +7,33 @@ import { apiClient, type ProductListItem, type CategoryItem, type TagItem, type 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+interface TagGroupData {
+  label: string;
+  is_filter: boolean;
+  tags: TagItem[];
+}
+
 interface Filters {
   q?: string;
   category?: string;
-  fabric?: string;
-  weave?: string;
-  occasion?: string;
-  color?: string;
+  collection?: string;
   price_min?: string;
   price_max?: string;
   in_stock?: string;
   sort?: string;
+  [key: string]: string | undefined; // tag group name → selected value
 }
 
 interface Props {
   initialProducts: ProductListItem[];
   initialMeta: ApiMeta;
   categories: CategoryItem[];
-  tags: Record<string, TagItem[]>;
+  tags: Record<string, TagGroupData>;
   currentFilters: Filters;
   /** When set, the category filter is locked to this slug (category page) */
   lockedCategory?: { name: string; slug: string };
+  /** When set, show a collection heading and treat collection as a removable filter */
+  lockedCollection?: { name: string; slug: string; description?: string | null };
 }
 
 // ── Filter sidebar ────────────────────────────────────────────────────────────
@@ -68,6 +74,7 @@ export default function ShopClient({
   tags,
   currentFilters,
   lockedCategory,
+  lockedCollection,
 }: Props) {
   const router     = useRouter();
   const searchParams = useSearchParams();
@@ -112,13 +119,14 @@ export default function ShopClient({
 
   // ── Active filter count ─────────────────────────────────────────────────────
 
+  const tagGroupNames = Object.keys(tags);
+  const activeTagFilters = tagGroupNames.filter((g) => currentFilters[g]);
+
   const activeFilterCount = [
     currentFilters.q,
     !lockedCategory && currentFilters.category,
-    currentFilters.fabric,
-    currentFilters.weave,
-    currentFilters.occasion,
-    currentFilters.color,
+    currentFilters.collection,
+    ...activeTagFilters,
     currentFilters.price_min,
     currentFilters.price_max,
     currentFilters.in_stock,
@@ -146,10 +154,9 @@ export default function ShopClient({
 
   // ── Filter sidebar content ──────────────────────────────────────────────────
 
-  const fabricTags   = tags.fabric   ?? [];
-  const weaveTags    = tags.weave    ?? [];
-  const occasionTags = tags.occasion ?? [];
-  const colorTags    = tags.color    ?? [];
+  // Sorted filter groups (is_filter = true only)
+  const filterGroups = Object.entries(tags)
+    .filter(([, g]) => g.is_filter && g.tags.length > 0);
 
   const FilterContent = () => (
     <div className="text-sm">
@@ -195,82 +202,48 @@ export default function ShopClient({
         </FilterGroup>
       )}
 
-      {/* Fabric */}
-      {fabricTags.length > 0 && (
-        <FilterGroup title="Fabric">
-          {fabricTags.map(tag => (
-            <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={currentFilters.fabric === tag.value}
-                onChange={() => updateFilter('fabric', currentFilters.fabric === tag.value ? undefined : tag.value)}
-                className="accent-kb-teal rounded"
-              />
-              <span className="text-kb-charcoal">{tag.value}</span>
-            </label>
-          ))}
-        </FilterGroup>
-      )}
-
-      {/* Weave / Craft */}
-      {weaveTags.length > 0 && (
-        <FilterGroup title="Weave / Craft">
-          {weaveTags.map(tag => (
-            <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={currentFilters.weave === tag.value}
-                onChange={() => updateFilter('weave', currentFilters.weave === tag.value ? undefined : tag.value)}
-                className="accent-kb-teal rounded"
-              />
-              <span className="text-kb-charcoal">{tag.value}</span>
-            </label>
-          ))}
-        </FilterGroup>
-      )}
-
-      {/* Occasion */}
-      {occasionTags.length > 0 && (
-        <FilterGroup title="Occasion">
-          {occasionTags.map(tag => (
-            <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={currentFilters.occasion === tag.value}
-                onChange={() => updateFilter('occasion', currentFilters.occasion === tag.value ? undefined : tag.value)}
-                className="accent-kb-teal rounded"
-              />
-              <span className="text-kb-charcoal">{tag.value}</span>
-            </label>
-          ))}
-        </FilterGroup>
-      )}
-
-      {/* Color */}
-      {colorTags.length > 0 && (
-        <FilterGroup title="Color">
-          <div className="flex flex-wrap gap-2">
-            {colorTags.map(tag => (
-              <button
-                key={tag.id}
-                onClick={() => updateFilter('color', currentFilters.color === tag.value ? undefined : tag.value)}
-                className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border transition-colors ${
-                  currentFilters.color === tag.value
-                    ? 'border-kb-teal bg-kb-teal/10 text-kb-teal font-medium'
-                    : 'border-gray-200 hover:border-kb-teal'
-                }`}
-                title={tag.value}
-              >
-                <span
-                  className="w-3.5 h-3.5 rounded-full border border-black/10 flex-shrink-0"
-                  style={{ backgroundColor: tag.hex_color ?? '#9CA3AF' }}
-                />
-                {tag.value}
-              </button>
-            ))}
-          </div>
-        </FilterGroup>
-      )}
+      {/* Dynamic tag group filters */}
+      {filterGroups.map(([groupName, groupData]) => {
+        const isColorGroup = groupName === 'color';
+        return (
+          <FilterGroup key={groupName} title={groupData.label}>
+            {isColorGroup ? (
+              <div className="flex flex-wrap gap-2">
+                {groupData.tags.map(tag => (
+                  <button
+                    key={tag.id}
+                    onClick={() => updateFilter(groupName, currentFilters[groupName] === tag.value ? undefined : tag.value)}
+                    className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border transition-colors ${
+                      currentFilters[groupName] === tag.value
+                        ? 'border-kb-teal bg-kb-teal/10 text-kb-teal font-medium'
+                        : 'border-gray-200 hover:border-kb-teal'
+                    }`}
+                    title={tag.value}
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-full border border-black/10 flex-shrink-0"
+                      style={{ backgroundColor: tag.hex_color ?? '#9CA3AF' }}
+                    />
+                    {tag.value}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              groupData.tags.map(tag => (
+                <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={currentFilters[groupName] === tag.value}
+                    onChange={() => updateFilter(groupName, currentFilters[groupName] === tag.value ? undefined : tag.value)}
+                    className="accent-kb-teal rounded"
+                  />
+                  <span className="text-kb-charcoal">{tag.value}</span>
+                </label>
+              ))
+            )}
+          </FilterGroup>
+        );
+      })}
 
       {/* Price range */}
       <FilterGroup title="Price Range">
@@ -329,10 +302,14 @@ export default function ShopClient({
   const chips: Array<{ label: string; key: string }> = [
     currentFilters.q         ? { label: `Search: ${currentFilters.q}`, key: 'q' }                    : null,
     !lockedCategory && currentFilters.category ? { label: `Category: ${currentFilters.category}`, key: 'category' } : null,
-    currentFilters.fabric    ? { label: `Fabric: ${currentFilters.fabric}`, key: 'fabric' }           : null,
-    currentFilters.weave     ? { label: `Weave: ${currentFilters.weave}`, key: 'weave' }              : null,
-    currentFilters.occasion  ? { label: `Occasion: ${currentFilters.occasion}`, key: 'occasion' }     : null,
-    currentFilters.color     ? { label: `Color: ${currentFilters.color}`, key: 'color' }              : null,
+    currentFilters.collection ? { label: `Collection: ${lockedCollection?.name ?? currentFilters.collection}`, key: 'collection' } : null,
+    // Dynamic tag group chips
+    ...Object.entries(tags)
+      .filter(([groupName]) => currentFilters[groupName])
+      .map(([groupName, groupData]) => ({
+        label: `${groupData.label}: ${currentFilters[groupName]}`,
+        key: groupName,
+      })),
     currentFilters.price_min ? { label: `Min: ₹${currentFilters.price_min}`, key: 'price_min' }       : null,
     currentFilters.price_max ? { label: `Max: ₹${currentFilters.price_max}`, key: 'price_max' }       : null,
     currentFilters.in_stock === 'true' ? { label: 'In Stock Only', key: 'in_stock' }                  : null,
@@ -340,6 +317,31 @@ export default function ShopClient({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      {/* Collection banner */}
+      {lockedCollection && (
+        <div className="mb-6 pb-5 border-b border-gray-100">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="font-display text-3xl font-semibold" style={{ color: 'var(--kb-charcoal)' }}>
+                {lockedCollection.name}
+              </h1>
+              {lockedCollection.description && (
+                <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>
+                  {lockedCollection.description}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => updateFilter('collection', undefined)}
+              className="flex-shrink-0 text-xs underline mt-1"
+              style={{ color: 'var(--kb-muted)' }}
+            >
+              View all products
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Mobile filter button */}
       <div className="flex items-center justify-between mb-4 md:hidden">
         <button

@@ -15,7 +15,7 @@ interface Collection {
   slug: string;
   description: string | null;
   is_active: boolean;
-  show_on_homepage: boolean;
+  is_homepage: boolean;
   homepage_order: number;
   product_count: number;
 }
@@ -27,7 +27,7 @@ const collectionSchema = z.object({
   slug:             z.string().min(1).max(120).regex(/^[a-z0-9-]+$/, 'Lowercase letters, numbers and hyphens only').optional().or(z.literal('')),
   description:      z.string().max(1000).optional().or(z.literal('')),
   is_active:        z.boolean().optional(),
-  show_on_homepage: z.boolean().optional(),
+  is_homepage: z.boolean().optional(),
   homepage_order:   z.coerce.number().int().min(0).optional(),
 });
 
@@ -56,7 +56,7 @@ function CollectionSlideOver({ collection, onClose }: SlideOverProps) {
       slug:             collection?.slug             ?? '',
       description:      collection?.description      ?? '',
       is_active:        collection?.is_active        ?? true,
-      show_on_homepage: collection?.show_on_homepage ?? false,
+      is_homepage: collection?.is_homepage ?? false,
       homepage_order:   collection?.homepage_order   ?? 0,
     },
   });
@@ -96,7 +96,7 @@ function CollectionSlideOver({ collection, onClose }: SlideOverProps) {
     saveMutation.mutate({ ...data, slug: data.slug || undefined });
   };
 
-  const showHomepage = watch('show_on_homepage');
+  const showHomepage = watch('is_homepage');
 
   return (
     <>
@@ -172,12 +172,12 @@ function CollectionSlideOver({ collection, onClose }: SlideOverProps) {
                 <p className="text-xs text-kb-muted">Feature this collection on the homepage</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" {...register('show_on_homepage')} className="sr-only peer" />
+                <input type="checkbox" {...register('is_homepage')} className="sr-only peer" />
                 <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-kb-teal" />
               </label>
             </div>
 
-            {/* Homepage order — only visible when show_on_homepage is on */}
+            {/* Homepage order — only visible when is_homepage is on */}
             {showHomepage && (
               <div>
                 <label className="block text-sm font-medium text-kb-charcoal mb-1">
@@ -325,10 +325,10 @@ export default function CollectionsPage() {
   });
 
   const toggleHomepageMutation = useMutation({
-    mutationFn: ({ id, show_on_homepage }: { id: string; show_on_homepage: boolean }) =>
-      api.put(`/admin/collections/${id}`, { show_on_homepage }),
+    mutationFn: ({ id, is_homepage }: { id: string; is_homepage: boolean }) =>
+      api.put(`/admin/collections/${id}`, { is_homepage }),
     onSuccess: (_d, vars) => {
-      toast.success(vars.show_on_homepage ? 'Added to homepage' : 'Removed from homepage');
+      toast.success(vars.is_homepage ? 'Added to homepage' : 'Removed from homepage');
       queryClient.invalidateQueries({ queryKey: ['admin-collections'] });
     },
     onError: () => toast.error('Failed to update'),
@@ -336,7 +336,7 @@ export default function CollectionsPage() {
 
   const collections = data ?? [];
   const homepageCollections = [...collections]
-    .filter(c => c.show_on_homepage)
+    .filter(c => c.is_homepage)
     .sort((a, b) => a.homepage_order - b.homepage_order);
 
   const handleReorder = async (ordered: Collection[]) => {
@@ -450,14 +450,14 @@ export default function CollectionsPage() {
                     </td>
                     <td className="py-3 px-4 text-center">
                       <button
-                        onClick={() => toggleHomepageMutation.mutate({ id: col.id, show_on_homepage: !col.show_on_homepage })}
+                        onClick={() => toggleHomepageMutation.mutate({ id: col.id, is_homepage: !col.is_homepage })}
                         disabled={toggleHomepageMutation.isPending}
                         className={`relative inline-flex items-center h-5 w-9 rounded-full transition-colors disabled:opacity-50 ${
-                          col.show_on_homepage ? 'bg-kb-gold' : 'bg-gray-200'
+                          col.is_homepage ? 'bg-kb-gold' : 'bg-gray-200'
                         }`}
                       >
                         <span className={`inline-block w-3.5 h-3.5 bg-white rounded-full shadow transition-transform ${
-                          col.show_on_homepage ? 'translate-x-4' : 'translate-x-0.5'
+                          col.is_homepage ? 'translate-x-4' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </td>

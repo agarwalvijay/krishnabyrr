@@ -6,6 +6,11 @@ import ProductList from './pages/Products/ProductList';
 import ProductForm from './pages/Products/ProductForm';
 import CategoriesPage from './pages/Categories';
 import CollectionsPage from './pages/Collections';
+import TagsPage from './pages/Tags';
+import OrdersPage from './pages/Orders';
+import CouponsPage from './pages/Coupons';
+import SettingsPage from './pages/Settings';
+import HomepagePage from './pages/Homepage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -46,12 +51,14 @@ export default function App() {
       <Route path="/products/new" element={<ProtectedRoute><ProductForm /></ProtectedRoute>} />
       <Route path="/products/:id/edit" element={<ProtectedRoute><ProductForm /></ProtectedRoute>} />
       <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
+      <Route path="/tags" element={<ProtectedRoute><TagsPage /></ProtectedRoute>} />
       <Route path="/collections" element={<ProtectedRoute><CollectionsPage /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><ComingSoon title="Dashboard" /></ProtectedRoute>} />
-      <Route path="/orders" element={<ProtectedRoute><ComingSoon title="Orders" /></ProtectedRoute>} />
-      <Route path="/coupons" element={<ProtectedRoute><ComingSoon title="Coupons" /></ProtectedRoute>} />
+      <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
+      <Route path="/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
       <Route path="/customers" element={<ProtectedRoute><ComingSoon title="Customers" /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><ComingSoon title="Settings" /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+      <Route path="/homepage" element={<ProtectedRoute><HomepagePage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/products" replace />} />
     </Routes>
   );

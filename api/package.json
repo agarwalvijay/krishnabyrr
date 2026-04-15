@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "db:migrate": "ts-node src/db/migrate.ts",
     "db:seed": "ts-node src/db/seed.ts",
-    "test": "jest --runInBand --forceExit"
+    "test": "jest --runInBand --forceExit --testPathIgnorePatterns=src/db/migrations.test.ts",
+    "test:migrations": "jest --runInBand --forceExit src/db/migrations.test.ts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

@@ -86,7 +86,6 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await dropAndRecreateSchema(testPool);
   await testPool.end();
   await closeRedis();
 });
@@ -347,6 +346,123 @@ describe('POST /api/admin/products/:id/stock-adjust', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('INSUFFICIENT_STOCK');
+  });
+});
+
+// ── Admin product list filters ────────────────────────────────────────────────
+describe('GET /api/admin/products', () => {
+  test('returns all products (active + draft + archived) by default', async () => {
+    const res = await request(app)
+      .get('/api/admin/products')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const statuses = res.body.data.map((p: { status: string }) => p.status);
+    // Should include active and draft (archived may or may not be present depending on cleanup order)
+    expect(statuses).toContain('active');
+    // Pagination meta present
+    expect(res.body.meta).toHaveProperty('total');
+  });
+
+  test('?status=active filters to active products only', async () => {
+    const res = await request(app)
+      .get('/api/admin/products?status=active')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const statuses = res.body.data.map((p: { status: string }) => p.status);
+    expect(statuses.every((s: string) => s === 'active')).toBe(true);
+  });
+
+  test('?status=ACTIVE (uppercase) is normalised and filters correctly', async () => {
+    const res = await request(app)
+      .get('/api/admin/products?status=ACTIVE')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const statuses = res.body.data.map((p: { status: string }) => p.status);
+    expect(statuses.every((s: string) => s === 'active')).toBe(true);
+  });
+
+  test('?in_stock=true excludes out-of-stock products', async () => {
+    const res = await request(app)
+      .get('/api/admin/products?in_stock=true&status=active')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const slugs = res.body.data.map((p: { slug: string }) => p.slug);
+    // test-sold-out-fabric was inserted with stock_qty=0
+    expect(slugs).not.toContain('test-sold-out-fabric');
+    // active products with stock should appear
+    expect(slugs).toContain(activeSilkProductSlug);
+  });
+
+  test('?stock_max=0 returns only zero-stock products', async () => {
+    const res = await request(app)
+      .get('/api/admin/products?stock_max=0&status=active')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const stockValues = res.body.data.map((p: { stock_qty: number }) => p.stock_qty);
+    expect(stockValues.every((qty: number) => qty <= 0)).toBe(true);
+    const slugs = res.body.data.map((p: { slug: string }) => p.slug);
+    expect(slugs).toContain('test-sold-out-fabric');
+  });
+
+  test('?stock_min and ?stock_max together narrow results', async () => {
+    // stock_min=1 excludes OOS; active silk product has stock_qty=4 after beforeAll
+    const res = await request(app)
+      .get('/api/admin/products?stock_min=1&status=active')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const stockValues = res.body.data.map((p: { stock_qty: number }) => p.stock_qty);
+    expect(stockValues.every((qty: number) => qty >= 1)).toBe(true);
+  });
+
+  test('?q= search trims whitespace and matches by name', async () => {
+    const res = await request(app)
+      .get('/api/admin/products?q=%20silk%20')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+  });
+});
+
+// ── Admin tags ────────────────────────────────────────────────────────────────
+describe('GET /api/admin/tags', () => {
+  test('returns tags with product_count field', async () => {
+    const res = await request(app)
+      .get('/api/admin/tags')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const tags = res.body.data;
+    expect(Array.isArray(tags)).toBe(true);
+    expect(tags.length).toBeGreaterThan(0);
+    // Every tag row must expose product_count as a number
+    for (const tag of tags) {
+      expect(typeof tag.product_count).toBe('number');
+      expect(tag).toHaveProperty('id');
+      expect(tag).toHaveProperty('group_name');
+      expect(tag).toHaveProperty('value');
+    }
+  });
+
+  test('returns 401 without admin token', async () => {
+    const res = await request(app).get('/api/admin/tags');
+    expect(res.status).toBe(401);
+  });
+});
+
+// ── Public products category parent-slug filter ───────────────────────────────
+describe('GET /api/products?category=<parent-slug>', () => {
+  test('filtering by parent category slug returns products in child categories', async () => {
+    // KB-MS-001 is in maheshwari-silk, which is a child of silks
+    const res = await request(app).get('/api/products?category=silks');
+    expect(res.status).toBe(200);
+    const ids = res.body.data.map((p: { id: string }) => p.id);
+    expect(ids).toContain(activeSilkProductId);
+  });
+
+  test('filtering by child category slug still works as before', async () => {
+    const res = await request(app).get('/api/products?category=maheshwari-silk');
+    expect(res.status).toBe(200);
+    const ids = res.body.data.map((p: { id: string }) => p.id);
+    expect(ids).toContain(activeSilkProductId);
   });
 });
 

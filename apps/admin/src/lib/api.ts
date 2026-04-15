@@ -1,6 +1,8 @@
 import axios from 'axios';
 
 const TOKEN_KEY = 'kb_admin_token';
+const DEFAULT_API_ORIGIN = 'http://localhost:3001';
+const API_ORIGIN = import.meta.env.VITE_API_ORIGIN ?? DEFAULT_API_ORIGIN;
 
 export const api = axios.create({
   baseURL: '/api',
@@ -41,4 +43,13 @@ export function setToken(token: string): void {
 }
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+}
+
+export function imageUrl(gcsPath: string | null | undefined): string {
+  if (!gcsPath) return '';
+  if (gcsPath.startsWith('http://') || gcsPath.startsWith('https://')) return gcsPath;
+  if (gcsPath.startsWith('/uploads/')) return `${API_ORIGIN}${gcsPath}`;
+  if (gcsPath.startsWith('uploads/')) return `${API_ORIGIN}/${gcsPath}`;
+  const filename = gcsPath.split('/').pop() ?? '';
+  return `${API_ORIGIN}/uploads/${filename}`;
 }

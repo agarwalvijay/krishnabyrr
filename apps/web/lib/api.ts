@@ -143,15 +143,18 @@ export interface Customer {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+const DEFAULT_API_ORIGIN = 'http://localhost:3001';
 const API_ORIGIN =
-  typeof window === 'undefined'
-    ? (process.env.API_ORIGIN ?? 'http://localhost:3001')
-    : '';
+  process.env.NEXT_PUBLIC_API_ORIGIN ??
+  process.env.API_ORIGIN ??
+  DEFAULT_API_ORIGIN;
 
 /** Convert a DB gcs_path to a displayable URL. */
 export function imageUrl(gcsPath: string | null | undefined): string {
   if (!gcsPath) return '';
-  if (gcsPath.startsWith('http')) return gcsPath;
+  if (gcsPath.startsWith('http://') || gcsPath.startsWith('https://')) return gcsPath;
+  if (gcsPath.startsWith('/uploads/')) return `${API_ORIGIN}${gcsPath}`;
+  if (gcsPath.startsWith('uploads/')) return `${API_ORIGIN}/${gcsPath}`;
   // Local dev path like /tmp/kb_uploads/uuid.jpg
   const filename = gcsPath.split('/').pop() ?? '';
   return `${API_ORIGIN}/uploads/${filename}`;

@@ -11,17 +11,20 @@ interface CategoryDetail extends CategoryItem {
   product_count: number;
 }
 
+interface TagGroupData {
+  label: string;
+  is_filter: boolean;
+  tags: TagItem[];
+}
+
 interface Params { slug: string }
 interface SearchParams {
-  fabric?: string;
-  weave?: string;
-  occasion?: string;
-  color?: string;
   price_min?: string;
   price_max?: string;
   in_stock?: string;
   sort?: string;
   page?: string;
+  [key: string]: string | undefined;
 }
 
 export async function generateStaticParams(): Promise<Params[]> {
@@ -50,17 +53,18 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   }
 }
 
-function buildQuery(slug: string, sp: SearchParams): string {
+const RESERVED_PARAMS = new Set(['price_min', 'price_max', 'in_stock', 'sort', 'page', 'q', 'category', 'collection']);
+
+function buildQuery(slug: string, sp: SearchParams, tagGroupNames: string[]): string {
   const params = new URLSearchParams();
   params.set('category', slug);
-  if (sp.fabric)    params.set('fabric', sp.fabric);
-  if (sp.weave)     params.set('weave', sp.weave);
-  if (sp.occasion)  params.set('occasion', sp.occasion);
-  if (sp.color)     params.set('color', sp.color);
   if (sp.price_min) params.set('price_min', sp.price_min);
   if (sp.price_max) params.set('price_max', sp.price_max);
   if (sp.in_stock)  params.set('in_stock', sp.in_stock);
   if (sp.sort)      params.set('sort', sp.sort);
+  for (const group of tagGroupNames) {
+    if (sp[group]) params.set(group, sp[group]!);
+  }
   params.set('page',  sp.page ?? '1');
   params.set('limit', '24');
   return params.toString();
@@ -73,13 +77,16 @@ export default async function CategoryPage({
   params: Params;
   searchParams: SearchParams;
 }) {
-  const [category, productsResult, tagsResult] = await Promise.all([
+  // Fetch tag groups first to know which URL params to forward
+  const tagsResult = await serverFetch<Record<string, TagGroupData>>('/api/tags', { revalidate: 3600 }).catch(() => ({} as Record<string, TagGroupData>));
+  const tagGroupNames = Object.keys(tagsResult ?? {});
+
+  const [category, productsResult] = await Promise.all([
     serverFetch<CategoryDetail>(`/api/categories/${params.slug}`, { revalidate: 3600 }).catch(() => null),
     serverFetchList<ProductListItem>(
-      `/api/products?${buildQuery(params.slug, searchParams)}`,
+      `/api/products?${buildQuery(params.slug, searchParams, tagGroupNames)}`,
       { noStore: true }
     ),
-    serverFetch<Record<string, TagItem[]>>('/api/tags', { revalidate: 3600 }).catch(() => ({})),
   ]);
 
   if (!category) notFound();
@@ -117,7 +124,7 @@ export default async function CategoryPage({
           initialProducts={productsResult.data}
           initialMeta={productsResult.meta}
           categories={[]}
-          tags={tagsResult as Record<string, TagItem[]>}
+          tags={tagsResult}
           currentFilters={{ ...searchParams, category: params.slug }}
           lockedCategory={{ name: category.name, slug: params.slug }}
         />

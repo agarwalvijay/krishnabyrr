@@ -10,6 +10,7 @@ import productsRouter, {
   searchRouter,
 } from './routes/products';
 import settingsRouter from './routes/settings';
+import homepageRouter from './routes/homepage';
 import adminRouter from './routes/admin/index';
 import cartRouter from './routes/cart';
 import authRouter from './routes/auth';
@@ -29,8 +30,8 @@ app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Serve locally-uploaded product images (dev only — use GCS in production)
-app.use('/uploads', express.static('/tmp/kb_uploads'));
+// Serve locally-uploaded product images (dev only — use object storage in production)
+app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
 // ── Public routes ─────────────────────────────────────────────────────────────
 app.use('/api/health', healthRouter);
@@ -40,6 +41,7 @@ app.use('/api/collections', collectionsRouter);
 app.use('/api/tags', tagsRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/homepage', homepageRouter);
 
 // ── Customer auth routes ──────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);

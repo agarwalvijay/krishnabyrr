@@ -4,14 +4,26 @@ import { requireAuth } from '../../middleware/auth';
 
 const router = Router();
 
-const VALID_GROUPS = ['fabric', 'weave', 'occasion', 'color'] as const;
-type TagGroup = typeof VALID_GROUPS[number];
+/** Returns the set of valid group names from tag_groups table */
+async function getValidGroups(): Promise<Set<string>> {
+  const { rows } = await pool.query<{ name: string }>('SELECT name FROM tag_groups');
+  return new Set(rows.map((r) => r.name));
+}
 
 // GET /api/admin/tags
 router.get('/', requireAuth, async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
-      'SELECT * FROM tags ORDER BY group_name, value'
+      `SELECT
+         t.id,
+         t.group_name,
+         t.value,
+         t.hex_color,
+         COUNT(DISTINCT pt.product_id)::int AS product_count
+       FROM tags t
+       LEFT JOIN product_tags pt ON pt.tag_id = t.id
+       GROUP BY t.id
+       ORDER BY t.group_name, t.value`
     );
     res.json({ data: rows });
   } catch (err) { next(err); }
@@ -21,10 +33,11 @@ router.get('/', requireAuth, async (_req, res, next) => {
 router.post('/', requireAuth, async (req, res, next) => {
   try {
     const { group_name, value, hex_color } = req.body as Record<string, unknown>;
+    const validGroups = await getValidGroups();
 
-    if (!group_name || !VALID_GROUPS.includes(group_name as TagGroup)) {
+    if (!group_name || !validGroups.has(group_name as string)) {
       res.status(422).json({
-        error: { message: `group_name must be one of: ${VALID_GROUPS.join(', ')}`, code: 'VALIDATION_ERROR' },
+        error: { message: `group_name must be one of: ${[...validGroups].join(', ')}`, code: 'VALIDATION_ERROR' },
       });
       return;
     }
@@ -60,7 +73,8 @@ router.put('/:id', requireAuth, async (req, res, next) => {
     let i = 1;
 
     if (group_name !== undefined) {
-      if (!VALID_GROUPS.includes(group_name as TagGroup)) {
+      const validGroups = await getValidGroups();
+      if (!validGroups.has(group_name as string)) {
         res.status(422).json({ error: { message: 'Invalid group_name', code: 'VALIDATION_ERROR' } });
         return;
       }

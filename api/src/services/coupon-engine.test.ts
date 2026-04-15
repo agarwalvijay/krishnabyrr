@@ -252,6 +252,73 @@ describe('Rule 8 — CUSTOMER_NOT_ELIGIBLE', () => {
   });
 });
 
+// ── Rule 9: FIRST_ORDER_ONLY ──────────────────────────────────────────────────
+
+describe('Rule 9 — FIRST_ORDER_ONLY', () => {
+  it('blocks a logged-in customer who already has an order', async () => {
+    await insertCoupon({ customer_eligibility: 'FIRST_ORDER' });
+
+    // Insert a prior order directly so the customer has order history
+    const customerId = 'c0000000-0000-0000-0000-000000000001';
+    await db.query(
+      `INSERT INTO customers (id, email, name, password_hash)
+       VALUES ($1, 'returning@test.com', 'Returning', 'x')
+       ON CONFLICT (id) DO NOTHING`,
+      [customerId],
+    );
+    await db.query(
+      `INSERT INTO orders (customer_id, order_number, line_items, subtotal, discount_amount,
+                           shipping_amount, gst_amount, total, payment_status,
+                           fulfillment_status, shipping_address, policy_snapshot)
+       VALUES ($1, 'KB-PREV-001', '[]', 1000, 0, 80, 50, 1130, 'paid',
+               'unfulfilled', '{}', '{}')`,
+      [customerId],
+    );
+
+    const result = await validateCoupon(await baseParams({ customerId }));
+    expect(result.valid).toBe(false);
+    if (!result.valid) expect(result.rule).toBe('FIRST_ORDER_ONLY_VIOLATED');
+
+    // cleanup
+    await db.query(`DELETE FROM orders WHERE order_number = 'KB-PREV-001'`);
+    await db.query(`DELETE FROM customers WHERE id = $1`, [customerId]);
+  });
+
+  it('allows a logged-in customer with no prior orders', async () => {
+    await insertCoupon({ customer_eligibility: 'FIRST_ORDER' });
+    const customerId = 'd0000000-0000-0000-0000-000000000002';
+    await db.query(
+      `INSERT INTO customers (id, email, name, password_hash)
+       VALUES ($1, 'newcustomer@test.com', 'New', 'x')
+       ON CONFLICT (id) DO NOTHING`,
+      [customerId],
+    );
+
+    const result = await validateCoupon(await baseParams({ customerId }));
+    expect(result.valid).toBe(true);
+
+    await db.query(`DELETE FROM customers WHERE id = $1`, [customerId]);
+  });
+
+  it('blocks a guest email that already placed an order', async () => {
+    await insertCoupon({ customer_eligibility: 'FIRST_ORDER' });
+    const guestEmail = 'repeat-guest@test.com';
+    await db.query(
+      `INSERT INTO orders (order_number, guest_email, line_items, subtotal, discount_amount,
+                           shipping_amount, gst_amount, total, payment_status,
+                           fulfillment_status, shipping_address, policy_snapshot)
+       VALUES ('KB-PREV-002', $1, '[]', 1000, 0, 80, 50, 1130, 'paid', 'unfulfilled', '{}', '{}')`,
+      [guestEmail],
+    );
+
+    const result = await validateCoupon(await baseParams({ customerId: null, guestEmail }));
+    expect(result.valid).toBe(false);
+    if (!result.valid) expect(result.rule).toBe('FIRST_ORDER_ONLY_VIOLATED');
+
+    await db.query(`DELETE FROM orders WHERE order_number = 'KB-PREV-002'`);
+  });
+});
+
 // ── Happy path ─────────────────────────────────────────────────────────────────
 
 describe('Happy path', () => {

@@ -129,10 +129,10 @@ export async function runSeed(pool: Pool): Promise<void> {
       VALUES (
         'WELCOME20',
         '20% off your first order. No expiry. One use per customer.',
-        'percentage',
+        'percent',
         20.00,
         1,
-        'NEW_ONLY',
+        'FIRST_ORDER',
         TRUE,
         TRUE
       )

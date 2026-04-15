@@ -8,7 +8,7 @@ import { useDropzone } from 'react-dropzone';
 import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import StockAdjustModal from '../../components/StockAdjustModal';
-import { api } from '../../lib/api';
+import { api, imageUrl } from '../../lib/api';
 import { formatINR, discountPct } from '../../lib/format';
 
 // ── Zod schema ────────────────────────────────────────────────────────────────
@@ -72,7 +72,12 @@ function MultiCheckList({
     <div className="space-y-1 max-h-48 overflow-y-auto border border-gray-200 rounded-md p-2">
       {items.map((item) => {
         const id = item[valueKey] as string;
-        const label = item[labelKey] as string;
+        const label = (
+          (item[labelKey] as string | undefined) ??
+          (item.value as string | undefined) ??
+          (item.slug as string | undefined) ??
+          id
+        );
         const isChild = indent && item.parent_id;
         return (
           <label key={id} className={`flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer ${isChild ? 'ml-4' : ''}`}>
@@ -118,6 +123,7 @@ function ImageGrid({
   onRefresh: () => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
+  const [failedImageIds, setFailedImageIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
   const deleteMutation = useMutation({
@@ -198,15 +204,34 @@ function ImageGrid({
               onDragStart={() => handleDragStart(img.id)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => handleDrop(img.id)}
-              className={`relative group rounded-lg overflow-hidden border-2 cursor-grab
+              className={`relative group rounded-lg overflow-hidden border-2 cursor-grab aspect-square bg-gray-100
                 ${img.is_primary ? 'border-kb-teal' : 'border-gray-200 hover:border-gray-300'}`}
             >
-              <img
-                src={img.gcs_path}
-                alt={img.alt_text}
-                className="w-full aspect-square object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+              {!failedImageIds.has(img.id) ? (
+                <img
+                  src={imageUrl(img.gcs_path)}
+                  alt={img.alt_text ?? 'Product image'}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={() => {
+                    setFailedImageIds((prev) => {
+                      const next = new Set(prev);
+                      next.add(img.id);
+                      return next;
+                    });
+                  }}
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                  <svg className="w-6 h-6 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1.5"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                </div>
+              )}
               {img.is_primary && (
                 <span className="absolute top-1 left-1 text-xs px-1.5 py-0.5 rounded font-medium text-white"
                   style={{ background: 'var(--kb-teal)' }}>
@@ -666,28 +691,28 @@ export default function ProductForm() {
               {fabricTags.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-kb-charcoal mb-1">Fabric Type</label>
-                  <MultiCheckList items={fabricTags} selected={selTags} onChange={setSelTags} />
+                  <MultiCheckList items={fabricTags} selected={selTags} onChange={setSelTags} labelKey="value" />
                 </div>
               )}
 
               {weaveTags.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-kb-charcoal mb-1">Weave / Craft</label>
-                  <MultiCheckList items={weaveTags} selected={selTags} onChange={setSelTags} />
+                  <MultiCheckList items={weaveTags} selected={selTags} onChange={setSelTags} labelKey="value" />
                 </div>
               )}
 
               {occasionTags.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-kb-charcoal mb-1">Occasion</label>
-                  <MultiCheckList items={occasionTags} selected={selTags} onChange={setSelTags} />
+                  <MultiCheckList items={occasionTags} selected={selTags} onChange={setSelTags} labelKey="value" />
                 </div>
               )}
 
               {colorTags.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-kb-charcoal mb-1">Color</label>
-                  <MultiCheckList items={colorTags} selected={selTags} onChange={setSelTags} />
+                  <MultiCheckList items={colorTags} selected={selTags} onChange={setSelTags} labelKey="value" />
                 </div>
               )}
 
