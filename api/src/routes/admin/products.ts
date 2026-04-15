@@ -41,12 +41,14 @@ router.get('/', requireAuth, async (req, res, next) => {
       status = 'all',
       q,
       category,
+      collection,
       in_stock,
       stock_min,
       stock_max,
       page = '1',
       limit = '24',
       sort = 'newest',
+      ...tagFilters
     } = req.query as Record<string, string>;
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -83,6 +85,28 @@ router.get('/', requireAuth, async (req, res, next) => {
         WHERE pc2.product_id = p.id AND c.slug = $${i}
       )`);
       params.push(category); i++;
+    }
+
+    if (collection) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM collection_products cp2
+        JOIN collections col ON col.id = cp2.collection_id
+        WHERE cp2.product_id = p.id AND col.slug = $${i}
+      )`);
+      params.push(collection); i++;
+    }
+
+    // Tag group filters: any key not in known params is treated as a tag group name
+    const KNOWN_PARAMS = new Set(['status','q','category','collection','in_stock','stock_min','stock_max','page','limit','sort']);
+    for (const [key, val] of Object.entries(tagFilters)) {
+      if (!KNOWN_PARAMS.has(key) && val) {
+        conditions.push(`EXISTS (
+          SELECT 1 FROM product_tags pt2
+          JOIN tags t ON t.id = pt2.tag_id
+          WHERE pt2.product_id = p.id AND t.group_name = $${i} AND t.value = $${i + 1}
+        )`);
+        params.push(key, val); i += 2;
+      }
     }
 
     if (in_stock === 'true') {

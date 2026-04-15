@@ -12,6 +12,13 @@ import { useDebounce } from '../../lib/hooks';
 type StatusFilter = 'all' | 'active' | 'draft' | 'archived';
 type StockFilter  = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock';
 
+interface CollectionItem { id: string; name: string; slug: string }
+interface TagGroupData {
+  label: string;
+  is_filter: boolean;
+  tags: Array<{ id: string; value: string }>;
+}
+
 interface Product {
   id: string;
   name: string;
@@ -91,11 +98,13 @@ export default function ProductList() {
   const queryClient   = useQueryClient();
 
   // Filters
-  const [search, setSearch]       = useState('');
-  const [status, setStatus]       = useState<StatusFilter>('all');
+  const [search, setSearch]           = useState('');
+  const [status, setStatus]           = useState<StatusFilter>('all');
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
-  const [page, setPage]           = useState(1);
-  const debouncedSearch           = useDebounce(search, 400);
+  const [collection, setCollection]   = useState('');
+  const [tagFilters, setTagFilters]   = useState<Record<string, string>>({});
+  const [page, setPage]               = useState(1);
+  const debouncedSearch               = useDebounce(search, 400);
 
   // Selection
   const [selected, setSelected]   = useState<Set<string>>(new Set());
@@ -103,15 +112,33 @@ export default function ProductList() {
   // Stock modal
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
 
-  const hasFilters = debouncedSearch || status !== 'all' || stockFilter !== 'all';
+  // Fetch collections + tag groups for filter dropdowns
+  const { data: collectionsData } = useQuery<{ data: CollectionItem[] }>({
+    queryKey: ['collections-list'],
+    queryFn: () => api.get('/collections').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: tagsData } = useQuery<{ data: Record<string, TagGroupData> }>({
+    queryKey: ['tags-groups'],
+    queryFn: () => api.get('/tags').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const collections = collectionsData?.data ?? [];
+  const tagGroups = tagsData?.data ?? {};
+  const filterGroups = Object.entries(tagGroups).filter(([, g]) => g.is_filter && g.tags.length > 0);
+
+  const hasFilters = debouncedSearch || status !== 'all' || stockFilter !== 'all'
+    || collection || Object.values(tagFilters).some(Boolean);
 
   // Build query params
   const params: Record<string, string> = { page: String(page), limit: '24' };
   if (status !== 'all') params.status = status;
   if (debouncedSearch)  params.q = debouncedSearch;
+  if (collection)       params.collection = collection;
   if (stockFilter === 'in_stock')      params.in_stock = 'true';
   if (stockFilter === 'out_of_stock')  { params.stock_max = '0'; }
   if (stockFilter === 'low_stock')     { params.stock_min = '1'; params.stock_max = '3'; }
+  for (const [k, v] of Object.entries(tagFilters)) { if (v) params[k] = v; }
 
   const { data, isLoading, isFetching, isError, error } = useQuery<ProductsResponse, AxiosError>({
     queryKey: ['admin-products', params],
@@ -151,7 +178,8 @@ export default function ProductList() {
   };
 
   const clearFilters = () => {
-    setSearch(''); setStatus('all'); setStockFilter('all'); setPage(1);
+    setSearch(''); setStatus('all'); setStockFilter('all');
+    setCollection(''); setTagFilters({}); setPage(1);
   };
 
   return (
@@ -167,51 +195,93 @@ export default function ProductList() {
       }
     >
       {/* Filters bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <svg className="absolute left-3 top-2.5 w-4 h-4 text-kb-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search name or SKU…"
-            className="pl-9 pr-3 py-2 border border-gray-200 rounded-md text-sm w-full focus:outline-none focus:ring-2 focus:ring-kb-teal"
-          />
+      <div className="space-y-2 mb-4">
+        {/* Row 1: search + status + stock + spinner */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-kb-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Search name or SKU…"
+              className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-md text-sm w-48 focus:outline-none focus:ring-2 focus:ring-kb-teal"
+            />
+          </div>
+
+          <select
+            value={status}
+            onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(1); }}
+            className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
+          >
+            <option value="all">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="draft">Draft</option>
+            <option value="archived">Archived</option>
+          </select>
+
+          <select
+            value={stockFilter}
+            onChange={(e) => { setStockFilter(e.target.value as StockFilter); setPage(1); }}
+            className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
+          >
+            <option value="all">All Stock</option>
+            <option value="in_stock">In Stock</option>
+            <option value="low_stock">Low Stock</option>
+            <option value="out_of_stock">Out of Stock</option>
+          </select>
+
+          {isFetching && !isLoading && (
+            <div className="w-3.5 h-3.5 border-2 border-kb-teal border-t-transparent rounded-full animate-spin" />
+          )}
+
+          {hasFilters && (
+            <button onClick={clearFilters} className="ml-auto text-xs text-kb-teal hover:underline">
+              Clear all
+            </button>
+          )}
         </div>
 
-        <select
-          value={status}
-          onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(1); }}
-          className="border border-gray-200 rounded-md text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
-        >
-          <option value="all">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="draft">Draft</option>
-          <option value="archived">Archived</option>
-        </select>
+        {/* Row 2: collection + tag group filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Collection */}
+          {collections.length > 0 && (
+            <select
+              value={collection}
+              onChange={(e) => { setCollection(e.target.value); setPage(1); }}
+              className={`border rounded-md text-xs px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal transition-colors ${
+                collection ? 'border-kb-teal text-kb-teal font-medium' : 'border-gray-200 text-kb-muted'
+              }`}
+            >
+              <option value="">Collection</option>
+              {collections.map((c) => (
+                <option key={c.id} value={c.slug}>{c.name}</option>
+              ))}
+            </select>
+          )}
 
-        <select
-          value={stockFilter}
-          onChange={(e) => { setStockFilter(e.target.value as StockFilter); setPage(1); }}
-          className="border border-gray-200 rounded-md text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
-        >
-          <option value="all">All Stock</option>
-          <option value="in_stock">In Stock</option>
-          <option value="low_stock">Low Stock (1–3)</option>
-          <option value="out_of_stock">Out of Stock</option>
-        </select>
-
-        {hasFilters && (
-          <button onClick={clearFilters} className="text-sm text-kb-teal hover:underline">
-            Clear Filters
-          </button>
-        )}
-
-        {isFetching && !isLoading && (
-          <div className="w-4 h-4 border-2 border-kb-teal border-t-transparent rounded-full animate-spin ml-auto" />
-        )}
+          {/* Tag group dropdowns */}
+          {filterGroups.map(([key, group]) => (
+            <select
+              key={key}
+              value={tagFilters[key] ?? ''}
+              onChange={(e) => {
+                setTagFilters((prev) => ({ ...prev, [key]: e.target.value }));
+                setPage(1);
+              }}
+              className={`border rounded-md text-xs px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal transition-colors ${
+                tagFilters[key] ? 'border-kb-teal text-kb-teal font-medium' : 'border-gray-200 text-kb-muted'
+              }`}
+            >
+              <option value="">{group.label}</option>
+              {group.tags.map((t) => (
+                <option key={t.id} value={t.value}>{t.value}</option>
+              ))}
+            </select>
+          ))}
+        </div>
       </div>
 
       {/* Bulk actions bar */}
