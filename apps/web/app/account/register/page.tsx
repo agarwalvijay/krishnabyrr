@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,7 +22,7 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export default function RegisterPage() {
+function RegisterPage() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const { register: registerCustomer } = useCustomerAuth();
@@ -153,4 +153,8 @@ export default function RegisterPage() {
       </div>
     </div>
   );
+}
+
+export default function Page() {
+  return <Suspense><RegisterPage /></Suspense>;
 }

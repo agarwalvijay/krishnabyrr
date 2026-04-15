@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,7 +15,7 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export default function LoginPage() {
+function LoginPage() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const redirect     = searchParams.get('redirect') ?? '/account';
@@ -107,4 +107,8 @@ export default function LoginPage() {
       </div>
     </div>
   );
+}
+
+export default function Page() {
+  return <Suspense><LoginPage /></Suspense>;
 }

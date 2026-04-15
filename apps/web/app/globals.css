@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 :root {
+  --font-inter:      'Inter', system-ui, sans-serif;
+  --font-cormorant:  'Cormorant Garamond', Georgia, serif;
+
   --kb-teal:       #1A6B6B;
   --kb-blue:       #1E3F8B;
   --kb-gold:       #C8971A;
