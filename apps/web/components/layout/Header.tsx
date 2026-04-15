@@ -15,8 +15,8 @@ interface TagGroupData {
 
 export default async function Header() {
   const [collections, tagGroups] = await Promise.all([
-    serverFetch<CollectionRow[]>('/api/collections', { revalidate: 3600 }).catch(() => []),
-    serverFetch<Record<string, TagGroupData>>('/api/tags', { revalidate: 3600 }).catch(() => ({})),
+    serverFetch<CollectionRow[]>('/api/collections', { revalidate: 300 }).catch(() => []),
+    serverFetch<Record<string, TagGroupData>>('/api/tags', { revalidate: 300 }).catch(() => ({})),
   ]);
 
   const navData: HeaderNavData = {
