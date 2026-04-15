@@ -125,7 +125,7 @@ echo "==> [6/6] Running migrations and reloading services..."
 $SSH "$GCP_HOST" "
   set -e
   cd $REMOTE_DIR/api
-  NODE_ENV=production npx ts-node -r dotenv/config src/db/migrate.ts
+  NODE_ENV=production node -r dotenv/config dist/db/migrate.js
   cd $REMOTE_DIR
   pm2 reload deploy/ecosystem.config.js --update-env
   pm2 list

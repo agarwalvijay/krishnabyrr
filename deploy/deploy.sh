@@ -26,7 +26,7 @@ echo "==> Building web..."
 npm run build -w apps/web
 
 echo "==> Running DB migrations..."
-cd "$APP_DIR/api" && NODE_ENV=production npx ts-node src/db/migrate.ts
+cd "$APP_DIR/api" && NODE_ENV=production node -r dotenv/config dist/db/migrate.js
 cd "$APP_DIR"
 
 echo "==> Restarting services..."
