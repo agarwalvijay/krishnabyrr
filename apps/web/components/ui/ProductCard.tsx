@@ -45,7 +45,7 @@ function QuickViewModal({ product, onClose }: QuickViewProps) {
 
           <div className="flex flex-col sm:flex-row flex-1 overflow-hidden">
             {/* Image */}
-            <div className="relative w-full sm:w-56 flex-shrink-0 aspect-square sm:aspect-auto sm:h-auto">
+            <div className="relative w-full sm:w-56 flex-shrink-0 aspect-[3/4]">
               {product.primary_image ? (
                 <Image
                   src={imageUrl(product.primary_image.gcs_path)}
