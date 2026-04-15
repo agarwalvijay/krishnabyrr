@@ -78,6 +78,10 @@ echo "      done."
 echo "==> [3/6] Preparing remote directories..."
 $SSH "$GCP_HOST" "mkdir -p $REMOTE_DIR/api/uploads $REMOTE_DIR/apps/web $REMOTE_DIR/apps/admin $REMOTE_DIR/deploy"
 
+# Copy SQL migrations into dist so compiled migrate.js can find them
+echo "      copying SQL migrations into api/dist/db/migrations..."
+cp -r api/src/db/migrations api/dist/db/migrations
+
 # ── 4. Rsync source + built artifacts ─────────────────────────────────────────
 echo "==> [4/6] Pushing files to GCP..."
 
