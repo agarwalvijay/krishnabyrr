@@ -93,6 +93,230 @@ function ProductThumb({ image, name }: { image: Product['primary_image']; name: 
   );
 }
 
+// ── Bulk Organisation Modal ────────────────────────────────────────────────────
+
+function BulkOrgModal({
+  selectedIds,
+  onClose,
+  onDone,
+}: {
+  selectedIds: string[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const { data: collectionsData } = useQuery<{ data: CollectionItem[] }>({
+    queryKey: ['collections-list'],
+    queryFn: () => api.get('/collections').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: tagsData } = useQuery<{ data: Record<string, TagGroupData> }>({
+    queryKey: ['tags-groups'],
+    queryFn: () => api.get('/tags').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const allCollections = collectionsData?.data ?? [];
+  const tagGroupEntries = Object.entries(tagsData?.data ?? {})
+    .map(([key, g]) => ({ key, label: g.label, tags: g.tags }))
+    .filter((g) => g.tags.length > 0);
+  const allTags = tagGroupEntries.flatMap((g) => g.tags);
+
+  const [selTags, setSelTags]           = useState<string[]>([]);
+  const [selCollections, setSelCollections] = useState<string[]>([]);
+  const [tagMode, setTagMode]           = useState<'add' | 'replace'>('add');
+  const [collMode, setCollMode]         = useState<'add' | 'replace'>('add');
+  const [applying, setApplying]         = useState(false);
+
+  const toggleTag  = (id: string) => setSelTags((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const toggleColl = (id: string) => setSelCollections((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+
+  const handleApply = async () => {
+    if (selTags.length === 0 && selCollections.length === 0) {
+      toast.error('Select at least one tag or collection to apply');
+      return;
+    }
+    setApplying(true);
+    try {
+      await Promise.all(
+        selectedIds.map(async (productId) => {
+          const tasks: Promise<unknown>[] = [];
+
+          if (selTags.length > 0) {
+            if (tagMode === 'replace') {
+              tasks.push(api.put(`/admin/products/${productId}/tags`, { tag_ids: selTags }));
+            } else {
+              // Fetch current tags then merge
+              const cur = await api.get(`/admin/products/${productId}`);
+              const existing: string[] = (cur.data.data.tags ?? []).map((t: { id: string }) => t.id);
+              const merged = [...new Set([...existing, ...selTags])];
+              tasks.push(api.put(`/admin/products/${productId}/tags`, { tag_ids: merged }));
+            }
+          }
+
+          if (selCollections.length > 0) {
+            if (collMode === 'replace') {
+              tasks.push(api.put(`/admin/products/${productId}/collections`, { collection_ids: selCollections }));
+            } else {
+              const cur = await api.get(`/admin/products/${productId}`);
+              const existing: string[] = (cur.data.data.collections ?? []).map((c: { id: string }) => c.id);
+              const merged = [...new Set([...existing, ...selCollections])];
+              tasks.push(api.put(`/admin/products/${productId}/collections`, { collection_ids: merged }));
+            }
+          }
+
+          await Promise.all(tasks);
+        })
+      );
+
+      toast.success(`Updated ${selectedIds.length} product(s)`);
+      queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+      onDone();
+    } catch {
+      toast.error('Some updates failed');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-y-0 right-0 z-50 flex flex-col w-full max-w-lg bg-white shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-kb-charcoal">Bulk Organisation</h2>
+            <p className="text-xs text-kb-muted mt-0.5">Applying to {selectedIds.length} product(s)</p>
+          </div>
+          <button onClick={onClose} className="text-kb-muted hover:text-kb-charcoal">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+          {/* Tags section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-kb-charcoal">Tags</h3>
+              <div className="flex items-center gap-3 text-xs text-kb-muted">
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="tag-mode" value="add" checked={tagMode === 'add'}
+                    onChange={() => setTagMode('add')} className="accent-kb-teal" />
+                  Add to existing
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="tag-mode" value="replace" checked={tagMode === 'replace'}
+                    onChange={() => setTagMode('replace')} className="accent-kb-teal" />
+                  Replace all
+                </label>
+              </div>
+            </div>
+            {tagGroupEntries.length === 0 ? (
+              <p className="text-sm text-kb-muted">No tag groups configured.</p>
+            ) : (
+              <div className="space-y-3">
+                {tagGroupEntries.map((group) => (
+                  <div key={group.key}>
+                    <p className="text-xs font-medium text-kb-muted uppercase tracking-wide mb-1">{group.label}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.tags.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => toggleTag(t.id)}
+                          className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                            selTags.includes(t.id)
+                              ? 'bg-kb-teal text-white border-kb-teal'
+                              : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                          }`}
+                        >
+                          {t.value}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Collections section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-kb-charcoal">Collections</h3>
+              <div className="flex items-center gap-3 text-xs text-kb-muted">
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="coll-mode" value="add" checked={collMode === 'add'}
+                    onChange={() => setCollMode('add')} className="accent-kb-teal" />
+                  Add to existing
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="coll-mode" value="replace" checked={collMode === 'replace'}
+                    onChange={() => setCollMode('replace')} className="accent-kb-teal" />
+                  Replace all
+                </label>
+              </div>
+            </div>
+            {allCollections.length === 0 ? (
+              <p className="text-sm text-kb-muted">No collections configured.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {allCollections.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleColl(c.id)}
+                    className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                      selCollections.includes(c.id)
+                        ? 'bg-kb-teal text-white border-kb-teal'
+                        : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                    }`}
+                  >
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {(selTags.length > 0 || selCollections.length > 0) && (
+            <div className="rounded-lg p-3 text-xs text-kb-muted bg-gray-50 border border-gray-100">
+              <strong>Preview:</strong>{' '}
+              {selTags.length > 0 && (
+                <span>
+                  {tagMode === 'add' ? 'Add' : 'Replace with'}{' '}
+                  <strong>{selTags.length}</strong> tag(s)
+                  {allTags.filter(t => selTags.includes(t.id)).map(t => ` "${t.value}"`).join(',')}.{' '}
+                </span>
+              )}
+              {selCollections.length > 0 && (
+                <span>
+                  {collMode === 'add' ? 'Add' : 'Replace with'}{' '}
+                  <strong>{selCollections.length}</strong> collection(s).
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button
+            className="btn-primary"
+            onClick={handleApply}
+            disabled={applying || (selTags.length === 0 && selCollections.length === 0)}
+          >
+            {applying ? `Applying to ${selectedIds.length}…` : `Apply to ${selectedIds.length} product(s)`}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function ProductList() {
   const navigate      = useNavigate();
   const queryClient   = useQueryClient();
@@ -111,6 +335,9 @@ export default function ProductList() {
 
   // Stock modal
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
+
+  // Bulk org modal
+  const [bulkOrgOpen, setBulkOrgOpen] = useState(false);
 
   // Fetch collections + tag groups for filter dropdowns
   const { data: collectionsData } = useQuery<{ data: CollectionItem[] }>({
@@ -302,6 +529,12 @@ export default function ProductList() {
                 {s === 'active' ? 'Activate' : s === 'draft' ? 'Deactivate' : 'Archive'}
               </button>
             ))}
+            <button
+              onClick={() => setBulkOrgOpen(true)}
+              className="px-3 py-1 rounded-md border text-xs font-medium hover:bg-white transition-colors text-kb-teal border-kb-teal/40"
+            >
+              Organise
+            </button>
           </div>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-kb-muted hover:text-kb-charcoal">
             ✕
@@ -447,6 +680,15 @@ export default function ProductList() {
         <StockAdjustModal
           product={adjustingProduct}
           onClose={() => setAdjustingProduct(null)}
+        />
+      )}
+
+      {/* Bulk organisation modal */}
+      {bulkOrgOpen && (
+        <BulkOrgModal
+          selectedIds={[...selected]}
+          onClose={() => setBulkOrgOpen(false)}
+          onDone={() => { setBulkOrgOpen(false); setSelected(new Set()); }}
         />
       )}
     </AdminLayout>

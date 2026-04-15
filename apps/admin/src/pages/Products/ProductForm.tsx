@@ -366,12 +366,14 @@ export default function ProductForm() {
     }
   }
 
-  // Flatten tags by group
-  const fabricTags   = Array.isArray(tagsData?.fabric)   ? tagsData.fabric   : [];
-  const weaveTags    = Array.isArray(tagsData?.weave)     ? tagsData.weave    : [];
-  const occasionTags = Array.isArray(tagsData?.occasion)  ? tagsData.occasion : [];
-  const colorTags    = Array.isArray(tagsData?.color)     ? tagsData.color    : [];
-  const allTagItems  = [...fabricTags, ...weaveTags, ...occasionTags, ...colorTags];
+  // Build dynamic tag groups from API response { groupName: { label, is_filter, tags: [] } }
+  const tagGroupEntries: Array<{ key: string; label: string; tags: Array<{ id: string; value: string }> }> =
+    tagsData && typeof tagsData === 'object'
+      ? Object.entries(tagsData as Record<string, { label: string; tags: Array<{ id: string; value: string }> }>)
+          .map(([key, g]) => ({ key, label: g.label, tags: g.tags ?? [] }))
+          .filter((g) => g.tags.length > 0)
+      : [];
+  const allTagItems = tagGroupEntries.flatMap((g) => g.tags);
 
   // ── Save ─────────────────────────────────────────────────────────────────
   const saveMutation = useMutation({
@@ -688,33 +690,12 @@ export default function ProductForm() {
                 />
               </div>
 
-              {fabricTags.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-kb-charcoal mb-1">Fabric Type</label>
-                  <MultiCheckList items={fabricTags} selected={selTags} onChange={setSelTags} labelKey="value" />
+              {tagGroupEntries.map((group) => (
+                <div key={group.key}>
+                  <label className="block text-sm font-medium text-kb-charcoal mb-1">{group.label}</label>
+                  <MultiCheckList items={group.tags} selected={selTags} onChange={setSelTags} labelKey="value" />
                 </div>
-              )}
-
-              {weaveTags.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-kb-charcoal mb-1">Weave / Craft</label>
-                  <MultiCheckList items={weaveTags} selected={selTags} onChange={setSelTags} labelKey="value" />
-                </div>
-              )}
-
-              {occasionTags.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-kb-charcoal mb-1">Occasion</label>
-                  <MultiCheckList items={occasionTags} selected={selTags} onChange={setSelTags} labelKey="value" />
-                </div>
-              )}
-
-              {colorTags.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-kb-charcoal mb-1">Color</label>
-                  <MultiCheckList items={colorTags} selected={selTags} onChange={setSelTags} labelKey="value" />
-                </div>
-              )}
+              ))}
 
               <div>
                 <label className="block text-sm font-medium text-kb-charcoal mb-1">Collections</label>
