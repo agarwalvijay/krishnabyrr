@@ -7,6 +7,13 @@ interface CollectionRow {
   slug: string;
 }
 
+interface CategoryRow {
+  id: string;
+  name: string;
+  slug: string;
+  children?: Array<{ id: string; name: string; slug: string }>;
+}
+
 interface TagGroupData {
   label: string;
   is_filter: boolean;
@@ -15,14 +22,16 @@ interface TagGroupData {
 }
 
 export default async function Header() {
-  const [collections, tagGroups] = await Promise.all([
+  const [collections, tagGroups, categories] = await Promise.all([
     serverFetch<CollectionRow[]>('/api/collections', { revalidate: 300 }).catch(() => []),
     serverFetch<Record<string, TagGroupData>>('/api/tags', { revalidate: 300 }).catch(() => ({})),
+    serverFetch<CategoryRow[]>('/api/categories', { revalidate: 300 }).catch(() => []),
   ]);
 
   const navData: HeaderNavData = {
     collections: Array.isArray(collections) ? collections : [],
     tagGroups:   tagGroups ?? {},
+    categories:  Array.isArray(categories) ? categories : [],
   };
 
   return <HeaderClient {...navData} />;

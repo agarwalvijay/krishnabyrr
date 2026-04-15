@@ -16,6 +16,13 @@ interface CollectionItem {
   slug: string;
 }
 
+interface CategoryItem {
+  id: string;
+  name: string;
+  slug: string;
+  children?: Array<{ id: string; name: string; slug: string }>;
+}
+
 interface TagGroupData {
   label: string;
   is_filter: boolean;
@@ -26,6 +33,7 @@ interface TagGroupData {
 export interface HeaderNavData {
   collections: CollectionItem[];
   tagGroups: Record<string, TagGroupData>;
+  categories: CategoryItem[];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -191,7 +199,7 @@ function MobileAccordion({ label, items, browseHref, isExpanded, onToggle, onNav
 
 // ── Main Header ───────────────────────────────────────────────────────────────
 
-export default function HeaderClient({ collections, tagGroups }: HeaderNavData) {
+export default function HeaderClient({ collections, tagGroups, categories }: HeaderNavData) {
   const [openMenu, setOpenMenu]         = useState<string | null>(null);
   const [mobileOpen, setMobileOpen]     = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
@@ -224,6 +232,15 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
     href:  `/shop?collection=${c.slug}`,
   }));
 
+  // Flatten category tree for flyout (parents + children)
+  const categoryItems: FlyoutItem[] = categories.flatMap((cat) => [
+    { label: cat.name, href: `/shop?category=${cat.slug}` },
+    ...(cat.children ?? []).map((child) => ({
+      label: `↳ ${child.name}`,
+      href:  `/shop?category=${child.slug}`,
+    })),
+  ]);
+
   return (
     <>
       <header className="sticky top-0 z-30 bg-white border-b border-gray-100">
@@ -249,8 +266,8 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
               Shop
             </Link>
 
-            {/* Collections flyout */}
-            {collectionItems.length > 0 && (
+            {/* Collections flyout (plain link if none configured yet) */}
+            {collectionItems.length > 0 ? (
               <FlyoutMenu
                 id="collections"
                 label="Collections"
@@ -258,6 +275,22 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
                 browseHref="/shop"
                 browseLabel="Browse all collections"
                 isOpen={openMenu === 'collections'}
+                onOpen={setOpenMenu}
+                onClose={closeMenu}
+              />
+            ) : (
+              <Link href="/shop" className={linkBase}>Collections</Link>
+            )}
+
+            {/* Categories flyout */}
+            {categoryItems.length > 0 && (
+              <FlyoutMenu
+                id="categories"
+                label="Categories"
+                items={categoryItems.slice(0, MAX_FLYOUT_ITEMS)}
+                browseHref="/shop"
+                browseLabel="Browse all categories"
+                isOpen={openMenu === 'categories'}
                 onOpen={setOpenMenu}
                 onClose={closeMenu}
               />
@@ -399,13 +432,26 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
                 Shop All
               </Link>
 
-              {collectionItems.length > 0 && (
+              {collectionItems.length > 0 ? (
                 <MobileAccordion
                   label="Collections"
                   items={collectionItems}
                   browseHref="/shop"
                   isExpanded={mobileExpanded === 'collections'}
                   onToggle={() => toggleMobileSection('collections')}
+                  onNav={closeMobile}
+                />
+              ) : (
+                <Link href="/shop" className={mobileLinkBase} onClick={closeMobile}>Collections</Link>
+              )}
+
+              {categoryItems.length > 0 && (
+                <MobileAccordion
+                  label="Categories"
+                  items={categoryItems}
+                  browseHref="/shop"
+                  isExpanded={mobileExpanded === 'categories'}
+                  onToggle={() => toggleMobileSection('categories')}
                   onNav={closeMobile}
                 />
               )}
