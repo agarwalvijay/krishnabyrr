@@ -85,8 +85,8 @@ cp -r api/src/db/migrations api/dist/db/migrations
 # ── 4. Rsync source + built artifacts ─────────────────────────────────────────
 echo "==> [4/6] Pushing files to GCP..."
 
-# Common excludes
-EXCLUDES=(
+# Common excludes (paths relative to each rsync source root)
+COMMON_EXCLUDES=(
   --exclude='.git'
   --exclude='.claude'
   --exclude='node_modules'
@@ -94,11 +94,10 @@ EXCLUDES=(
   --exclude='*.test.js'
   --exclude='.env.local'
   --exclude='SESSION_CHECKPOINT.md'
-  --exclude='apps/web/.next/cache'    # skip fetch cache — forces fresh on restart
 )
 
 # Root: package.json, package-lock.json, tsconfig, deploy/
-eval $RSYNC "${EXCLUDES[@]}" \
+eval $RSYNC "${COMMON_EXCLUDES[@]}" \
   --include='package.json' \
   --include='package-lock.json' \
   --include='tsconfig.json' \
@@ -106,16 +105,34 @@ eval $RSYNC "${EXCLUDES[@]}" \
   --exclude='*' \
   ./ "$GCP_HOST:$REMOTE_DIR/"
 
-# API: source (for migrations) + compiled dist/
-eval $RSYNC "${EXCLUDES[@]}" \
+# API: compiled dist/ (includes migrations) — no source needed on server
+eval $RSYNC "${COMMON_EXCLUDES[@]}" \
+  api/dist/ "$GCP_HOST:$REMOTE_DIR/api/dist/"
+
+# Also sync api package.json and .env for dotenv
+eval $RSYNC "${COMMON_EXCLUDES[@]}" \
+  --include='package.json' \
+  --include='.env' \
+  --exclude='*' \
   api/ "$GCP_HOST:$REMOTE_DIR/api/"
 
-# Web: source + .next build output
-eval $RSYNC "${EXCLUDES[@]}" \
+# Web: .next build output only — exclude fetch cache (has localhost data baked in)
+# and pre-rendered page HTML/RSC (will be regenerated fresh from production DB on first request)
+eval $RSYNC "${COMMON_EXCLUDES[@]}" \
+  --exclude='.next/cache' \
+  --exclude='.next/server/app/*.html' \
+  --exclude='.next/server/app/*.rsc' \
+  --exclude='.next/server/app/**/*.html' \
+  --exclude='.next/server/app/**/*.rsc' \
+  --include='package.json' \
+  --include='next.config.*' \
+  --include='public/***' \
+  --include='.next/***' \
+  --exclude='*' \
   apps/web/ "$GCP_HOST:$REMOTE_DIR/apps/web/"
 
 # Admin: compiled dist/ only (static files served by nginx)
-eval $RSYNC "${EXCLUDES[@]}" \
+eval $RSYNC "${COMMON_EXCLUDES[@]}" \
   apps/admin/dist/ "$GCP_HOST:$REMOTE_DIR/apps/admin/dist/"
 
 echo "      files pushed."
