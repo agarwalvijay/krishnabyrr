@@ -441,7 +441,7 @@ export default function ProductList() {
           <select
             value={status}
             onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(1); }}
-            className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
+            className="select-inline border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
           >
             <option value="all">All Statuses</option>
             <option value="active">Active</option>
@@ -452,7 +452,7 @@ export default function ProductList() {
           <select
             value={stockFilter}
             onChange={(e) => { setStockFilter(e.target.value as StockFilter); setPage(1); }}
-            className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
+            className="select-inline border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
           >
             <option value="all">All Stock</option>
             <option value="in_stock">In Stock</option>
@@ -478,7 +478,7 @@ export default function ProductList() {
             <select
               value={collection}
               onChange={(e) => { setCollection(e.target.value); setPage(1); }}
-              className={`border rounded-md text-xs px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal transition-colors ${
+              className={`select-inline border rounded-md text-xs px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal transition-colors ${
                 collection ? 'border-kb-teal text-kb-teal font-medium' : 'border-gray-200 text-kb-muted'
               }`}
             >
@@ -498,7 +498,7 @@ export default function ProductList() {
                 setTagFilters((prev) => ({ ...prev, [key]: e.target.value }));
                 setPage(1);
               }}
-              className={`border rounded-md text-xs px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal transition-colors ${
+              className={`select-inline border rounded-md text-xs px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal transition-colors ${
                 tagFilters[key] ? 'border-kb-teal text-kb-teal font-medium' : 'border-gray-200 text-kb-muted'
               }`}
             >

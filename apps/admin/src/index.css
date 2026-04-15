@@ -49,6 +49,11 @@ select {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+/* Inline selects (filters, compact dropdowns) — override w-full */
+select.select-inline {
+  @apply w-auto;
+}
+
 input[type="text"]:disabled,
 input[type="email"]:disabled,
 textarea:disabled,
