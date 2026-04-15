@@ -308,7 +308,7 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
               name="q"
               type="text"
               placeholder="Search…"
-              className="flex-1 min-w-0 bg-transparent text-sm text-kb-charcoal placeholder-gray-300 outline-none"
+              className="flex-1 min-w-0 bg-transparent text-sm text-kb-charcoal placeholder-gray-300 outline-none focus-visible:outline-none"
             />
           </form>
 
@@ -388,7 +388,7 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
                   name="q"
                   type="text"
                   placeholder="Search products…"
-                  className="flex-1 bg-transparent text-sm text-kb-charcoal placeholder-gray-300 outline-none"
+                  className="flex-1 bg-transparent text-sm text-kb-charcoal placeholder-gray-300 outline-none focus-visible:outline-none"
                 />
               </form>
             </div>
