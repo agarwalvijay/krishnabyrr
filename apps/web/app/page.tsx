@@ -37,7 +37,9 @@ export default async function HomePage() {
 
         // Build products URL based on source type
         let productUrl: string;
-        if (p.source_type === 'tag_filter' && p.tag_group && p.tag_value) {
+        if (p.source_type === 'latest') {
+          productUrl = `/api/products?sort=newest&limit=${limit}`;
+        } else if (p.source_type === 'tag_filter' && p.tag_group && p.tag_value) {
           productUrl = `/api/products?${p.tag_group}=${encodeURIComponent(p.tag_value)}&limit=${limit}&sort=newest`;
         } else {
           const slug = p.collection_slug ?? '';

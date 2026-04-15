@@ -6,7 +6,7 @@ import AsymmetricProductGrid from './AsymmetricProductGrid';
 export interface ProductSectionPayload {
   heading: string;
   // New schema fields
-  source_type?: 'collection' | 'tag_filter';
+  source_type?: 'collection' | 'tag_filter' | 'latest';
   source_id?: string;
   tag_group?: string;
   tag_value?: string;

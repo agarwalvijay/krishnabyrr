@@ -23,7 +23,7 @@ interface BannerPayload {
 
 interface ProductSectionPayload {
   heading: string;
-  source_type?: 'collection' | 'tag_filter';
+  source_type?: 'collection' | 'tag_filter' | 'latest';
   source_id?: string;
   collection_slug?: string;   // kept for backward compat / web app
   tag_group?: string;
@@ -493,7 +493,7 @@ function ProductSectionForm({
     },
   });
 
-  const [sourceType, setSourceType] = useState<'collection' | 'tag_filter'>(
+  const [sourceType, setSourceType] = useState<'collection' | 'tag_filter' | 'latest'>(
     defaultValues.source_type ?? 'collection'
   );
   const [sourceId, setSourceId]   = useState<string>(defaultValues.source_id ?? '');
@@ -505,7 +505,9 @@ function ProductSectionForm({
 
   // Auto-populate view_all_url when source selection changes
   useEffect(() => {
-    if (sourceType === 'collection' && sourceId) {
+    if (sourceType === 'latest') {
+      setValue('view_all_url', '/shop?sort=newest');
+    } else if (sourceType === 'collection' && sourceId) {
       const col = collections.find((c) => c.id === sourceId);
       if (col) setValue('view_all_url', `/shop?collection=${col.slug}`);
     } else if (sourceType === 'tag_filter' && tagGroup && tagValue) {
@@ -527,16 +529,16 @@ function ProductSectionForm({
       : undefined;
 
     const payload: ProductSectionPayload = {
-      heading:        values.heading,
-      source_type:    sourceType,
-      source_id:      sourceType === 'collection' ? sourceId : undefined,
-      collection_slug: selectedCollection?.slug, // kept for web app backward compat
-      tag_group:      sourceType === 'tag_filter' ? tagGroup : undefined,
-      tag_value:      sourceType === 'tag_filter' ? tagValue : undefined,
-      editorial_text: values.editorial_text || undefined,
+      heading:         values.heading,
+      source_type:     sourceType,
+      source_id:       sourceType === 'collection' ? sourceId : undefined,
+      collection_slug: selectedCollection?.slug,
+      tag_group:       sourceType === 'tag_filter' ? tagGroup : undefined,
+      tag_value:       sourceType === 'tag_filter' ? tagValue : undefined,
+      editorial_text:  values.editorial_text || undefined,
       limit,
-      view_all_url:   showViewAll ? (values.view_all_url || undefined) : undefined,
-      show_view_all:  showViewAll,
+      view_all_url:    showViewAll ? (values.view_all_url || undefined) : undefined,
+      show_view_all:   showViewAll,
       layout,
     };
     onSave(payload);
@@ -557,25 +559,25 @@ function ProductSectionForm({
       {/* Source type toggle */}
       <div>
         <label className="block text-xs text-kb-muted mb-2">Products Source</label>
-        <div className="grid grid-cols-2 gap-2">
-          {(['collection', 'tag_filter'] as const).map((st) => (
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { value: 'collection',  label: 'Collection',       desc: 'Curated list'    },
+            { value: 'tag_filter',  label: 'Tag Filter',       desc: 'Dynamic filter'  },
+            { value: 'latest',      label: 'Latest Arrivals',  desc: 'Newest products' },
+          ] as const).map((st) => (
             <button
-              key={st}
+              key={st.value}
               type="button"
-              onClick={() => setSourceType(st)}
+              onClick={() => setSourceType(st.value)}
               className={[
                 'py-3 px-3 rounded-lg border text-left transition-colors',
-                sourceType === st
+                sourceType === st.value
                   ? 'border-kb-teal bg-teal-50 text-kb-teal'
                   : 'border-gray-200 text-kb-muted hover:border-gray-300',
               ].join(' ')}
             >
-              <div className="text-sm font-medium">
-                {st === 'collection' ? 'Collection' : 'Tag Filter'}
-              </div>
-              <div className="text-xs mt-0.5 opacity-70">
-                {st === 'collection' ? 'Curated list' : 'Dynamic filter'}
-              </div>
+              <div className="text-sm font-medium">{st.label}</div>
+              <div className="text-xs mt-0.5 opacity-70">{st.desc}</div>
             </button>
           ))}
         </div>
