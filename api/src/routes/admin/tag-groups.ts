@@ -13,6 +13,7 @@ router.get('/', requireAuth, async (_req, res, next) => {
          tg.label,
          tg.display_order,
          tg.is_filter,
+         tg.is_nav,
          COUNT(DISTINCT t.id)::int AS tag_count
        FROM tag_groups tg
        LEFT JOIN tags t ON t.group_name = tg.name
@@ -26,7 +27,7 @@ router.get('/', requireAuth, async (_req, res, next) => {
 // POST /api/admin/tag-groups
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name, label, display_order = 0, is_filter = true } = req.body as Record<string, unknown>;
+    const { name, label, display_order = 0, is_filter = true, is_nav = false } = req.body as Record<string, unknown>;
 
     if (!name || typeof name !== 'string' || !/^[a-z0-9_]+$/.test(name as string)) {
       res.status(422).json({
@@ -40,10 +41,10 @@ router.post('/', requireAuth, async (req, res, next) => {
     }
 
     const { rows: [group] } = await pool.query(
-      `INSERT INTO tag_groups (name, label, display_order, is_filter)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO tag_groups (name, label, display_order, is_filter, is_nav)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [(name as string).toLowerCase(), (label as string).trim(), Number(display_order), Boolean(is_filter)]
+      [(name as string).toLowerCase(), (label as string).trim(), Number(display_order), Boolean(is_filter), Boolean(is_nav)]
     );
     res.status(201).json({ data: group });
   } catch (err: unknown) {
@@ -59,7 +60,7 @@ router.post('/', requireAuth, async (req, res, next) => {
 router.put('/:name', requireAuth, async (req, res, next) => {
   try {
     const { name } = req.params;
-    const { label, display_order, is_filter } = req.body as Record<string, unknown>;
+    const { label, display_order, is_filter, is_nav } = req.body as Record<string, unknown>;
 
     const setClauses: string[] = [];
     const params: unknown[] = [];
@@ -68,6 +69,7 @@ router.put('/:name', requireAuth, async (req, res, next) => {
     if (label !== undefined) { setClauses.push(`label = $${i}`); params.push((label as string).trim()); i++; }
     if (display_order !== undefined) { setClauses.push(`display_order = $${i}`); params.push(Number(display_order)); i++; }
     if (is_filter !== undefined) { setClauses.push(`is_filter = $${i}`); params.push(Boolean(is_filter)); i++; }
+    if (is_nav !== undefined) { setClauses.push(`is_nav = $${i}`); params.push(Boolean(is_nav)); i++; }
 
     if (!setClauses.length) {
       res.status(400).json({ error: { message: 'No fields to update', code: 'NO_FIELDS' } });

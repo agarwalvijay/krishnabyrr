@@ -19,6 +19,7 @@ interface CollectionItem {
 interface TagGroupData {
   label: string;
   is_filter: boolean;
+  is_nav: boolean;
   tags: Array<{ id: string; value: string; hex_color: string | null }>;
 }
 
@@ -213,9 +214,9 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
   const toggleMobileSection = (key: string) =>
     setMobileExpanded(e => (e === key ? null : key));
 
-  // Build flyout data from tag groups (filter groups only, non-empty)
+  // Build flyout data from tag groups flagged for nav, non-empty
   const filterGroups = Object.entries(tagGroups).filter(
-    ([, g]) => g.is_filter && g.tags.length > 0
+    ([, g]) => g.is_nav && g.tags.length > 0
   );
 
   const collectionItems: FlyoutItem[] = collections.map((c) => ({

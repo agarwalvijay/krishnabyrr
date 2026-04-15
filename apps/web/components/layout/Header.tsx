@@ -10,6 +10,7 @@ interface CollectionRow {
 interface TagGroupData {
   label: string;
   is_filter: boolean;
+  is_nav: boolean;
   tags: Array<{ id: string; value: string; hex_color: string | null }>;
 }
 

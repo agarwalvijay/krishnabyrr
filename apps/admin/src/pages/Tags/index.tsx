@@ -14,6 +14,7 @@ interface TagGroup {
   label: string;
   display_order: number;
   is_filter: boolean;
+  is_nav: boolean;
   tag_count: number;
 }
 
@@ -178,6 +179,7 @@ const groupSchema = z.object({
   label: z.string().min(1, 'Required').max(100),
   display_order: z.coerce.number().int().min(0).default(0),
   is_filter: z.boolean().default(true),
+  is_nav: z.boolean().default(false),
 });
 type GroupFormData = z.infer<typeof groupSchema>;
 
@@ -198,6 +200,7 @@ function GroupSlideOver({
       label: group?.label ?? '',
       display_order: group?.display_order ?? 0,
       is_filter: group?.is_filter ?? true,
+      is_nav: group?.is_nav ?? false,
     },
   });
 
@@ -279,11 +282,19 @@ function GroupSlideOver({
               {errors.display_order && <p className="mt-1 text-xs text-kb-error">{errors.display_order.message}</p>}
             </div>
 
-            <div className="flex items-center gap-3">
-              <input type="checkbox" id="is_filter" {...register('is_filter')} className="rounded" />
-              <label htmlFor="is_filter" className="text-sm font-medium text-kb-charcoal">
-                Show as filter on shop page
-              </label>
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <input type="checkbox" id="is_filter" {...register('is_filter')} className="rounded" />
+                <label htmlFor="is_filter" className="text-sm font-medium text-kb-charcoal">
+                  Show as filter on shop page
+                </label>
+              </div>
+              <div className="flex items-center gap-3">
+                <input type="checkbox" id="is_nav" {...register('is_nav')} className="rounded" />
+                <label htmlFor="is_nav" className="text-sm font-medium text-kb-charcoal">
+                  Show in site navigation menu
+                </label>
+              </div>
             </div>
 
             {!isNew && (
@@ -340,6 +351,9 @@ function GroupSection({
           <code className="text-xs text-kb-muted bg-gray-100 px-1.5 py-0.5 rounded">{group.name}</code>
           {group.is_filter && (
             <span className="text-xs text-kb-teal bg-kb-teal/10 px-1.5 py-0.5 rounded">filter</span>
+          )}
+          {group.is_nav && (
+            <span className="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">nav</span>
           )}
         </div>
         <div className="flex items-center gap-2">

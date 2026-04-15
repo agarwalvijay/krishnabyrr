@@ -462,8 +462,8 @@ tagsRouter.get('/', async (_req, res, next) => {
   try {
     // Fetch groups (ordered) and tags in parallel
     const [groupsResult, tagsResult] = await Promise.all([
-      pool.query<{ name: string; label: string; display_order: number; is_filter: boolean }>(
-        `SELECT name, label, display_order, is_filter
+      pool.query<{ name: string; label: string; display_order: number; is_filter: boolean; is_nav: boolean }>(
+        `SELECT name, label, display_order, is_filter, is_nav
          FROM tag_groups ORDER BY display_order`
       ),
       pool.query<{ id: string; group_name: string; value: string; hex_color: string | null }>(
@@ -471,15 +471,15 @@ tagsRouter.get('/', async (_req, res, next) => {
       ),
     ]);
 
-    // Build enriched shape: { [groupName]: { label, is_filter, tags: [] } }
-    const grouped: Record<string, { label: string; is_filter: boolean; tags: typeof tagsResult.rows }> = {};
+    // Build enriched shape: { [groupName]: { label, is_filter, is_nav, tags: [] } }
+    const grouped: Record<string, { label: string; is_filter: boolean; is_nav: boolean; tags: typeof tagsResult.rows }> = {};
 
     for (const g of groupsResult.rows) {
-      grouped[g.name] = { label: g.label, is_filter: g.is_filter, tags: [] };
+      grouped[g.name] = { label: g.label, is_filter: g.is_filter, is_nav: g.is_nav, tags: [] };
     }
     for (const tag of tagsResult.rows) {
       if (!grouped[tag.group_name]) {
-        grouped[tag.group_name] = { label: tag.group_name, is_filter: true, tags: [] };
+        grouped[tag.group_name] = { label: tag.group_name, is_filter: true, is_nav: false, tags: [] };
       }
       grouped[tag.group_name].tags.push(tag);
     }
