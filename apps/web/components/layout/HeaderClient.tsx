@@ -298,7 +298,7 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
           {/* Desktop inline search */}
           <form
             onSubmit={handleSearchSubmit}
-            className="hidden md:flex items-center gap-2 bg-gray-50 border border-transparent rounded-full px-3 h-9 w-44 focus-within:w-56 focus-within:border-gray-200 focus-within:bg-white transition-all duration-200"
+            className="hidden md:flex items-center gap-2 bg-gray-50 rounded-full px-3 h-9 w-44 focus-within:w-56 focus-within:bg-white focus-within:ring-1 focus-within:ring-kb-teal/30 transition-all duration-200"
           >
             <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -306,7 +306,7 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
             </svg>
             <input
               name="q"
-              type="search"
+              type="text"
               placeholder="Search…"
               className="flex-1 min-w-0 bg-transparent text-sm text-kb-charcoal placeholder-gray-300 outline-none"
             />
@@ -378,7 +378,7 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
             <div className="px-4 pt-3 pb-1">
               <form
                 onSubmit={handleSearchSubmit}
-                className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-full px-3 h-10"
+                className="flex items-center gap-2 bg-gray-50 rounded-full px-3 h-10 focus-within:ring-1 focus-within:ring-kb-teal/30 focus-within:bg-white transition-all duration-150"
               >
                 <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -386,7 +386,7 @@ export default function HeaderClient({ collections, tagGroups }: HeaderNavData) 
                 </svg>
                 <input
                   name="q"
-                  type="search"
+                  type="text"
                   placeholder="Search products…"
                   className="flex-1 bg-transparent text-sm text-kb-charcoal placeholder-gray-300 outline-none"
                 />
