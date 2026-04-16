@@ -9,6 +9,7 @@ import adminOrdersRouter from './orders';
 import adminCouponsRouter from './coupons';
 import adminSettingsRouter from './settings';
 import adminHomepageRouter from './homepage';
+import adminRevalidateRouter from './revalidate';
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use('/orders', adminOrdersRouter);
 router.use('/coupons', adminCouponsRouter);
 router.use('/settings', adminSettingsRouter);
 router.use('/homepage', adminHomepageRouter);
+router.use('/revalidate-cache', adminRevalidateRouter);
 
 export default router;

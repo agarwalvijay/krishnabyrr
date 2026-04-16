@@ -131,12 +131,14 @@ eval $RSYNC "${COMMON_EXCLUDES[@]}" \
   --exclude='.next/server/app/**/*.rsc' \
   --include='package.json' \
   --include='next.config.*' \
+  --include='.env.production' \
   --include='public/***' \
   --include='.next/***' \
   --exclude='*' \
   apps/web/ "$GCP_HOST:$REMOTE_DIR/apps/web/"
 
 # Admin: compiled dist/ only (static files served by nginx)
+# Note: Vite bakes public/ assets into dist/ at build time, so no separate copy needed
 eval $RSYNC "${COMMON_EXCLUDES[@]}" \
   apps/admin/dist/ "$GCP_HOST:$REMOTE_DIR/apps/admin/dist/"
 

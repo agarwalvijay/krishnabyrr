@@ -47,21 +47,24 @@ export default function LoginPage() {
       <div className="w-full max-w-[400px]">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div
-            className="inline-flex items-center gap-2 mb-3"
-            style={{ color: 'var(--kb-teal)' }}
-          >
-            {/* Peacock feather icon */}
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <circle cx="16" cy="16" r="15" fill="var(--kb-teal)" opacity="0.1" />
-              <circle cx="16" cy="16" r="5" fill="var(--kb-teal)" />
-              <path d="M16 4 C16 4 20 10 20 16 C20 22 16 28 16 28" stroke="var(--kb-iridescent)" strokeWidth="1.5" fill="none" />
-              <path d="M4 16 C4 16 10 20 16 20 C22 20 28 16 28 16" stroke="var(--kb-iridescent)" strokeWidth="1.5" fill="none" />
-              <path d="M7 7 C7 7 12 12 16 16 C20 20 25 25 25 25" stroke="var(--kb-gold)" strokeWidth="1.2" fill="none" />
-              <path d="M25 7 C25 7 20 12 16 16 C12 20 7 25 7 25" stroke="var(--kb-gold)" strokeWidth="1.2" fill="none" />
-            </svg>
-            <span className="text-2xl font-bold tracking-tight" style={{ color: 'var(--kb-teal)' }}>
-              KrishnaByrr
+          <div className="inline-flex flex-col items-center gap-1 mb-3">
+            <span
+              className="w-20 h-20 rounded-full overflow-hidden bg-[#faf7f0] shadow-md inline-flex items-center justify-center"
+              style={{ outline: '1.5px solid #BF9B30' }}
+            >
+              <img
+                src="/logo-krishnas-bliss.png"
+                alt="Krishna's Bliss"
+                className="w-full h-full object-contain"
+              />
+            </span>
+            <span className="mt-2 flex flex-col items-center leading-none">
+              <span className="text-xl font-normal tracking-wide" style={{ fontFamily: 'Georgia, serif', color: 'var(--kb-charcoal)' }}>
+                Krishna's
+              </span>
+              <span className="text-base italic font-light -mt-0.5 tracking-wide" style={{ fontFamily: 'Georgia, serif', color: 'var(--kb-charcoal)', opacity: 0.75 }}>
+                Bliss
+              </span>
             </span>
           </div>
           <p className="text-sm text-kb-muted">Admin Portal</p>
@@ -121,7 +124,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-kb-muted mt-6">
-          KrishnaByrr © {new Date().getFullYear()} — Internal use only
+          Krishna's Bliss © {new Date().getFullYear()} — Internal use only
         </p>
       </div>
     </div>

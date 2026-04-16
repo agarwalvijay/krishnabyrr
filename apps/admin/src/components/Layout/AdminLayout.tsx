@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { ROLE_LABELS } from '../../lib/format';
+import { api } from '../../lib/api';
 
 // ── Inline SVG icons ─────────────────────────────────────────────────────────
 const Icons = {
@@ -73,6 +75,12 @@ const Icons = {
         d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
     </svg>
   ),
+  refresh: (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  ),
 };
 
 const NAV_ITEMS = [
@@ -97,6 +105,19 @@ interface AdminLayoutProps {
 export default function AdminLayout({ title, action, children }: AdminLayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const [cacheState, setCacheState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+
+  const handleRefreshCache = async () => {
+    setCacheState('loading');
+    try {
+      await api.post('/admin/revalidate-cache');
+      setCacheState('done');
+      setTimeout(() => setCacheState('idle'), 3000);
+    } catch {
+      setCacheState('error');
+      setTimeout(() => setCacheState('idle'), 3000);
+    }
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-kb-cream">
@@ -106,19 +127,21 @@ export default function AdminLayout({ title, action, children }: AdminLayoutProp
         style={{ width: 240, borderRight: '1px solid #EBEBEB' }}
       >
         {/* Brand */}
-        <div className="px-5 py-5 border-b border-gray-100">
+        <div className="px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2.5">
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-              <circle cx="16" cy="16" r="15" fill="var(--kb-teal)" opacity="0.12" />
-              <circle cx="16" cy="16" r="5" fill="var(--kb-teal)" />
-              <path d="M16 4 C16 4 20 10 20 16 C20 22 16 28 16 28"
-                stroke="var(--kb-iridescent)" strokeWidth="1.5" fill="none" />
-              <path d="M4 16 C4 16 10 20 16 20 C22 20 28 16 28 16"
-                stroke="var(--kb-iridescent)" strokeWidth="1.5" fill="none" />
-            </svg>
+            <span
+              className="flex-shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[#faf7f0]"
+              style={{ outline: '1.5px solid #BF9B30' }}
+            >
+              <img
+                src="/logo-krishnas-bliss.png"
+                alt="Krishna's Bliss"
+                className="w-full h-full object-contain"
+              />
+            </span>
             <div>
-              <p className="text-sm font-bold text-kb-charcoal tracking-tight leading-none">
-                KrishnaByrr
+              <p className="text-sm font-semibold text-kb-charcoal leading-none" style={{ fontFamily: 'Georgia, serif' }}>
+                Krishna's Bliss
               </p>
               <p className="text-xs text-kb-muted mt-0.5">Admin</p>
             </div>
@@ -168,6 +191,23 @@ export default function AdminLayout({ title, action, children }: AdminLayoutProp
           <div className="px-4 py-4 border-t border-gray-100">
             <p className="text-sm font-medium text-kb-charcoal truncate">{user.name}</p>
             <p className="text-xs text-kb-muted truncate mb-3">{user.email}</p>
+            <button
+              onClick={handleRefreshCache}
+              disabled={cacheState === 'loading'}
+              className={`flex items-center gap-2 text-xs transition-colors mb-2 ${
+                cacheState === 'done'  ? 'text-kb-teal' :
+                cacheState === 'error' ? 'text-kb-error' :
+                'text-kb-muted hover:text-kb-charcoal'
+              }`}
+            >
+              <span className={cacheState === 'loading' ? 'animate-spin' : ''}>
+                {Icons.refresh}
+              </span>
+              {cacheState === 'loading' ? 'Refreshing…' :
+               cacheState === 'done'    ? 'Cache refreshed!' :
+               cacheState === 'error'   ? 'Refresh failed' :
+               'Refresh Site Cache'}
+            </button>
             <button
               onClick={logout}
               className="flex items-center gap-2 text-xs text-kb-muted hover:text-kb-error transition-colors"

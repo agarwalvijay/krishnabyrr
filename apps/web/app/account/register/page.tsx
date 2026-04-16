@@ -71,7 +71,7 @@ function RegisterPage() {
 
       <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-sm p-8 space-y-6">
         <div className="text-center">
-          <Link href="/" className="font-display text-2xl font-semibent" style={{ color: 'var(--kb-teal)' }}>
+          <Link href="/" className="font-display text-2xl font-semibold" style={{ color: 'var(--kb-teal)' }}>
             Krishna's Bliss
           </Link>
           <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>Create your account</p>

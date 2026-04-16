@@ -244,29 +244,46 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
   return (
     <>
       <header className="sticky top-0 z-30 bg-white border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-6">
 
-          {/* Logo */}
-          <Link href="/" className="flex-shrink-0 flex items-center" aria-label="KrishnaByrr home">
-            <Image
-              src="/krishnabyrr_logo.svg"
-              alt="Krishna's Bliss"
-              width={150}
-              height={34}
-              priority
-              className="h-8 w-auto sm:h-9"
-            />
+          {/* Embossed medallion seal — breaks through the header bottom edge */}
+          <Link
+            href="/"
+            aria-label="Krishna's Bliss — home"
+            className="flex-shrink-0 translate-y-4 sm:translate-y-6"
+          >
+            <span
+              className="flex w-16 h-16 sm:w-[84px] sm:h-[84px] rounded-full items-center justify-center"
+              style={{
+                background: 'linear-gradient(145deg, #01327a 0%, #012169 55%, #010d3d 100%)',
+                border: '1px solid #BF9B30',
+                boxShadow: [
+                  '0 8px 24px rgba(1,33,105,0.5)',
+                  '0 2px 6px rgba(0,0,0,0.3)',
+                  'inset 0 1px 3px rgba(255,255,255,0.15)',
+                  'inset 0 -2px 5px rgba(0,0,0,0.35)',
+                ].join(', '),
+              }}
+            >
+              {/* Inner navy ring gives the feather depth and separation from the gold border */}
+              <span className="flex w-[96%] h-[96%] rounded-full items-center justify-center overflow-hidden">
+                <Image
+                  src="/logo-krishnas-bliss.png"
+                  alt="Krishna's Bliss"
+                  width={200}
+                  height={200}
+                  priority
+                  className="h-full w-full object-contain"
+                />
+              </span>
+            </span>
           </Link>
 
           {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-7" onMouseLeave={closeMenu}>
+          <nav className="hidden md:flex items-center gap-6 flex-1" onMouseLeave={closeMenu}>
 
-            {/* Shop All */}
-            <Link href="/shop" className={linkBase}>
-              Shop
-            </Link>
+            <Link href="/shop" className={linkBase}>Shop</Link>
 
-            {/* Collections flyout (plain link if none configured yet) */}
             {collectionItems.length > 0 ? (
               <FlyoutMenu
                 id="collections"
@@ -282,7 +299,6 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
               <Link href="/shop" className={linkBase}>Collections</Link>
             )}
 
-            {/* Categories flyout */}
             {categoryItems.length > 0 && (
               <FlyoutMenu
                 id="categories"
@@ -296,7 +312,6 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
               />
             )}
 
-            {/* Tag group flyouts */}
             {filterGroups.map(([key, group]) => {
               const items: FlyoutItem[] = group.tags
                 .slice(0, MAX_FLYOUT_ITEMS)
@@ -320,19 +335,14 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
               );
             })}
 
-            {/* Static links */}
-            <Link href="/shop?sort=newest" className={linkBase}>
-              New Arrivals
-            </Link>
-            <Link href="/shop?on_sale=true" className={linkBase}>
-              Sale
-            </Link>
+            <Link href="/shop?sort=newest" className={linkBase}>New Arrivals</Link>
+            <Link href="/shop?on_sale=true" className={linkBase}>Sale</Link>
           </nav>
 
-          {/* Desktop inline search */}
+          {/* Desktop search */}
           <form
             onSubmit={handleSearchSubmit}
-            className="hidden md:flex items-center gap-2 bg-gray-50 rounded-full px-3 h-9 w-44 focus-within:w-56 focus-within:bg-white focus-within:ring-1 focus-within:ring-kb-teal/30 transition-all duration-200"
+            className="hidden md:flex items-center gap-2 bg-gray-50 rounded-full px-3 h-9 w-40 focus-within:w-52 focus-within:bg-white focus-within:ring-1 focus-within:ring-kb-teal/30 transition-all duration-200"
           >
             <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
