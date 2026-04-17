@@ -11,6 +11,8 @@ import OrdersPage from './pages/Orders';
 import CouponsPage from './pages/Coupons';
 import SettingsPage from './pages/Settings';
 import HomepagePage from './pages/Homepage';
+import CustomersPage from './pages/Customers';
+import DashboardPage from './pages/Dashboard';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -46,17 +48,17 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<ProtectedRoute><Navigate to="/products" replace /></ProtectedRoute>} />
+      <Route path="/" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
       <Route path="/products" element={<ProtectedRoute><ProductList /></ProtectedRoute>} />
       <Route path="/products/new" element={<ProtectedRoute><ProductForm /></ProtectedRoute>} />
       <Route path="/products/:id/edit" element={<ProtectedRoute><ProductForm /></ProtectedRoute>} />
       <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
       <Route path="/tags" element={<ProtectedRoute><TagsPage /></ProtectedRoute>} />
       <Route path="/collections" element={<ProtectedRoute><CollectionsPage /></ProtectedRoute>} />
-      <Route path="/dashboard" element={<ProtectedRoute><ComingSoon title="Dashboard" /></ProtectedRoute>} />
+      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
       <Route path="/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
-      <Route path="/customers" element={<ProtectedRoute><ComingSoon title="Customers" /></ProtectedRoute>} />
+      <Route path="/customers" element={<ProtectedRoute><CustomersPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       <Route path="/homepage" element={<ProtectedRoute><HomepagePage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/products" replace />} />
