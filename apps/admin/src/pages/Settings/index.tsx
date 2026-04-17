@@ -4,17 +4,7 @@ import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import { api } from '../../lib/api';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface TagGroup {
-  name: string;
-  label: string;
-  display_order: number;
-  is_filter: boolean;
-  tag_count: number;
-}
-
-type Tab = 'store' | 'shipping' | 'exchange' | 'notifications' | 'tag_groups';
+type Tab = 'store' | 'shipping' | 'exchange' | 'notifications';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -228,181 +218,13 @@ function NotificationsTab({ settings }: { settings: Record<string, unknown> }) {
   );
 }
 
-// ── Tag Groups tab ────────────────────────────────────────────────────────────
-
-function TagGroupsTab() {
-  const queryClient = useQueryClient();
-  const [editingGroup, setEditingGroup] = useState<TagGroup | null>(null);
-  const [newLabel, setNewLabel]         = useState('');
-  const [newName, setNewName]           = useState('');
-  const [showNew, setShowNew]           = useState(false);
-
-  const { data, isLoading } = useQuery<{ data: TagGroup[] }>({
-    queryKey: ['admin-tag-groups'],
-    queryFn: () => api.get('/admin/tag-groups').then((r) => r.data),
-  });
-
-  const groups = data?.data ?? [];
-
-  const updateMutation = useMutation({
-    mutationFn: ({ name, label, is_filter }: { name: string; label: string; is_filter: boolean }) =>
-      api.put(`/admin/tag-groups/${name}`, { label, is_filter }),
-    onSuccess: () => {
-      toast.success('Group updated');
-      queryClient.invalidateQueries({ queryKey: ['admin-tag-groups'] });
-      setEditingGroup(null);
-    },
-    onError: () => toast.error('Update failed'),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (payload: { name: string; label: string }) =>
-      api.post('/admin/tag-groups', { ...payload, display_order: groups.length + 1 }),
-    onSuccess: () => {
-      toast.success('Group created');
-      queryClient.invalidateQueries({ queryKey: ['admin-tag-groups'] });
-      setShowNew(false);
-      setNewName(''); setNewLabel('');
-    },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
-        ?.response?.data?.error?.message ?? 'Create failed';
-      toast.error(msg);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (name: string) => api.delete(`/admin/tag-groups/${name}`),
-    onSuccess: () => {
-      toast.success('Group deleted');
-      queryClient.invalidateQueries({ queryKey: ['admin-tag-groups'] });
-    },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
-        ?.response?.data?.error?.message ?? 'Delete failed — tags still reference this group';
-      toast.error(msg);
-    },
-  });
-
-  if (isLoading) return <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-kb-teal border-t-transparent rounded-full animate-spin" /></div>;
-
-  return (
-    <div className="max-w-lg">
-      <p className="text-sm text-kb-muted mb-4">
-        Tag groups define the filter categories shown on the shop page. You can add new groups and rename existing ones.
-      </p>
-      <div className="space-y-2 mb-4">
-        {groups.map((g) => (
-          <div key={g.name} className="flex items-center gap-3 bg-white border border-gray-100 rounded-lg px-4 py-3">
-            {editingGroup?.name === g.name ? (
-              <>
-                <input
-                  value={editingGroup.label}
-                  onChange={(e) => setEditingGroup({ ...editingGroup, label: e.target.value })}
-                  className="flex-1 border border-gray-200 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-kb-teal"
-                />
-                <label className="flex items-center gap-1 text-xs text-kb-muted">
-                  <input
-                    type="checkbox"
-                    checked={editingGroup.is_filter}
-                    onChange={(e) => setEditingGroup({ ...editingGroup, is_filter: e.target.checked })}
-                    className="accent-kb-teal"
-                  />
-                  Filter
-                </label>
-                <button
-                  onClick={() => updateMutation.mutate({ name: g.name, label: editingGroup.label, is_filter: editingGroup.is_filter })}
-                  disabled={updateMutation.isPending}
-                  className="text-xs text-kb-teal font-medium hover:underline"
-                >
-                  Save
-                </button>
-                <button onClick={() => setEditingGroup(null)} className="text-xs text-kb-muted hover:underline">Cancel</button>
-              </>
-            ) : (
-              <>
-                <div className="flex-1">
-                  <span className="text-sm font-medium text-kb-charcoal">{g.label}</span>
-                  <span className="ml-2 text-xs text-kb-muted font-mono">{g.name}</span>
-                </div>
-                <span className="text-xs text-kb-muted">{g.tag_count} tags</span>
-                {g.is_filter && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-teal-50 text-kb-teal">filter</span>
-                )}
-                <button onClick={() => setEditingGroup(g)} className="text-xs text-kb-teal hover:underline">Edit</button>
-                <button
-                  onClick={() => {
-                    if (g.tag_count > 0) { toast.error(`Remove all ${g.tag_count} tags first`); return; }
-                    if (confirm(`Delete group "${g.label}"?`)) deleteMutation.mutate(g.name);
-                  }}
-                  className="text-xs text-kb-error hover:underline"
-                >
-                  Delete
-                </button>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {showNew ? (
-        <div className="bg-white border border-dashed border-kb-teal/40 rounded-lg px-4 py-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-kb-muted mb-1">Name (slug, can't change)</label>
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
-                className={inputCls}
-                placeholder="e.g. length"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-kb-muted mb-1">Label (display name)</label>
-              <input
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                className={inputCls}
-                placeholder="e.g. Length"
-              />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => createMutation.mutate({ name: newName, label: newLabel })}
-              disabled={!newName || !newLabel || createMutation.isPending}
-              className="px-4 py-2 text-sm bg-kb-teal text-white rounded-lg hover:opacity-90 disabled:opacity-50"
-            >
-              {createMutation.isPending ? 'Creating…' : 'Create'}
-            </button>
-            <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-kb-muted hover:border-gray-300">
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          onClick={() => setShowNew(true)}
-          className="flex items-center gap-2 text-sm text-kb-teal hover:underline"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Tag Group
-        </button>
-      )}
-    </div>
-  );
-}
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'store',       label: 'Store' },
-  { id: 'shipping',    label: 'Shipping' },
-  { id: 'exchange',    label: 'Exchange' },
+  { id: 'store',         label: 'Store' },
+  { id: 'shipping',      label: 'Shipping' },
+  { id: 'exchange',      label: 'Exchange' },
   { id: 'notifications', label: 'Notifications' },
-  { id: 'tag_groups',  label: 'Tag Groups' },
 ];
 
 export default function SettingsPage() {
@@ -447,7 +269,6 @@ export default function SettingsPage() {
           {activeTab === 'shipping'      && <ShippingTab settings={settings} />}
           {activeTab === 'exchange'      && <ExchangeTab settings={settings} />}
           {activeTab === 'notifications' && <NotificationsTab settings={settings} />}
-          {activeTab === 'tag_groups'    && <TagGroupsTab />}
         </>
       )}
     </AdminLayout>
