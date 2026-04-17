@@ -24,7 +24,7 @@ async function fetchPage(slug: string): Promise<PageData | null> {
 export async function generateMetadata(): Promise<Metadata> {
   const page = await fetchPage('exchanges');
   return {
-    title:       page?.meta_title  ?? 'Exchange Policy | KrishnaByrr',
+    title:       page?.meta_title  ?? 'Exchange Policy',
     description: page?.meta_desc   ?? 'Learn about our exchange policy for Indian ethnic wear.',
   };
 }

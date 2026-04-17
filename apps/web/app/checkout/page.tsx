@@ -8,6 +8,7 @@ import { z } from 'zod';
 import Link from 'next/link';
 import { useCart } from '@/components/cart/CartContext';
 import { useCustomerAuth, useIsLoggedIn } from '@/contexts/AuthContext';
+import { useSiteSettings } from '@/contexts/SiteSettingsContext';
 import { apiClient, formatINR, imageUrl, type CartData, type CartTotals } from '@/lib/api';
 import ExchangePolicyModal from '@/components/ui/ExchangePolicyModal';
 
@@ -85,6 +86,7 @@ function FieldError({ msg }: { msg?: string }) {
 
 export default function CheckoutPage() {
   const router    = useRouter();
+  const { storeName } = useSiteSettings();
   const { cart: ctxCart, totals: ctxTotals, refreshCart, removeCoupon } = useCart();
   const { customer } = useCustomerAuth();
   const isLoggedIn = useIsLoggedIn();
@@ -531,7 +533,7 @@ export default function CheckoutPage() {
                   }}
                 />
                 <span className="text-sm" style={{ color: 'var(--kb-charcoal)' }}>
-                  I understand KrishnaByrr offers <strong>exchanges only</strong> — no cash refunds.{' '}
+                  I understand {storeName} offers <strong>exchanges only</strong> — no cash refunds.{' '}
                   <button
                     type="button"
                     onClick={() => setShowExchangePolicy(true)}

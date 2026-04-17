@@ -45,11 +45,11 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   try {
     const cat = await serverFetch<CategoryDetail>(`/api/categories/${params.slug}`);
     return {
-      title: `${cat.name} — KrishnaByrr`,
-      description: cat.description ?? `Shop ${cat.name} at KrishnaByrr.`,
+      title: cat.name,
+      description: cat.description ?? `Shop ${cat.name}.`,
     };
   } catch {
-    return { title: 'Category — KrishnaByrr' };
+    return { title: 'Category' };
   }
 }
 

@@ -31,14 +31,14 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
     const product = await serverFetch<ProductDetail>(`/api/products/${params.slug}`);
     const primaryImg = product.images?.find(i => i.is_primary) ?? product.images?.[0];
     return {
-      title: `${product.name} | ${product.tags?.fabric?.[0]?.value ?? 'Ethnic Wear'} | KrishnaByrr`,
+      title: `${product.name} | ${product.tags?.fabric?.[0]?.value ?? 'Ethnic Wear'}`,
       description: product.short_desc ?? undefined,
       openGraph: primaryImg
         ? { images: [{ url: imageUrl(primaryImg.gcs_path), alt: product.name }] }
         : undefined,
     };
   } catch {
-    return { title: 'Product — KrishnaByrr' };
+    return { title: 'Product' };
   }
 }
 

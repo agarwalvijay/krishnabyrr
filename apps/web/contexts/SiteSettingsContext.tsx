@@ -5,9 +5,10 @@ import { apiClient } from '@/lib/api';
 
 interface SiteSettings {
   newBadgeDays: number;
+  storeName: string;
 }
 
-const DEFAULT: SiteSettings = { newBadgeDays: 30 };
+const DEFAULT: SiteSettings = { newBadgeDays: 30, storeName: "Krishna's Bliss" };
 
 const SiteSettingsContext = createContext<SiteSettings>(DEFAULT);
 
@@ -21,6 +22,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
         const d = r.data.data;
         setSettings({
           newBadgeDays: typeof d.new_badge_days === 'number' ? d.new_badge_days : DEFAULT.newBadgeDays,
+          storeName: typeof d.store_name === 'string' && d.store_name ? d.store_name : DEFAULT.storeName,
         });
       })
       .catch(() => {/* keep defaults */});
