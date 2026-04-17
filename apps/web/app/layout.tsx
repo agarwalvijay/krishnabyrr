@@ -9,8 +9,7 @@ import { CartProvider } from '@/components/cart/CartContext';
 import { CustomerAuthProvider } from '@/contexts/AuthContext';
 import { SiteSettingsProvider } from '@/contexts/SiteSettingsContext';
 import { WishlistProvider } from '@/contexts/WishlistContext';
-
-const GA_ID = 'G-Q0ZM2KVMMM';
+import { serverFetch, type PublicSettings } from '@/lib/api';
 
 export const metadata: Metadata = {
   title: {
@@ -37,7 +36,10 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const settings = await serverFetch<PublicSettings>('/api/settings/public', { revalidate: 3600 }).catch(() => ({} as PublicSettings));
+  const gaId = settings.ga_tag ?? null;
+
   return (
     <html lang="en">
       <head>
@@ -48,23 +50,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      {/* Google Analytics */}
-      <Script
-        src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
-        strategy="afterInteractive"
-      />
-      <Script id="ga-init" strategy="afterInteractive">
-        {`
-          window.dataLayer = window.dataLayer || [];
-          function gtag(){dataLayer.push(arguments);}
-          gtag('js', new Date());
-          gtag('config', '${GA_ID}', { page_path: window.location.pathname });
-        `}
-      </Script>
+      {/* Google Analytics — only rendered when ga_tag is configured in Settings */}
+      {gaId && (
+        <>
+          <Script
+            src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
+            strategy="afterInteractive"
+          />
+          <Script id="ga-init" strategy="afterInteractive">
+            {`
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', '${gaId}', { page_path: window.location.pathname });
+            `}
+          </Script>
+        </>
+      )}
       <body className="flex flex-col min-h-screen">
-        <Suspense fallback={null}>
-          <Analytics gaId={GA_ID} />
-        </Suspense>
+        {gaId && (
+          <Suspense fallback={null}>
+            <Analytics gaId={gaId} />
+          </Suspense>
+        )}
         <SiteSettingsProvider>
           <CartProvider>
             <CustomerAuthProvider>

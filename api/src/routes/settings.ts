@@ -15,6 +15,7 @@ const PUBLIC_KEYS = [
   'zone_b_rate',
   'zone_b_free_above',
   'new_badge_days',
+  'ga_tag',
 ] as const;
 
 router.get('/public', async (_req, res, next) => {

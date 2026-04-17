@@ -36,6 +36,7 @@ function StoreTab({ settings }: { settings: Record<string, unknown> }) {
   const queryClient = useQueryClient();
   const [storeName, setStoreName]       = useState(String(settings.store_name ?? ''));
   const [newBadgeDays, setNewBadgeDays] = useState(Number(settings.new_badge_days ?? 30));
+  const [gaTag, setGaTag]               = useState(String(settings.ga_tag ?? ''));
 
   const saveMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.put('/admin/settings', data),
@@ -62,9 +63,20 @@ function StoreTab({ settings }: { settings: Record<string, unknown> }) {
           className={inputCls}
         />
       </Field>
+      <Field
+        label="Google Analytics Tag ID"
+        hint="Your GA4 Measurement ID, e.g. G-XXXXXXXXXX. Leave blank to disable analytics."
+      >
+        <input
+          value={gaTag}
+          onChange={(e) => setGaTag(e.target.value.trim())}
+          className={inputCls}
+          placeholder="G-XXXXXXXXXX"
+        />
+      </Field>
       <div className="pt-2">
         <button
-          onClick={() => saveMutation.mutate({ store_name: storeName, new_badge_days: newBadgeDays })}
+          onClick={() => saveMutation.mutate({ store_name: storeName, new_badge_days: newBadgeDays, ga_tag: gaTag || null })}
           disabled={saveMutation.isPending}
           className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
         >

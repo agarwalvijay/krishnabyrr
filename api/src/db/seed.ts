@@ -167,6 +167,7 @@ export async function runSeed(pool: Pool): Promise<void> {
       ['store_name',            'KrishnaByrr'],
       ['whatsapp_number',       ''],
       ['support_email',         ''],
+      ['ga_tag',                'G-Q0ZM2KVMMM'],
     ];
 
     for (const [key, value] of settings) {

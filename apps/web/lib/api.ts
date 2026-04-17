@@ -83,6 +83,7 @@ export interface PublicSettings {
   zone_b_free_above?: string;
   exchange_active?: string;
   support_email?: string;
+  ga_tag?: string;
 }
 
 export interface CartItem {
