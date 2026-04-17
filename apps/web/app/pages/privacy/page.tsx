@@ -107,7 +107,7 @@ export default function PrivacyPage() {
       <h2>10. Contact Us</h2>
       <p>
         For any privacy-related queries, please contact:{' '}
-        <strong>care@krishnabyrr.com</strong> or call <strong>+91 80766 64500</strong>.
+        <strong>care@krishnasbliss.com</strong> or call <strong>+91 80766 64500</strong>.
       </p>
     </PolicyPage>
   );

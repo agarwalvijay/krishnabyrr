@@ -15,7 +15,7 @@ export default function TermsPage() {
       <p>
         Krishna&apos;s Bliss (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) is an online retailer of
         handcrafted Indian ethnic wear, including sarees, dupattas, kurta sets, and related accessories.
-        We operate through the website krishnabyrr.com.
+        We operate through the website krishnasbliss.com.
       </p>
 
       <h2>2. Acceptance of Terms</h2>
@@ -90,7 +90,7 @@ export default function TermsPage() {
       <h2>11. Contact Us</h2>
       <p>
         For any questions regarding these Terms, please contact us at{' '}
-        <strong>care@krishnabyrr.com</strong> or call <strong>+91 80766 64500</strong>.
+        <strong>care@krishnasbliss.com</strong> or call <strong>+91 80766 64500</strong>.
       </p>
     </PolicyPage>
   );
