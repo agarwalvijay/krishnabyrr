@@ -155,7 +155,10 @@ echo "      files pushed."
 # The web app uses a standalone bundle (self-contained node_modules included in artifact).
 # Only the API needs a server-side install — its production deps are small (~50 MB).
 echo "==> [5/6] Installing API production node_modules on server..."
-$SSH "$GCP_HOST" "cd $REMOTE_DIR/api && npm ci --omit=dev --silent"
+# Run from monorepo root with --workspace=api so npm also creates the
+# @krishnabyrr/shared workspace symlink. --include-workspace-root covers
+# any root-level deps. Web/admin are excluded — web uses standalone bundle.
+$SSH "$GCP_HOST" "cd $REMOTE_DIR && npm install --omit=dev --workspace=api --include-workspace-root --silent"
 
 # ── 6. Run migrations + reload pm2 ────────────────────────────────────────────
 echo "==> [6/6] Running migrations and reloading services..."
