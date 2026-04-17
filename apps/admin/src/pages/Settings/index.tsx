@@ -34,7 +34,8 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 function StoreTab({ settings }: { settings: Record<string, unknown> }) {
   const queryClient = useQueryClient();
-  const [storeName, setStoreName] = useState(String(settings.store_name ?? ''));
+  const [storeName, setStoreName]       = useState(String(settings.store_name ?? ''));
+  const [newBadgeDays, setNewBadgeDays] = useState(Number(settings.new_badge_days ?? 30));
 
   const saveMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.put('/admin/settings', data),
@@ -50,9 +51,20 @@ function StoreTab({ settings }: { settings: Record<string, unknown> }) {
       <Field label="Store Name">
         <input value={storeName} onChange={(e) => setStoreName(e.target.value)} className={inputCls} />
       </Field>
+      <Field
+        label="'New' Badge — Days"
+        hint="Products added within this many days will show a 'New' badge. Set to 0 to disable."
+      >
+        <input
+          type="number" min="0" max="365"
+          value={newBadgeDays}
+          onChange={(e) => setNewBadgeDays(Number(e.target.value))}
+          className={inputCls}
+        />
+      </Field>
       <div className="pt-2">
         <button
-          onClick={() => saveMutation.mutate({ store_name: storeName })}
+          onClick={() => saveMutation.mutate({ store_name: storeName, new_badge_days: newBadgeDays })}
           disabled={saveMutation.isPending}
           className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
         >

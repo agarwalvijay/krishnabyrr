@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from '../../lib/hooks';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -65,6 +66,20 @@ function DiscountPreview({ type, value }: { type: string; value: string | number
   return <span className="text-kb-teal font-medium">₹{Number(value).toLocaleString('en-IN')} off</span>;
 }
 
+// ── Field helper (defined outside slide-over so its identity is stable) ───────
+
+const inputCls = "w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-kb-teal/30 focus:border-kb-teal outline-none";
+
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-kb-muted mb-1">{label}</label>
+      {children}
+      {error && <p className="text-xs text-kb-error mt-0.5">{error}</p>}
+    </div>
+  );
+}
+
 // ── Slide-Over ────────────────────────────────────────────────────────────────
 
 function CouponSlideOver({ coupon, onClose }: { coupon: Coupon | null; onClose: () => void }) {
@@ -126,16 +141,6 @@ function CouponSlideOver({ coupon, onClose }: { coupon: Coupon | null; onClose: 
       toast.error(msg);
     },
   });
-
-  const Field = ({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) => (
-    <div>
-      <label className="block text-xs font-medium text-kb-muted mb-1">{label}</label>
-      {children}
-      {error && <p className="text-xs text-kb-error mt-0.5">{error}</p>}
-    </div>
-  );
-
-  const inputCls = "w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-kb-teal/30 focus:border-kb-teal outline-none";
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -265,12 +270,19 @@ export default function CouponsPage() {
   const [openSlide, setOpenSlide] = useState(false);
   const [page, setPage]           = useState(1);
   const [activeFilter, setActiveFilter] = useState('');
+  const [search, setSearch]             = useState('');
+  const debouncedSearch                 = useDebounce(search, 400);
 
-  const { data, isLoading } = useQuery<{ data: Coupon[]; meta: Meta }>({
-    queryKey: ['admin-coupons', page, activeFilter],
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+
+  const hasFilters = debouncedSearch || activeFilter;
+
+  const { data, isLoading, isFetching } = useQuery<{ data: Coupon[]; meta: Meta }>({
+    queryKey: ['admin-coupons', page, activeFilter, debouncedSearch],
     queryFn: () => {
       const params = new URLSearchParams({ page: String(page), limit: '25' });
-      if (activeFilter !== '') params.set('is_active', activeFilter);
+      if (activeFilter !== '')  params.set('is_active', activeFilter);
+      if (debouncedSearch)      params.set('q', debouncedSearch);
       return api.get(`/admin/coupons?${params}`).then((r) => r.data);
     },
   });
@@ -311,18 +323,39 @@ export default function CouponsPage() {
         </button>
       }
     >
-      {/* Filter */}
-      <div className="flex items-center gap-3 mb-5">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        <div className="relative">
+          <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-kb-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search code…"
+            autoComplete="off"
+            className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-md text-sm w-44 focus:outline-none focus:ring-2 focus:ring-kb-teal"
+          />
+        </div>
         <select
           value={activeFilter}
           onChange={(e) => { setActiveFilter(e.target.value); setPage(1); }}
-          className="border border-gray-200 rounded-md px-3 py-2 text-sm outline-none"
+          className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
         >
           <option value="">All</option>
           <option value="true">Active only</option>
           <option value="false">Inactive only</option>
         </select>
-        <p className="text-sm text-kb-muted">{meta?.total ?? 0} coupons</p>
+        {isFetching && !isLoading && (
+          <div className="w-3.5 h-3.5 border-2 border-kb-teal border-t-transparent rounded-full animate-spin" />
+        )}
+        {hasFilters && (
+          <button onClick={() => { setSearch(''); setActiveFilter(''); setPage(1); }} className="text-xs text-kb-teal hover:underline">
+            Clear all
+          </button>
+        )}
+        <p className="ml-auto text-sm text-kb-muted">{meta?.total ?? 0} coupons</p>
       </div>
 
       {/* Table */}

@@ -1,10 +1,21 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { parse as parseCookie } from 'cookie';
+import crypto from 'crypto';
+import Razorpay from 'razorpay';
 import pool from '../db/client';
 import { getRedisClient } from '../redis';
 import { getCart, clearCart, clearAllReserves } from '../services/cart';
 import { validateCoupon } from '../services/coupon-engine';
 import { optionalCustomerAuth, requireCustomerAuth } from '../middleware/auth';
+import { notifyNewOrder } from '../services/notifications';
+
+// Razorpay client — only initialised when env vars are present
+function getRazorpay(): Razorpay | null {
+  const keyId     = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) return null;
+  return new Razorpay({ key_id: keyId, key_secret: keySecret });
+}
 
 const router = Router();
 
@@ -253,6 +264,18 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
         country: shippingAddress.country?.trim() ?? 'India',
       };
 
+      // ── Create Razorpay order (before DB insert, so we can include order ID) ──
+      const rzp = getRazorpay();
+      let rzpOrder: { id: string } | null = null;
+      if (rzp) {
+        rzpOrder = await rzp.orders.create({
+          amount:   Math.round(total * 100), // paise
+          currency: 'INR',
+          receipt:  orderNumber,
+          notes:    { order_number: orderNumber },
+        }) as { id: string };
+      }
+
       // ── Insert order ───────────────────────────────────────────────────────────
       const { rows: [order] } = await client.query<{ id: string; order_number: string; created_at: Date }>(
         `INSERT INTO orders (
@@ -260,15 +283,17 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
            line_items, subtotal, discount_amount, coupon_code,
            shipping_amount, gst_amount, total,
            shipping_address, billing_gstin,
-           payment_status, fulfillment_status,
-           exchange_eligible_until, policy_snapshot
+           payment_status, payment_method, fulfillment_status,
+           exchange_eligible_until, policy_snapshot,
+           razorpay_order_id
          ) VALUES (
            $1, $2, $3, $4,
            $5, $6, $7, $8,
            $9, $10, $11,
            $12, $13,
-           'pending_confirmation', 'unfulfilled',
-           $14, $15
+           $16, $17, 'unfulfilled',
+           $14, $15,
+           $18
          )
          RETURNING id, order_number, created_at`,
         [
@@ -277,6 +302,9 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
           shipping, gst, total,
           JSON.stringify(normalizedAddress), billingGstin?.trim() ?? null,
           exchangeEligibleUntil, JSON.stringify(policySnapshot),
+          rzpOrder ? 'pending' : 'pending_confirmation',
+          rzpOrder ? 'razorpay' : 'manual',
+          rzpOrder?.id ?? null,
         ],
       );
 
@@ -329,6 +357,20 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
       await clearAllReserves(sessionId, cart.items).catch(() => {});
       await clearCart(sessionId).catch(() => {});
 
+      // ── Notify owner for manual/WhatsApp orders (Razorpay notifies after verify) ─
+      if (!rzpOrder) {
+        notifyNewOrder({
+          orderNumber,
+          total,
+          itemCount:       lineItems.reduce((s, i) => s + i.quantity, 0),
+          itemNames:       lineItems.map(i => i.name),
+          customerName:    normalizedAddress.name,
+          customerContact: guestEmail?.trim() ?? normalizedAddress.phone,
+          pincode:         normalizedAddress.pincode,
+          paymentMethod:   'manual',
+        });
+      }
+
       // ── Build response ─────────────────────────────────────────────────────────
       const whatsappLink = buildWhatsAppLink(
         settings.whatsapp_number ?? '',
@@ -349,16 +391,26 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
             gst_amount:       gst,
             total,
             shipping_address: normalizedAddress,
-            payment_status:   'pending_confirmation',
+            payment_status:   rzpOrder ? 'pending' : 'pending_confirmation',
             fulfillment_status: 'unfulfilled',
             exchange_eligible_until: exchangeEligibleUntil,
             created_at:       order.created_at,
           },
-          payment: {
-            method:         'pay_on_confirmation',
-            whatsapp_link:  whatsappLink,
-            instructions:   'Please contact us on WhatsApp to confirm your order and receive the UPI payment link.',
-          },
+          payment: rzpOrder
+            ? {
+                method:       'razorpay',
+                key_id:       process.env.RAZORPAY_KEY_ID,
+                razorpay_order_id: rzpOrder.id,
+                amount:       Math.round(total * 100),
+                currency:     'INR',
+                name:         "Krishna's Bliss",
+                description:  `Order ${orderNumber}`,
+              }
+            : {
+                method:         'pay_on_confirmation',
+                whatsapp_link:  whatsappLink,
+                instructions:   'Please contact us on WhatsApp to confirm your order and receive the UPI payment link.',
+              },
         },
       });
     } catch (err) {
@@ -367,6 +419,80 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
     } finally {
       client.release();
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/orders/:orderNumber/verify-payment ──────────────────────────────
+// Verifies Razorpay payment signature and marks the order as paid
+
+router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { orderNumber } = req.params;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body as {
+      razorpay_order_id:   string;
+      razorpay_payment_id: string;
+      razorpay_signature:  string;
+    };
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      res.status(400).json({ error: { message: 'Missing payment fields', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (!keySecret) {
+      res.status(503).json({ error: { message: 'Payment verification not configured', code: 'NOT_CONFIGURED' } });
+      return;
+    }
+
+    // Verify HMAC-SHA256 signature
+    const expectedSignature = crypto
+      .createHmac('sha256', keySecret)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+
+    if (expectedSignature !== razorpay_signature) {
+      res.status(422).json({ error: { message: 'Payment verification failed', code: 'INVALID_SIGNATURE' } });
+      return;
+    }
+
+    // Mark order as paid
+    const { rows: [updated] } = await pool.query<{
+      id: string; order_number: string; total: string;
+      line_items: Array<{ name: string; quantity: number }>;
+      shipping_address: { name: string; phone: string; pincode: string };
+      guest_email: string | null;
+    }>(
+      `UPDATE orders
+         SET payment_status      = 'paid',
+             razorpay_payment_id = $1,
+             updated_at          = NOW()
+       WHERE UPPER(order_number) = UPPER($2)
+         AND razorpay_order_id   = $3
+       RETURNING id, order_number, total, line_items, shipping_address, guest_email`,
+      [razorpay_payment_id, orderNumber, razorpay_order_id],
+    );
+
+    if (!updated) {
+      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    // Notify owner — payment is now confirmed
+    notifyNewOrder({
+      orderNumber:     updated.order_number,
+      total:           parseFloat(updated.total),
+      itemCount:       updated.line_items.reduce((s, i) => s + i.quantity, 0),
+      itemNames:       updated.line_items.map(i => i.name),
+      customerName:    updated.shipping_address.name,
+      customerContact: updated.guest_email ?? updated.shipping_address.phone,
+      pincode:         updated.shipping_address.pincode,
+      paymentMethod:   'razorpay',
+    });
+
+    res.json({ data: { order_number: updated.order_number, payment_status: 'paid' } });
   } catch (err) {
     next(err);
   }

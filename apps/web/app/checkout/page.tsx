@@ -9,6 +9,41 @@ import Link from 'next/link';
 import { useCart } from '@/components/cart/CartContext';
 import { useCustomerAuth, useIsLoggedIn } from '@/contexts/AuthContext';
 import { apiClient, formatINR, imageUrl, type CartData, type CartTotals } from '@/lib/api';
+import ExchangePolicyModal from '@/components/ui/ExchangePolicyModal';
+
+// ── Razorpay types (minimal) ───────────────────────────────────────────────────
+interface RazorpayOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  prefill?: { name?: string; email?: string; contact?: string };
+  theme?: { color?: string };
+  handler: (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => void;
+  modal?: { ondismiss?: () => void };
+}
+declare global {
+  interface Window { Razorpay: new (options: RazorpayOptions) => { open: () => void }; }
+}
+
+// ── Razorpay lazy loader ───────────────────────────────────────────────────────
+// Only injects the script when the user actually clicks "Proceed to Payment"
+function loadRazorpay(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window.Razorpay !== 'undefined') { resolve(); return; }
+    const existing = document.querySelector('script[src*="checkout.razorpay.com"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => resolve();
+    document.head.appendChild(s);
+  });
+}
 
 // ── Zod schema ─────────────────────────────────────────────────────────────────
 
@@ -54,11 +89,14 @@ export default function CheckoutPage() {
   const { customer } = useCustomerAuth();
   const isLoggedIn = useIsLoggedIn();
 
-  const [liveTotals, setLiveTotals] = useState<CartTotals | null>(null);
-  const [liveCart, setLiveCart]     = useState<CartData | null>(null);
-  const [showGst, setShowGst]       = useState(false);
-  const [toast, setToast]           = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [liveTotals, setLiveTotals]             = useState<CartTotals | null>(null);
+  const [liveCart, setLiveCart]                 = useState<CartData | null>(null);
+  const [showGst, setShowGst]                   = useState(false);
+  const [toast, setToast]                       = useState<string | null>(null);
+  const [submitting, setSubmitting]             = useState(false);
+  const [showExchangePolicy, setShowExchangePolicy] = useState(false);
+
+  // Razorpay script is loaded lazily on demand (see loadRazorpay below)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -139,14 +177,69 @@ export default function CheckoutPage() {
         body.guestPhone = values.phone;
       }
 
-      const res = await apiClient.post<{ data: { order: { order_number: string } } }>(
-        '/orders',
-        body,
-      );
+      const res = await apiClient.post<{
+        data: {
+          order: { order_number: string; total: number };
+          payment: {
+            method: string;
+            // Razorpay fields
+            key_id?: string;
+            razorpay_order_id?: string;
+            amount?: number;
+            currency?: string;
+            name?: string;
+            description?: string;
+            // Manual fallback
+            whatsapp_link?: string;
+          };
+        };
+      }>('/orders', body);
 
-      const orderNumber = res.data.data.order.order_number;
-      const suffix      = isLoggedIn ? '' : `?email=${encodeURIComponent(values.email)}`;
-      router.push(`/order/${orderNumber}/confirmation${suffix}`);
+      const { order, payment } = res.data.data;
+      const orderNumber = order.order_number;
+      const emailSuffix = isLoggedIn ? '' : `?email=${encodeURIComponent(values.email)}`;
+
+      if (payment.method === 'razorpay' && payment.key_id && payment.razorpay_order_id) {
+        // Load Razorpay script on demand (only when actually needed)
+        await loadRazorpay();
+        setSubmitting(false);
+        const rzp = new window.Razorpay({
+          key:         payment.key_id,
+          amount:      payment.amount!,
+          currency:    payment.currency ?? 'INR',
+          name:        payment.name ?? "Krishna's Bliss",
+          description: payment.description ?? `Order ${orderNumber}`,
+          order_id:    payment.razorpay_order_id,
+          prefill: {
+            name:    values.name,
+            email:   values.email,
+            contact: values.phone,
+          },
+          theme: { color: '#1a6b6b' },
+          handler: async (response) => {
+            try {
+              await apiClient.post(`/orders/${orderNumber}/verify-payment`, {
+                razorpay_order_id:   response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature:  response.razorpay_signature,
+              });
+              router.push(`/order/${orderNumber}/confirmation${emailSuffix}`);
+            } catch {
+              showToast('Payment received but verification failed — please contact us.');
+              router.push(`/order/${orderNumber}/confirmation${emailSuffix}`);
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              showToast('Payment was not completed. You can retry from your orders page.');
+            },
+          },
+        });
+        rzp.open();
+      } else {
+        // Manual payment fallback
+        router.push(`/order/${orderNumber}/confirmation${emailSuffix}`);
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: { code?: string; message?: string } } } };
       const code     = axiosErr?.response?.data?.error?.code;
@@ -163,7 +256,6 @@ export default function CheckoutPage() {
       } else {
         showToast(message ?? 'Something went wrong. Please try again.');
       }
-    } finally {
       setSubmitting(false);
     }
   }, [cart, isLoggedIn, router, showToast, removeCoupon, refreshCart, fetchCart]);
@@ -440,14 +532,14 @@ export default function CheckoutPage() {
                 />
                 <span className="text-sm" style={{ color: 'var(--kb-charcoal)' }}>
                   I understand KrishnaByrr offers <strong>exchanges only</strong> — no cash refunds.{' '}
-                  <Link
-                    href="/pages/exchanges"
-                    target="_blank"
+                  <button
+                    type="button"
+                    onClick={() => setShowExchangePolicy(true)}
                     className="underline"
                     style={{ color: 'var(--kb-teal)' }}
                   >
                     View exchange policy →
-                  </Link>
+                  </button>
                 </span>
               </label>
               <FieldError msg={errors.exchange_acknowledged?.message} />
@@ -466,9 +558,9 @@ export default function CheckoutPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  Placing order…
+                  Please wait…
                 </>
-              ) : 'Place Order'}
+              ) : 'Proceed to Payment'}
             </button>
           </form>
 
@@ -554,7 +646,7 @@ export default function CheckoutPage() {
 
               <div className="mt-5 space-y-2">
                 <p className="text-xs rounded-xl p-3 leading-relaxed" style={{ background: 'rgba(26,107,107,0.06)', color: 'var(--kb-teal)' }}>
-                  💬 We&apos;ll WhatsApp you a UPI payment link within a few hours of your order.
+                  🔐 Secure payment via Razorpay — UPI, cards, net banking &amp; more accepted.
                 </p>
                 <p className="text-xs text-center" style={{ color: 'var(--kb-muted)' }}>
                   🔒 Your details are safe with us
@@ -564,6 +656,8 @@ export default function CheckoutPage() {
           </aside>
         </div>
       </div>
+
+      {showExchangePolicy && <ExchangePolicyModal onClose={() => setShowExchangePolicy(false)} />}
     </div>
   );
 }

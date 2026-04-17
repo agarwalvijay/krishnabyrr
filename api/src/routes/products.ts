@@ -88,6 +88,7 @@ router.get('/', async (req, res, next) => {
       price_min,
       price_max,
       in_stock,
+      on_sale,
       sort = 'newest',
       page = '1',
       limit = '24',
@@ -103,10 +104,8 @@ router.get('/', async (req, res, next) => {
     let i = 2;
 
     if (q) {
-      conditions.push(`to_tsvector('english',
-        p.name || ' ' || COALESCE(p.short_desc, '') || ' ' || COALESCE(p.description, '')
-      ) @@ plainto_tsquery('english', $${i})`);
-      params.push(q); i++;
+      conditions.push(`(p.name ILIKE $${i} OR COALESCE(p.short_desc, '') ILIKE $${i} OR COALESCE(p.description, '') ILIKE $${i})`);
+      params.push(`%${q}%`); i++;
     }
 
     if (category) {
@@ -121,7 +120,7 @@ router.get('/', async (req, res, next) => {
     }
 
     // Dynamic tag group filters: any query param whose key is a known tag group name
-    const NON_TAG_KEYS = new Set(['q', 'category', 'collection', 'price_min', 'price_max', 'in_stock', 'sort', 'page', 'limit', 'ids']);
+    const NON_TAG_KEYS = new Set(['q', 'category', 'collection', 'price_min', 'price_max', 'in_stock', 'on_sale', 'sort', 'page', 'limit', 'ids']);
     const { rows: tagGroupRows } = await pool.query<{ name: string }>(
       'SELECT name FROM tag_groups WHERE is_filter = TRUE'
     );
@@ -129,14 +128,16 @@ router.get('/', async (req, res, next) => {
 
     for (const [groupName, val] of Object.entries(query)) {
       if (!NON_TAG_KEYS.has(groupName) && validGroups.has(groupName) && val) {
+        const values = (val as string).split(',').map((v) => v.trim()).filter(Boolean);
+        if (values.length === 0) continue;
         conditions.push(`EXISTS (
           SELECT 1 FROM product_tags pt3
           JOIN tags t3 ON t3.id = pt3.tag_id
           WHERE pt3.product_id = p.id
             AND t3.group_name = $${i}
-            AND t3.value = $${i + 1}
+            AND t3.value = ANY($${i + 1}::text[])
         )`);
-        params.push(groupName, val); i += 2;
+        params.push(groupName, values); i += 2;
       }
     }
 
@@ -160,6 +161,10 @@ router.get('/', async (req, res, next) => {
 
     if (in_stock === 'true') {
       conditions.push('p.stock_qty > 0');
+    }
+
+    if (on_sale === 'true') {
+      conditions.push('p.sale_price IS NOT NULL AND p.sale_price < p.mrp');
     }
 
     const where = conditions.join(' AND ');

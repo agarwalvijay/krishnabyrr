@@ -144,12 +144,20 @@ export default function ConfirmationPage() {
         <div className="rounded-2xl p-6 space-y-4" style={{ background: 'rgba(26,107,107,0.06)', border: '1px solid rgba(26,107,107,0.15)' }}>
           <h2 className="font-semibold text-base" style={{ color: 'var(--kb-teal)' }}>What happens next?</h2>
           <ol className="space-y-3">
-            {[
-              'We\'ll review your order shortly',
-              `You'll receive a UPI payment link on WhatsApp at ${phone}`,
-              'Once payment is confirmed, we\'ll dispatch your order',
-              `Delivery: ${deliveryEta}`,
-            ].map((step, i) => (
+            {(order.payment_status === 'paid'
+              ? [
+                  'Payment received — your order is confirmed',
+                  'We\'ll carefully pack and dispatch your order',
+                  `Delivery: ${deliveryEta}`,
+                  'You\'ll receive tracking details once shipped',
+                ]
+              : [
+                  'We\'ll review your order shortly',
+                  `We'll WhatsApp you at ${phone} with payment instructions`,
+                  'Once payment is confirmed, we\'ll dispatch your order',
+                  `Delivery: ${deliveryEta}`,
+                ]
+            ).map((step, i) => (
               <li key={i} className="flex items-start gap-3 text-sm" style={{ color: 'var(--kb-charcoal)' }}>
                 <span
                   className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"

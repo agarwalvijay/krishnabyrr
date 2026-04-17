@@ -57,11 +57,14 @@ function Badge({ status, type }: { status: string; type: 'payment' | 'fulfillmen
     pending_confirmation: ['Awaiting Payment', 'var(--kb-amber)'],
     paid:                 ['Paid',             'var(--kb-success)'],
     failed:               ['Failed',           'var(--kb-error)'],
+    refunded:             ['Refunded',         'var(--kb-muted)'],
   };
   const fulfillmentMap: Record<string, [string, string]> = {
-    unfulfilled: ['Processing', 'var(--kb-muted)'],
-    fulfilled:   ['Shipped',    'var(--kb-blue)'],
-    delivered:   ['Delivered',  'var(--kb-success)'],
+    unfulfilled:         ['Processing',  'var(--kb-muted)'],
+    fulfilled:           ['Shipped',     'var(--kb-blue)'],
+    delivered:           ['Delivered',   'var(--kb-success)'],
+    cancelled:           ['Cancelled',   'var(--kb-error)'],
+    partially_fulfilled: ['Part Shipped','var(--kb-blue)'],
   };
   const map = type === 'payment' ? paymentMap : fulfillmentMap;
   const [label, color] = map[status] ?? [status, 'var(--kb-muted)'];

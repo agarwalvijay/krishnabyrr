@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import AddToCartButton from '@/components/cart/AddToCartButton';
+import { useWishlist } from '@/contexts/WishlistContext';
 
 interface Props {
   product: {
@@ -53,35 +54,21 @@ export function useRecentlyViewed(product: Props['product']) {
 }
 
 export default function ProductActions({ product, whatsappNumber }: Props) {
-  const [wishlisted, setWishlisted] = useState(false);
+  const { isWishlisted, toggle: wishlistToggle } = useWishlist();
+  const wishlisted = isWishlisted(product.id);
 
   // Track recently viewed
   useRecentlyViewed(product);
 
-  // Load wishlist state from localStorage
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('kb_wishlist');
-      const ids: string[] = raw ? JSON.parse(raw) : [];
-      setWishlisted(ids.includes(product.id));
-    } catch {}
-  }, [product.id]);
-
-  const toggleWishlist = () => {
-    const next = !wishlisted;
-    setWishlisted(next);
-    try {
-      const raw = localStorage.getItem('kb_wishlist');
-      const ids: string[] = raw ? JSON.parse(raw) : [];
-      const updated = next ? [...new Set([...ids, product.id])] : ids.filter(id => id !== product.id);
-      localStorage.setItem('kb_wishlist', JSON.stringify(updated));
-    } catch {}
-  };
-
   const waText = encodeURIComponent(
     `Hi, I'm interested in "${product.name}": ${typeof window !== 'undefined' ? window.location.href : ''}`
   );
-  const waLink = `https://wa.me/${whatsappNumber ? '91' + whatsappNumber : '919999999999'}?text=${waText}`;
+  const waNumber = (() => {
+    if (!whatsappNumber) return '919999999999';
+    const digits = whatsappNumber.replace(/\D/g, '');
+    return digits.startsWith('91') ? digits : '91' + digits;
+  })();
+  const waLink = `https://wa.me/${waNumber}?text=${waText}`;
 
   return (
     <div className="space-y-3">
@@ -96,7 +83,7 @@ export default function ProductActions({ product, whatsappNumber }: Props) {
 
       {/* Wishlist */}
       <button
-        onClick={toggleWishlist}
+        onClick={() => wishlistToggle(product.id)}
         className={`w-full py-3 border-2 font-medium rounded-xl flex items-center justify-center gap-2 transition-colors text-sm ${
           wishlisted
             ? 'border-kb-error text-kb-error bg-kb-error/5'

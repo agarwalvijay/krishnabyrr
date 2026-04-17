@@ -42,16 +42,16 @@ export const CouponSchema = z.object({
 export const ProductSchema = z.object({
   name: z.string().min(1).max(255),
   // slug and sku are auto-generated server-side if not provided
-  slug: z.string().min(1).max(255).regex(/^[a-z0-9-]+$/).optional(),
-  sku: z.string().min(1).max(100).optional(),
+  slug: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().min(1).max(255).regex(/^[a-z0-9-]+$/).optional()),
+  sku: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().min(1).max(100).optional()),
   short_desc: z.string().optional(),
   description: z.string().optional(),
   care_instr: z.string().optional(),
   mrp: z.number().positive(),
-  sale_price: z.number().positive().optional(),
-  cost_price: z.number().positive().optional(),
+  sale_price: z.number().positive().nullable().optional(),
+  cost_price: z.number().positive().nullable().optional(),
   gst_rate: z.number().min(0).max(28).default(5),
-  hsn_code: z.string().optional(),
-  stock_qty: z.number().int().min(0).max(4).default(0),
+  hsn_code: z.string().nullable().optional(),
+  stock_qty: z.number().int().min(0).default(0),
   status: z.enum(['draft', 'active', 'archived']).default('draft'),
 });

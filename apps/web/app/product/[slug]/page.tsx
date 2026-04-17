@@ -61,6 +61,7 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
   const fabricTags   = product.tags?.fabric   ?? [];
   const weaveTags    = product.tags?.weave    ?? [];
   const occasionTags = product.tags?.occasion ?? [];
+  const includesTags = product.tags?.includes ?? [];
   const careTags     = product.care_instr;
 
   // First category for breadcrumb
@@ -148,10 +149,12 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
                 <span>{occasionTags.map(t => t.value).join(', ')}</span>
               </li>
             )}
-            <li className="flex gap-2">
-              <span className="text-kb-muted min-w-[80px]">Includes</span>
-              <span>Fabric (unstitched), Salwar fabric, Dupatta</span>
-            </li>
+            {includesTags.length > 0 && (
+              <li className="flex gap-2">
+                <span className="text-kb-muted min-w-[80px]">Includes</span>
+                <span>{includesTags.map((t: { value: string }) => t.value).join(', ')}</span>
+              </li>
+            )}
             {careTags && (
               <li className="flex gap-2">
                 <span className="text-kb-muted min-w-[80px]">Care</span>

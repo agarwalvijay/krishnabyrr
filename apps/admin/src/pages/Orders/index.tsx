@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import { api } from '../../lib/api';
+import { useDebounce } from '../../lib/hooks';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,8 @@ interface OrderDetail extends OrderRow {
   fulfilled_at: string | null;
   exchange_eligible_until: string | null;
   exchanges: ExchangeRow[];
+  razorpay_payment_id: string | null;
+  refunded_amount: string;
 }
 
 interface ExchangeRow {
@@ -84,6 +87,9 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
   const [trackingUrl, setTrackingUrl]             = useState('');
   const [adminNotes, setAdminNotes]               = useState('');
   const [initialized, setInitialized]             = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [refundAmount, setRefundAmount]           = useState('');
+  const refundInputRef                            = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery<{ data: OrderDetail }>({
     queryKey: ['admin-order', orderId],
@@ -112,6 +118,36 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
       queryClient.invalidateQueries({ queryKey: ['admin-order', orderId] });
     },
     onError: () => toast.error('Update failed'),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api.post(`/admin/orders/${orderId}/cancel`, {}),
+    onSuccess: (resp) => {
+      const refundIssued = (resp.data as { data: { refund_issued: boolean } }).data.refund_issued;
+      toast.success(refundIssued ? 'Order cancelled and refund issued' : 'Order cancelled');
+      setShowCancelConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-order', orderId] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      toast.error(msg ?? 'Cancel failed');
+      setShowCancelConfirm(false);
+    },
+  });
+
+  const refundMutation = useMutation({
+    mutationFn: (amount: number | null) => api.post(`/admin/orders/${orderId}/refund`, { amount }),
+    onSuccess: () => {
+      toast.success('Refund issued successfully');
+      setRefundAmount('');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-order', orderId] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      toast.error(msg ?? 'Refund failed');
+    },
   });
 
   const order = (data as { data: OrderDetail } | undefined)?.data;
@@ -256,6 +292,89 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
               />
             </section>
 
+            {/* Refund section — only for paid Razorpay orders with remaining balance */}
+            {order.payment_status === 'paid' && order.razorpay_payment_id && (() => {
+              const total      = parseFloat(order.total);
+              const refunded   = parseFloat(order.refunded_amount ?? '0');
+              const remaining  = total - refunded;
+              if (remaining <= 0) return null;
+              return (
+                <section className="border border-amber-200 rounded-xl p-4 bg-amber-50/50">
+                  <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Issue Refund</h3>
+                  {refunded > 0 && (
+                    <p className="text-xs text-kb-muted mb-2">
+                      Already refunded: {fmt(refunded)} · Remaining: {fmt(remaining)}
+                    </p>
+                  )}
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs text-kb-muted mb-1">
+                        Amount (₹) — leave blank for full {fmt(remaining)}
+                      </label>
+                      <input
+                        ref={refundInputRef}
+                        type="number"
+                        min={1}
+                        max={remaining}
+                        step={0.01}
+                        value={refundAmount}
+                        onChange={(e) => setRefundAmount(e.target.value)}
+                        placeholder={remaining.toFixed(2)}
+                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 outline-none"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        const amt = refundAmount.trim() ? parseFloat(refundAmount) : null;
+                        refundMutation.mutate(amt);
+                      }}
+                      disabled={refundMutation.isPending}
+                      className="px-4 py-2 rounded-md bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {refundMutation.isPending ? 'Processing…' : 'Issue Refund'}
+                    </button>
+                  </div>
+                </section>
+              );
+            })()}
+
+            {/* Cancel order */}
+            {order.fulfillment_status !== 'cancelled' && order.fulfillment_status !== 'fulfilled' && (
+              <section className="border border-red-100 rounded-xl p-4 bg-red-50/40">
+                <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Cancel Order</h3>
+                <p className="text-xs text-kb-muted mb-3">
+                  Cancels the order, restores inventory
+                  {order.payment_status === 'paid' && order.razorpay_payment_id
+                    ? ', and issues a full Razorpay refund automatically.'
+                    : '.'}
+                </p>
+                {showCancelConfirm ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => cancelMutation.mutate()}
+                      disabled={cancelMutation.isPending}
+                      className="px-4 py-2 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {cancelMutation.isPending ? 'Cancelling…' : 'Yes, Cancel Order'}
+                    </button>
+                    <button
+                      onClick={() => setShowCancelConfirm(false)}
+                      className="px-4 py-2 rounded-md border border-gray-200 text-sm text-kb-muted hover:bg-gray-50"
+                    >
+                      Never mind
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowCancelConfirm(true)}
+                    className="px-4 py-2 rounded-md border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50"
+                  >
+                    Cancel Order
+                  </button>
+                )}
+              </section>
+            )}
+
             {/* Exchanges */}
             {order.exchanges.length > 0 && (
               <section>
@@ -278,17 +397,33 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
         )}
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-4 flex gap-3">
-          <button
-            onClick={handleSave}
-            disabled={patchMutation.isPending}
-            className="flex-1 py-2.5 rounded-lg bg-kb-teal text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
-          >
-            {patchMutation.isPending ? 'Saving…' : 'Save Changes'}
-          </button>
-          <button onClick={onClose} className="px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-kb-muted hover:border-gray-300">
-            Cancel
-          </button>
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-4 space-y-2">
+          <div className="flex gap-3">
+            <button
+              onClick={handleSave}
+              disabled={patchMutation.isPending}
+              className="flex-1 py-2.5 rounded-lg bg-kb-teal text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              {patchMutation.isPending ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button onClick={onClose} className="px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-kb-muted hover:border-gray-300">
+              Close
+            </button>
+          </div>
+          {order && (
+            <a
+              href={`/api/admin/orders/${orderId}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-gray-200 text-sm text-kb-muted hover:bg-gray-50 hover:border-gray-300 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+              Download Order PDF
+            </a>
+          )}
         </div>
       </div>
     </div>
@@ -302,18 +437,22 @@ export default function OrdersPage() {
   const [page, setPage]                       = useState(1);
   const [paymentFilter, setPaymentFilter]     = useState('');
   const [fulfillFilter, setFulfillFilter]     = useState('');
-  const [q, setQ]                             = useState('');
-  const [searchInput, setSearchInput]         = useState('');
+  const [search, setSearch]                   = useState('');
+  const debouncedSearch                       = useDebounce(search, 400);
 
-  const queryKey = ['admin-orders', page, paymentFilter, fulfillFilter, q];
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
 
-  const { data, isLoading } = useQuery<{ data: OrderRow[]; meta: Meta }>({
+  const hasFilters = debouncedSearch || paymentFilter || fulfillFilter;
+
+  const queryKey = ['admin-orders', page, paymentFilter, fulfillFilter, debouncedSearch];
+
+  const { data, isLoading, isFetching } = useQuery<{ data: OrderRow[]; meta: Meta }>({
     queryKey,
     queryFn: () => {
       const params = new URLSearchParams({ page: String(page), limit: '25' });
-      if (paymentFilter) params.set('payment_status', paymentFilter);
-      if (fulfillFilter) params.set('fulfillment_status', fulfillFilter);
-      if (q)             params.set('q', q);
+      if (paymentFilter)    params.set('payment_status', paymentFilter);
+      if (fulfillFilter)    params.set('fulfillment_status', fulfillFilter);
+      if (debouncedSearch)  params.set('q', debouncedSearch);
       return api.get(`/admin/orders?${params}`).then((r) => r.data);
     },
   });
@@ -321,31 +460,31 @@ export default function OrdersPage() {
   const orders = data?.data ?? [];
   const meta   = data?.meta;
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setQ(searchInput);
-    setPage(1);
-  };
+  const clearFilters = () => { setSearch(''); setPaymentFilter(''); setFulfillFilter(''); setPage(1); };
 
   return (
     <AdminLayout title="Orders">
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-5">
-        <form onSubmit={handleSearch} className="flex gap-2 flex-1 min-w-52">
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        <div className="relative">
+          <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-kb-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
           <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Order # or email…"
-            className="flex-1 border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-kb-teal/30 focus:border-kb-teal outline-none"
+            autoComplete="off"
+            className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-md text-sm w-52 focus:outline-none focus:ring-2 focus:ring-kb-teal"
           />
-          <button type="submit" className="px-4 py-2 text-sm bg-kb-teal text-white rounded-md hover:opacity-90">Search</button>
-        </form>
+        </div>
         <select
           value={paymentFilter}
           onChange={(e) => { setPaymentFilter(e.target.value); setPage(1); }}
-          className="border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none"
+          className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
         >
-          <option value="">All payment</option>
+          <option value="">All Payment</option>
           <option value="pending_confirmation">Pending</option>
           <option value="paid">Paid</option>
           <option value="failed">Failed</option>
@@ -354,14 +493,22 @@ export default function OrdersPage() {
         <select
           value={fulfillFilter}
           onChange={(e) => { setFulfillFilter(e.target.value); setPage(1); }}
-          className="border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none"
+          className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
         >
-          <option value="">All fulfillment</option>
+          <option value="">All Fulfillment</option>
           <option value="unfulfilled">Unfulfilled</option>
           <option value="partially_fulfilled">Partial</option>
           <option value="fulfilled">Fulfilled</option>
           <option value="cancelled">Cancelled</option>
         </select>
+        {isFetching && !isLoading && (
+          <div className="w-3.5 h-3.5 border-2 border-kb-teal border-t-transparent rounded-full animate-spin" />
+        )}
+        {hasFilters && (
+          <button onClick={clearFilters} className="ml-auto text-xs text-kb-teal hover:underline">
+            Clear all
+          </button>
+        )}
       </div>
 
       {/* Table */}

@@ -44,6 +44,7 @@ export interface ProductListItem {
   primary_image: ProductImage | null;
   second_image:  ProductImage | null;
   tags: TagItem[];
+  created_at: string;
 }
 
 export interface ProductDetail {

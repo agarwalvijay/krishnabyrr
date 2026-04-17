@@ -250,10 +250,10 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
           <Link
             href="/"
             aria-label="Krishna's Bliss — home"
-            className="flex-shrink-0 translate-y-4 sm:translate-y-6"
+            className="flex-shrink-0 translate-y-6 sm:translate-y-8"
           >
             <span
-              className="flex w-16 h-16 sm:w-[84px] sm:h-[84px] rounded-full items-center justify-center"
+              className="flex w-[100px] h-[100px] sm:w-[131px] sm:h-[131px] rounded-full items-center justify-center"
               style={{
                 background: 'linear-gradient(145deg, #01327a 0%, #012169 55%, #010d3d 100%)',
                 border: '1px solid #BF9B30',

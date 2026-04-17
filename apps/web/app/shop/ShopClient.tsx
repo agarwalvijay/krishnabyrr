@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useTransition } from 'react';
+import { useState, useRef, useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ProductCard from '@/components/ui/ProductCard';
 import { apiClient, type ProductListItem, type CategoryItem, type TagItem, type ApiMeta } from '@/lib/api';
@@ -85,6 +85,7 @@ export default function ShopClient({
   const [meta, setMeta]         = useState<ApiMeta>(initialMeta);
   const [loadingMore, setLoadingMore] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Reset products when filters change (URL change triggers server re-render → new initialProducts)
   const prevFiltersRef = JSON.stringify(currentFilters);
@@ -109,6 +110,15 @@ export default function ShopClient({
       router.push(`?${params.toString()}`, { scroll: false });
     });
   }, [router, searchParams]);
+
+  // Toggle a single value within a comma-separated multi-select tag group param
+  const toggleTagValue = useCallback((groupName: string, value: string) => {
+    const current = searchParams.get(groupName)?.split(',').filter(Boolean) ?? [];
+    const next = current.includes(value)
+      ? current.filter((v) => v !== value)
+      : [...current, value];
+    updateFilter(groupName, next.length > 0 ? next.join(',') : undefined);
+  }, [searchParams, updateFilter]);
 
   const clearAll = useCallback(() => {
     const keep = lockedCategory ? `?category=${lockedCategory.slug}` : '';
@@ -158,8 +168,32 @@ export default function ShopClient({
   const filterGroups = Object.entries(tags)
     .filter(([, g]) => g.is_filter && g.tags.length > 0);
 
-  const FilterContent = () => (
+  const SORT_OPTIONS = [
+    { value: 'newest',      label: 'Newest First' },
+    { value: 'price_asc',   label: 'Price: Low to High' },
+    { value: 'price_desc',  label: 'Price: High to Low' },
+    { value: 'discount_pct', label: 'Best Discount' },
+  ];
+
+  const filterContent = (
     <div className="text-sm">
+      {/* Sort By */}
+      <FilterGroup title="Sort By">
+        {SORT_OPTIONS.map(opt => (
+          <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="sort"
+              value={opt.value}
+              checked={(currentFilters.sort ?? 'newest') === opt.value}
+              onChange={() => updateFilter('sort', opt.value === 'newest' ? undefined : opt.value)}
+              className="accent-kb-teal"
+            />
+            <span className="text-kb-charcoal">{opt.label}</span>
+          </label>
+        ))}
+      </FilterGroup>
+
       {/* Search */}
       <div className="pb-4 border-b border-gray-100">
         <input
@@ -168,8 +202,8 @@ export default function ShopClient({
           defaultValue={currentFilters.q ?? ''}
           onChange={e => {
             const val = e.target.value;
-            const t = setTimeout(() => updateFilter('q', val || undefined), 400);
-            return () => clearTimeout(t);
+            clearTimeout(searchTimerRef.current);
+            searchTimerRef.current = setTimeout(() => updateFilter('q', val || undefined), 400);
           }}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-kb-teal"
         />
@@ -205,6 +239,7 @@ export default function ShopClient({
       {/* Dynamic tag group filters */}
       {filterGroups.map(([groupName, groupData]) => {
         const isColorGroup = groupName === 'color';
+        const selected = currentFilters[groupName]?.split(',').filter(Boolean) ?? [];
         return (
           <FilterGroup key={groupName} title={groupData.label}>
             {isColorGroup ? (
@@ -212,9 +247,9 @@ export default function ShopClient({
                 {groupData.tags.map(tag => (
                   <button
                     key={tag.id}
-                    onClick={() => updateFilter(groupName, currentFilters[groupName] === tag.value ? undefined : tag.value)}
+                    onClick={() => toggleTagValue(groupName, tag.value)}
                     className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border transition-colors ${
-                      currentFilters[groupName] === tag.value
+                      selected.includes(tag.value)
                         ? 'border-kb-teal bg-kb-teal/10 text-kb-teal font-medium'
                         : 'border-gray-200 hover:border-kb-teal'
                     }`}
@@ -233,8 +268,8 @@ export default function ShopClient({
                 <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={currentFilters[groupName] === tag.value}
-                    onChange={() => updateFilter(groupName, currentFilters[groupName] === tag.value ? undefined : tag.value)}
+                    checked={selected.includes(tag.value)}
+                    onChange={() => toggleTagValue(groupName, tag.value)}
                     className="accent-kb-teal rounded"
                   />
                   <span className="text-kb-charcoal">{tag.value}</span>
@@ -299,21 +334,23 @@ export default function ShopClient({
 
   // ── Active filter chips ─────────────────────────────────────────────────────
 
-  const chips: Array<{ label: string; key: string }> = [
+  const chips: Array<{ label: string; key: string; removeValue?: string }> = [
     currentFilters.q         ? { label: `Search: ${currentFilters.q}`, key: 'q' }                    : null,
     !lockedCategory && currentFilters.category ? { label: `Category: ${currentFilters.category}`, key: 'category' } : null,
     currentFilters.collection ? { label: `Collection: ${lockedCollection?.name ?? currentFilters.collection}`, key: 'collection' } : null,
-    // Dynamic tag group chips
+    // Dynamic tag group chips — one chip per selected value
     ...Object.entries(tags)
-      .filter(([groupName]) => currentFilters[groupName])
-      .map(([groupName, groupData]) => ({
-        label: `${groupData.label}: ${currentFilters[groupName]}`,
-        key: groupName,
-      })),
+      .flatMap(([groupName, groupData]) =>
+        (currentFilters[groupName]?.split(',').filter(Boolean) ?? []).map((val) => ({
+          label: `${groupData.label}: ${val}`,
+          key: groupName,
+          removeValue: val,
+        }))
+      ),
     currentFilters.price_min ? { label: `Min: ₹${currentFilters.price_min}`, key: 'price_min' }       : null,
     currentFilters.price_max ? { label: `Max: ₹${currentFilters.price_max}`, key: 'price_max' }       : null,
     currentFilters.in_stock === 'true' ? { label: 'In Stock Only', key: 'in_stock' }                  : null,
-  ].filter(Boolean) as Array<{ label: string; key: string }>;
+  ].filter(Boolean) as Array<{ label: string; key: string; removeValue?: string }>;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
@@ -378,7 +415,7 @@ export default function ShopClient({
         <aside className="hidden md:block w-60 flex-shrink-0">
           <div className="sticky top-24">
             <h2 className="font-semibold text-kb-charcoal mb-4 text-sm uppercase tracking-wider">Filters</h2>
-            <FilterContent />
+            {filterContent}
           </div>
         </aside>
 
@@ -396,7 +433,7 @@ export default function ShopClient({
                 </button>
               </div>
               <div className="px-5 py-4 overflow-y-auto h-[calc(100vh-64px)]">
-                <FilterContent />
+                {filterContent}
               </div>
             </div>
           </>
@@ -414,7 +451,10 @@ export default function ShopClient({
                 >
                   {chip.label}
                   <button
-                    onClick={() => updateFilter(chip.key, undefined)}
+                    onClick={() => chip.removeValue
+                      ? toggleTagValue(chip.key, chip.removeValue)
+                      : updateFilter(chip.key, undefined)
+                    }
                     className="ml-0.5 hover:text-kb-error transition-colors"
                     aria-label={`Remove ${chip.label} filter`}
                   >

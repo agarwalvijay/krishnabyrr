@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
@@ -11,6 +11,8 @@ import { useDebounce } from '../../lib/hooks';
 
 type StatusFilter = 'all' | 'active' | 'draft' | 'archived';
 type StockFilter  = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock';
+type SortCol      = 'created_at' | 'name' | 'mrp' | 'stock_qty' | 'status';
+type SortDir      = 'asc' | 'desc';
 
 interface CollectionItem { id: string; name: string; slug: string }
 interface TagGroupData {
@@ -116,9 +118,9 @@ function BulkOrgModal({
     queryFn: () => api.get('/tags').then((r) => r.data),
     staleTime: 5 * 60 * 1000,
   });
-  const { data: categoriesData } = useQuery<{ data: Array<{ id: string; name: string; children?: Array<{ id: string; name: string }> }> }>({
+  const { data: categoriesData } = useQuery<Array<{ id: string; name: string; children?: Array<{ id: string; name: string }> }>>({
     queryKey: ['categories'],
-    queryFn: () => api.get('/categories').then((r) => r.data),
+    queryFn: () => api.get('/categories').then((r) => r.data.data),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -130,7 +132,7 @@ function BulkOrgModal({
 
   // Flatten category tree
   const flatCategories: Array<{ id: string; name: string; indent: boolean }> = [];
-  for (const cat of categoriesData?.data ?? []) {
+  for (const cat of categoriesData ?? []) {
     flatCategories.push({ id: cat.id, name: cat.name, indent: false });
     for (const child of cat.children ?? []) {
       flatCategories.push({ id: child.id, name: child.name, indent: true });
@@ -286,25 +288,44 @@ function BulkOrgModal({
                 </label>
               </div>
             </div>
-            {flatCategories.length === 0 ? (
+            {(categoriesData ?? []).length === 0 ? (
               <p className="text-sm text-kb-muted">No categories configured.</p>
             ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {flatCategories.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => toggleCat(c.id)}
-                    className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
-                      c.indent ? 'ml-2' : ''
-                    } ${
-                      selCategories.includes(c.id)
-                        ? 'bg-kb-teal text-white border-kb-teal'
-                        : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
-                    }`}
-                  >
-                    {c.indent ? '↳ ' : ''}{c.name}
-                  </button>
+              <div className="space-y-2">
+                {(categoriesData ?? []).map((parent) => (
+                  <div key={parent.id}>
+                    <div className="mb-1.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleCat(parent.id)}
+                        className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-colors ${
+                          selCategories.includes(parent.id)
+                            ? 'bg-kb-teal text-white border-kb-teal'
+                            : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                        }`}
+                      >
+                        {parent.name}
+                      </button>
+                    </div>
+                    {parent.children && parent.children.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pl-4">
+                        {parent.children.map((child) => (
+                          <button
+                            key={child.id}
+                            type="button"
+                            onClick={() => toggleCat(child.id)}
+                            className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                              selCategories.includes(child.id)
+                                ? 'bg-kb-teal text-white border-kb-teal'
+                                : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                            }`}
+                          >
+                            ↳ {child.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -391,7 +412,13 @@ export default function ProductList() {
   const [collection, setCollection]   = useState('');
   const [tagFilters, setTagFilters]   = useState<Record<string, string>>({});
   const [page, setPage]               = useState(1);
+  const [sortCol, setSortCol]         = useState<SortCol>('created_at');
+  const [sortDir, setSortDir]         = useState<SortDir>('desc');
   const debouncedSearch               = useDebounce(search, 400);
+
+  // Reset to page 1 only when the debounced query actually changes,
+  // not on every keystroke — avoids state churn while the user is still typing
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
 
   // Selection
   const [selected, setSelected]   = useState<Set<string>>(new Set());
@@ -420,8 +447,22 @@ export default function ProductList() {
   const hasFilters = debouncedSearch || status !== 'all' || stockFilter !== 'all'
     || collection || Object.values(tagFilters).some(Boolean);
 
+  const handleSortCol = (col: SortCol) => {
+    if (col === sortCol) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortCol(col);
+      setSortDir(col === 'created_at' ? 'desc' : 'asc');
+    }
+    setPage(1);
+  };
+
+  const sortParam = sortCol === 'created_at'
+    ? (sortDir === 'desc' ? 'newest' : 'oldest')
+    : `${sortCol}_${sortDir}`;
+
   // Build query params
-  const params: Record<string, string> = { page: String(page), limit: '24' };
+  const params: Record<string, string> = { page: String(page), limit: '24', sort: sortParam };
   if (status !== 'all') params.status = status;
   if (debouncedSearch)  params.q = debouncedSearch;
   if (collection)       params.collection = collection;
@@ -495,8 +536,9 @@ export default function ProductList() {
             <input
               type="text"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name or SKU…"
+              autoComplete="off"
               className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-md text-sm w-48 focus:outline-none focus:ring-2 focus:ring-kb-teal"
             />
           </div>
@@ -598,6 +640,14 @@ export default function ProductList() {
             >
               Organise
             </button>
+            {selected.size === 1 && (
+              <button
+                onClick={() => navigate(`/products/new?cloneFrom=${[...selected][0]}`)}
+                className="px-3 py-1 rounded-md border text-xs font-medium hover:bg-white transition-colors text-kb-teal border-kb-teal/40"
+              >
+                Clone
+              </button>
+            )}
           </div>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-kb-muted hover:text-kb-charcoal">
             ✕
@@ -639,11 +689,36 @@ export default function ProductList() {
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" />
                 </th>
                 <th className="px-4 py-3 text-left w-14"></th>
-                <th className="px-4 py-3 text-left font-medium text-kb-muted">Name / SKU</th>
-                <th className="px-4 py-3 text-left font-medium text-kb-muted">Category</th>
-                <th className="px-4 py-3 text-left font-medium text-kb-muted">Price</th>
-                <th className="px-4 py-3 text-left font-medium text-kb-muted">Stock</th>
-                <th className="px-4 py-3 text-left font-medium text-kb-muted">Status</th>
+                {(['name', 'mrp', 'stock_qty', 'status'] as SortCol[]).map((col, idx) => {
+                  const labels: Partial<Record<SortCol, string>> = {
+                    name: 'Name / SKU', mrp: 'Price', stock_qty: 'Stock', status: 'Status',
+                  };
+                  const active = sortCol === col;
+                  return (
+                    <>
+                      <th
+                        key={col}
+                        onClick={() => handleSortCol(col)}
+                        className={`px-4 py-3 text-left font-medium cursor-pointer select-none whitespace-nowrap transition-colors ${
+                          active ? 'text-kb-teal' : 'text-kb-muted hover:text-kb-charcoal'
+                        }`}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {labels[col]}
+                          <span className="text-[10px]">
+                            {active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                          </span>
+                        </span>
+                      </th>
+                      {/* Insert non-sortable Category column after Name */}
+                      {idx === 0 && (
+                        <th key="category" className="px-4 py-3 text-left font-medium text-kb-muted">
+                          Category
+                        </th>
+                      )}
+                    </>
+                  );
+                })}
                 <th className="px-4 py-3 text-right font-medium text-kb-muted">Actions</th>
               </tr>
             </thead>

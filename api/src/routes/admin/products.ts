@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { toSlug, uniqueProductSlug, autoSku } from '../../utils/slug';
@@ -16,15 +17,10 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
+// Use memory storage so we can run sharp before writing to disk
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: UPLOAD_DIR,
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-      cb(null, `${randomUUID()}${ext}`);
-    },
-  }),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB raw; compressed output will be much smaller
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
@@ -56,9 +52,19 @@ router.get('/', requireAuth, async (req, res, next) => {
     const offset = (pageNum - 1) * limitNum;
 
     const sortMap: Record<string, string> = {
-      newest: 'p.created_at DESC',
-      price_asc: 'p.mrp ASC',
-      price_desc: 'p.mrp DESC',
+      newest:       'p.created_at DESC',
+      oldest:       'p.created_at ASC',
+      name_asc:     'p.name ASC',
+      name_desc:    'p.name DESC',
+      mrp_asc:      'p.mrp ASC',
+      mrp_desc:     'p.mrp DESC',
+      stock_qty_asc:  'p.stock_qty ASC',
+      stock_qty_desc: 'p.stock_qty DESC',
+      status_asc:   'p.status ASC',
+      status_desc:  'p.status DESC',
+      // legacy aliases
+      price_asc:    'p.mrp ASC',
+      price_desc:   'p.mrp DESC',
     };
     const orderBy = sortMap[sort] ?? sortMap.newest;
 
@@ -73,9 +79,8 @@ router.get('/', requireAuth, async (req, res, next) => {
     }
 
     if (q?.trim()) {
-      conditions.push(`to_tsvector('english', p.name || ' ' || COALESCE(p.short_desc, ''))
-        @@ plainto_tsquery('english', $${i})`);
-      params.push(q.trim()); i++;
+      conditions.push(`(p.name ILIKE $${i} OR p.sku ILIKE $${i})`);
+      params.push(`%${q.trim()}%`); i++;
     }
 
     if (category) {
@@ -329,7 +334,17 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     );
     const displayOrder = max_order ? parseInt(max_order, 10) + 1 : 0;
 
-    const gcsPath = `${UPLOAD_DIR}/${file.filename}`;
+    // Compress and resize with sharp before saving to disk.
+    // Output is always JPEG (80% quality, max 1920px on longest side).
+    const outputFilename = `${randomUUID()}.jpg`;
+    const outputPath = path.join(UPLOAD_DIR, outputFilename);
+    await sharp(file.buffer)
+      .rotate()                    // auto-rotate based on EXIF orientation
+      .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80, progressive: true, mozjpeg: true })
+      .toFile(outputPath);
+
+    const gcsPath = outputPath;
     const altText = req.body.alt_text ?? null;
 
     const { rows: [image] } = await pool.query(

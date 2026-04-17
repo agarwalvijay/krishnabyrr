@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -19,8 +19,14 @@ const schema = z.object({
   description:       z.string().optional(),
   care_instr:        z.string().optional(),
   mrp:               z.coerce.number({ required_error: 'MRP is required' }).positive('MRP must be positive'),
-  sale_price:        z.coerce.number().positive().optional().nullable(),
-  cost_price:        z.coerce.number().positive().optional().nullable(),
+  sale_price:        z.preprocess(
+    (v) => (v === '' || v == null ? null : Number(v)),
+    z.number().positive('Sale price must be positive').nullable().optional()
+  ),
+  cost_price:        z.preprocess(
+    (v) => (v === '' || v == null ? null : Number(v)),
+    z.number().positive('Cost price must be positive').nullable().optional()
+  ),
   gst_rate:          z.coerce.number().default(5),
   hsn_code:          z.string().optional(),
   stock_qty:         z.coerce.number().int().min(0).default(0),
@@ -261,6 +267,8 @@ export default function ProductForm() {
   const navigate    = useNavigate();
   const queryClient = useQueryClient();
   const isNew       = !id;
+  const [searchParams] = useSearchParams();
+  const cloneFromId    = isNew ? (searchParams.get('cloneFrom') ?? undefined) : undefined;
 
   const [activeTab, setActiveTab]       = useState(0);
   const [showStockModal, setShowStockModal] = useState(false);
@@ -293,6 +301,13 @@ export default function ProductForm() {
     enabled: !isNew,
   });
 
+  // ── Load clone source (new product only, when ?cloneFrom= is set) ─────────
+  const { data: cloneSource } = useQuery({
+    queryKey: ['admin-product', cloneFromId],
+    queryFn: () => api.get(`/admin/products/${cloneFromId}`).then((r) => r.data.data),
+    enabled: !!cloneFromId,
+  });
+
   useEffect(() => {
     if (!productData) return;
     reset({
@@ -319,6 +334,26 @@ export default function ProductForm() {
     setSelTags(productData.tags?.map((t: {id: string}) => t.id) ?? []);
     setSelCollections(productData.collections?.map((c: {id: string}) => c.id) ?? []);
   }, [productData, reset]);
+
+  // Pre-fill from clone source (Basic Info + Organisation only)
+  useEffect(() => {
+    if (!cloneSource) return;
+    reset({
+      name:        `Copy of ${cloneSource.name}`,
+      short_desc:  cloneSource.short_desc ?? '',
+      description: cloneSource.description ?? '',
+      care_instr:  cloneSource.care_instr ?? '',
+      // Pricing / inventory / SEO start fresh
+      gst_rate:    cloneSource.gst_rate ?? 5,
+      status:      'draft',
+      stock_qty:   0,
+      low_stock_threshold: 2,
+      oos_behavior: 'show_sold_out',
+    });
+    setSelCategories(cloneSource.categories?.map((c: { id: string }) => c.id) ?? []);
+    setSelTags(cloneSource.tags?.map((t: { id: string }) => t.id) ?? []);
+    setSelCollections(cloneSource.collections?.map((c: { id: string }) => c.id) ?? []);
+  }, [cloneSource, reset]);
 
   // Auto-generate slug from name when creating new
   const watchedName = watch('name');
@@ -417,7 +452,9 @@ export default function ProductForm() {
   const metaDesc      = watch('meta_desc')  ?? '';
   const currentSlug   = watch('slug') ?? '';
 
-  const title = isNew ? 'New Product' : (productData?.name ?? 'Edit Product');
+  const title = isNew
+    ? (cloneSource ? `Clone: ${cloneSource.name}` : 'New Product')
+    : (productData?.name ?? 'Edit Product');
 
   return (
     <AdminLayout
@@ -445,6 +482,19 @@ export default function ProductForm() {
       }
     >
       <div className="max-w-3xl">
+        {/* Draft warning */}
+        {currentStatus === 'draft' && (
+          <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <span>
+              This product is a <strong>Draft</strong> — it will not appear on the shop until you set it to <strong>Active</strong>.
+            </span>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
           {TABS.map((tab, i) => (
@@ -462,7 +512,23 @@ export default function ProductForm() {
           ))}
         </div>
 
-        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))}>
+        <form onSubmit={handleSubmit(
+          (data) => saveMutation.mutate(data),
+          (errs) => {
+            // Jump to the first tab that has an error so the user can see it
+            const fieldTabMap: Record<string, number> = {
+              name: 0, short_desc: 0, description: 0, care_instr: 0,
+              mrp: 2, sale_price: 2, cost_price: 2, gst_rate: 2, hsn_code: 2,
+              stock_qty: 3, low_stock_threshold: 3, oos_behavior: 3,
+              meta_title: 5, meta_desc: 5, slug: 5,
+            };
+            const firstErrorField = Object.keys(errs)[0];
+            const targetTab = fieldTabMap[firstErrorField] ?? 0;
+            setActiveTab(targetTab);
+            const messages = Object.values(errs).map((e) => (e as { message?: string }).message).filter(Boolean);
+            toast.error(messages[0] ?? 'Please fill in all required fields');
+          }
+        )}>
           {/* ── Tab 1: Basic Info ─────────────────────────────────────── */}
           <div className={activeTab === 0 ? '' : 'hidden'}>
             <div className="card p-6 space-y-4">
@@ -679,32 +745,110 @@ export default function ProductForm() {
 
           {/* ── Tab 5: Organisation ──────────────────────────────────── */}
           <div className={activeTab === 4 ? '' : 'hidden'}>
-            <div className="card p-6 space-y-5">
+            <div className="card p-6 space-y-6">
+
+              {/* Categories */}
               <div>
-                <label className="block text-sm font-medium text-kb-charcoal mb-1">Categories</label>
-                <MultiCheckList
-                  items={flatCategories}
-                  selected={selCategories}
-                  onChange={setSelCategories}
-                  indent
-                />
+                <h3 className="text-sm font-semibold text-kb-charcoal mb-2">Categories</h3>
+                {!Array.isArray(categoriesData) || categoriesData.length === 0 ? (
+                  <p className="text-sm text-kb-muted">No categories configured.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(categoriesData as Array<{ id: string; name: string; children?: Array<{ id: string; name: string }> }>).map((parent) => (
+                      <div key={parent.id}>
+                        <div className="mb-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelCategories((prev) =>
+                              prev.includes(parent.id) ? prev.filter((x) => x !== parent.id) : [...prev, parent.id]
+                            )}
+                            className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-colors ${
+                              selCategories.includes(parent.id)
+                                ? 'bg-kb-teal text-white border-kb-teal'
+                                : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                            }`}
+                          >
+                            {parent.name}
+                          </button>
+                        </div>
+                        {parent.children && parent.children.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pl-4">
+                            {parent.children.map((child) => (
+                              <button
+                                key={child.id}
+                                type="button"
+                                onClick={() => setSelCategories((prev) =>
+                                  prev.includes(child.id) ? prev.filter((x) => x !== child.id) : [...prev, child.id]
+                                )}
+                                className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                                  selCategories.includes(child.id)
+                                    ? 'bg-kb-teal text-white border-kb-teal'
+                                    : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                                }`}
+                              >
+                                ↳ {child.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {/* Tag groups */}
               {tagGroupEntries.map((group) => (
                 <div key={group.key}>
-                  <label className="block text-sm font-medium text-kb-charcoal mb-1">{group.label}</label>
-                  <MultiCheckList items={group.tags} selected={selTags} onChange={setSelTags} labelKey="value" />
+                  <h3 className="text-sm font-semibold text-kb-charcoal mb-2">{group.label}</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.tags.map((t: { id: string; value: string }) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSelTags((prev) =>
+                          prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]
+                        )}
+                        className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                          selTags.includes(t.id)
+                            ? 'bg-kb-teal text-white border-kb-teal'
+                            : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                        }`}
+                      >
+                        {t.value}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ))}
 
+              {/* Collections */}
               <div>
-                <label className="block text-sm font-medium text-kb-charcoal mb-1">Collections</label>
-                <MultiCheckList
-                  items={Array.isArray(collectionsData) ? collectionsData : []}
-                  selected={selCollections}
-                  onChange={setSelCollections}
-                />
+                <h3 className="text-sm font-semibold text-kb-charcoal mb-2">Collections</h3>
+                {(Array.isArray(collectionsData) ? collectionsData : []).length === 0 ? (
+                  <p className="text-sm text-kb-muted">No collections configured.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Array.isArray(collectionsData) ? collectionsData : []).map((c: { id: string; name: string }) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setSelCollections((prev) =>
+                          prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id]
+                        )}
+                        className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                          selCollections.includes(c.id)
+                            ? 'bg-kb-teal text-white border-kb-teal'
+                            : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
+                        }`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
             </div>
           </div>
 

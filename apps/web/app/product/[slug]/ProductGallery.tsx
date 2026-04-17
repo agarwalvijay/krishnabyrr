@@ -194,7 +194,7 @@ function ShareButtons({ productName }: { productName: string }) {
   const [copied, setCopied] = useState(false);
 
   const shareWhatsApp = () => {
-    const text = encodeURIComponent(`Check out "${productName}" at KrishnaByrr: ${window.location.href}`);
+    const text = encodeURIComponent(`Check out "${productName}" at Krishna's Bliss: ${window.location.href}`);
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 

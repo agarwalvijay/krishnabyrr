@@ -5,6 +5,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { imageUrl, formatINR, discountPct, getStockStatus, type ProductListItem } from '@/lib/api';
 import AddToCartButton from '@/components/cart/AddToCartButton';
+import { useSiteSettings } from '@/contexts/SiteSettingsContext';
+import { useWishlist } from '@/contexts/WishlistContext';
 
 // ── Quick View Modal ──────────────────────────────────────────────────────────
 
@@ -137,15 +139,17 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product, showQuickView = true }: ProductCardProps) {
-  const [quickViewOpen, setQuickViewOpen]   = useState(false);
-  const [isWishlisted, setIsWishlisted]     = useState(false);
+  const [quickViewOpen, setQuickViewOpen] = useState(false);
   const openQuickView  = useCallback(() => setQuickViewOpen(true), []);
   const closeQuickView = useCallback(() => setQuickViewOpen(false), []);
+  const { isWishlisted, toggle: wishlistToggle } = useWishlist();
 
+  const { newBadgeDays } = useSiteSettings();
   const hasSale   = product.sale_price != null && product.sale_price < product.mrp;
   const pct       = hasSale ? discountPct(product.mrp, product.sale_price!) : 0;
   const status    = getStockStatus(product.stock_qty);
-  const isNew     = !hasSale; // Simplified: show NEW when no discount
+  const isNew     = !hasSale && newBadgeDays > 0 &&
+    (Date.now() - new Date(product.created_at).getTime()) / 86_400_000 <= newBadgeDays;
   const primarySrc  = product.primary_image ? imageUrl(product.primary_image.gcs_path) : '';
   const secondarySrc = product.second_image  ? imageUrl(product.second_image.gcs_path)  : '';
 
@@ -157,8 +161,7 @@ export default function ProductCard({ product, showQuickView = true }: ProductCa
   const toggleWishlist = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsWishlisted(w => !w);
-    // Session 7 will wire this to the API
+    wishlistToggle(product.id);
   };
 
   return (
@@ -213,10 +216,10 @@ export default function ProductCard({ product, showQuickView = true }: ProductCa
           {/* Wishlist heart */}
           <button
             onClick={toggleWishlist}
-            aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+            aria-label={isWishlisted(product.id) ? 'Remove from wishlist' : 'Add to wishlist'}
             className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm hover:bg-white transition-colors shadow-sm"
           >
-            {isWishlisted ? (
+            {isWishlisted(product.id) ? (
               <svg className="w-4 h-4 text-kb-error fill-kb-error" viewBox="0 0 24 24">
                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
               </svg>

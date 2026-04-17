@@ -60,6 +60,10 @@ npm install --workspaces --include-workspace-root --silent
 # ── 2. Build everything ────────────────────────────────────────────────────────
 echo "==> [2/6] Building all workspaces..."
 
+# Shared package (must build before api)
+echo "      shared..."
+npm run build -w packages/shared --silent
+
 # API (TypeScript → dist/)
 echo "      api..."
 npm run build -w api --silent
@@ -77,7 +81,7 @@ echo "      done."
 # ── 3. Ensure remote dir structure exists ──────────────────────────────────────
 echo "==> [3/6] Preparing remote directories and clearing stale cache..."
 $SSH "$GCP_HOST" "
-  mkdir -p $REMOTE_DIR/api/uploads $REMOTE_DIR/apps/web $REMOTE_DIR/apps/admin $REMOTE_DIR/deploy
+  mkdir -p $REMOTE_DIR/api/uploads $REMOTE_DIR/apps/web $REMOTE_DIR/apps/admin $REMOTE_DIR/deploy $REMOTE_DIR/packages/shared/dist
   # Wipe Next.js fetch cache and pre-rendered pages so production DB data is used fresh
   rm -rf $REMOTE_DIR/apps/web/.next/cache
   rm -rf $REMOTE_DIR/apps/web/.next/server/app
@@ -85,7 +89,7 @@ $SSH "$GCP_HOST" "
 
 # Copy SQL migrations into dist so compiled migrate.js can find them
 echo "      copying SQL migrations into api/dist/db/migrations..."
-cp -r api/src/db/migrations api/dist/db/migrations
+rm -rf api/dist/db/migrations && cp -r api/src/db/migrations api/dist/db/migrations
 
 # ── 4. Rsync source + built artifacts ─────────────────────────────────────────
 echo "==> [4/6] Pushing files to GCP..."
@@ -109,6 +113,10 @@ eval $RSYNC "${COMMON_EXCLUDES[@]}" \
   --include='deploy/***' \
   --exclude='*' \
   ./ "$GCP_HOST:$REMOTE_DIR/"
+
+# Shared package dist/ — API requires this at runtime via @krishnabyrr/shared
+eval $RSYNC "${COMMON_EXCLUDES[@]}" \
+  packages/shared/dist/ "$GCP_HOST:$REMOTE_DIR/packages/shared/dist/"
 
 # API: compiled dist/ (includes migrations) — no source needed on server
 eval $RSYNC "${COMMON_EXCLUDES[@]}" \

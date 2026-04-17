@@ -4,7 +4,7 @@ import ShopClient from './ShopClient';
 
 interface CollectionSummary { name: string; slug: string; description?: string | null }
 
-export const revalidate = 3600;
+export const dynamic = 'force-dynamic';
 
 export const metadata = {
   title: 'Shop — Handcrafted Indian Ethnic Wear',
@@ -19,6 +19,7 @@ interface SearchParams {
   price_min?: string;
   price_max?: string;
   in_stock?: string;
+  on_sale?: string;
   sort?: string;
   page?: string;
   [key: string]: string | undefined;
@@ -35,7 +36,7 @@ interface TagGroupData {
   tags: Array<{ id: string; group_name: string; value: string; hex_color: string | null }>;
 }
 
-const RESERVED_PARAMS = new Set(['q', 'category', 'collection', 'price_min', 'price_max', 'in_stock', 'sort', 'page']);
+const RESERVED_PARAMS = new Set(['q', 'category', 'collection', 'price_min', 'price_max', 'in_stock', 'on_sale', 'sort', 'page']);
 
 function buildQuery(sp: SearchParams, tagGroupNames: string[]): string {
   const params = new URLSearchParams();
@@ -45,6 +46,7 @@ function buildQuery(sp: SearchParams, tagGroupNames: string[]): string {
   if (sp.price_min)  params.set('price_min', sp.price_min);
   if (sp.price_max)  params.set('price_max', sp.price_max);
   if (sp.in_stock)   params.set('in_stock', sp.in_stock);
+  if (sp.on_sale)    params.set('on_sale', sp.on_sale);
   if (sp.sort)       params.set('sort', sp.sort);
   // Forward any active tag group filter params
   for (const group of tagGroupNames) {
