@@ -13,8 +13,9 @@ export const revalidate = 3600;
 interface Params { slug: string }
 
 export async function generateStaticParams(): Promise<Params[]> {
+  const base = process.env.API_ORIGIN ?? 'http://localhost:3001';
   try {
-    const res = await fetch('http://localhost:3001/api/products?limit=200&sort=newest', {
+    const res = await fetch(`${base}/api/products?limit=200&sort=newest`, {
       next: { revalidate: 3600 },
     });
     if (!res.ok) return [];
