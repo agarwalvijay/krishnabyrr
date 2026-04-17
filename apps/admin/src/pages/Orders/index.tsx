@@ -482,7 +482,7 @@ export default function OrdersPage() {
         <select
           value={paymentFilter}
           onChange={(e) => { setPaymentFilter(e.target.value); setPage(1); }}
-          className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
+          className="select-inline border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
         >
           <option value="">All Payment</option>
           <option value="pending_confirmation">Pending</option>
@@ -493,7 +493,7 @@ export default function OrdersPage() {
         <select
           value={fulfillFilter}
           onChange={(e) => { setFulfillFilter(e.target.value); setPage(1); }}
-          className="border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
+          className="select-inline border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
         >
           <option value="">All Fulfillment</option>
           <option value="unfulfilled">Unfulfilled</option>
