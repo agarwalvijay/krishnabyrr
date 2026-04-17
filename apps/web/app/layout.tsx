@@ -1,11 +1,16 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
+import { Suspense } from 'react';
 import './globals.css';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
+import Analytics from '@/components/Analytics';
 import { CartProvider } from '@/components/cart/CartContext';
 import { CustomerAuthProvider } from '@/contexts/AuthContext';
 import { SiteSettingsProvider } from '@/contexts/SiteSettingsContext';
 import { WishlistProvider } from '@/contexts/WishlistContext';
+
+const GA_ID = 'G-Q0ZM2KVMMM';
 
 export const metadata: Metadata = {
   title: {
@@ -43,7 +48,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
+      {/* Google Analytics */}
+      <Script
+        src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+        strategy="afterInteractive"
+      />
+      <Script id="ga-init" strategy="afterInteractive">
+        {`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', '${GA_ID}', { page_path: window.location.pathname });
+        `}
+      </Script>
       <body className="flex flex-col min-h-screen">
+        <Suspense fallback={null}>
+          <Analytics gaId={GA_ID} />
+        </Suspense>
         <SiteSettingsProvider>
           <CartProvider>
             <CustomerAuthProvider>
