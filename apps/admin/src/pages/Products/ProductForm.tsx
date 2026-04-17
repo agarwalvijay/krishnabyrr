@@ -7,7 +7,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDropzone } from 'react-dropzone';
 import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
-import StockAdjustModal from '../../components/StockAdjustModal';
 import { api, imageUrl } from '../../lib/api';
 import { formatINR, discountPct } from '../../lib/format';
 
@@ -270,8 +269,7 @@ export default function ProductForm() {
   const [searchParams] = useSearchParams();
   const cloneFromId    = isNew ? (searchParams.get('cloneFrom') ?? undefined) : undefined;
 
-  const [activeTab, setActiveTab]       = useState(0);
-  const [showStockModal, setShowStockModal] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
 
   // Organisation state (separate from main form)
   const [selCategories,  setSelCategories]  = useState<string[]>([]);
@@ -457,43 +455,8 @@ export default function ProductForm() {
     : (productData?.name ?? 'Edit Product');
 
   return (
-    <AdminLayout
-      title={title}
-      action={
-        <div className="flex items-center gap-3">
-          {!isNew && productData && (
-            <button
-              className="btn-secondary text-sm"
-              onClick={() => setShowStockModal(true)}
-            >
-              Adjust Stock
-            </button>
-          )}
-          <select
-            value={currentStatus}
-            onChange={(e) => setValue('status', e.target.value as FormData['status'])}
-            className="border border-gray-200 rounded-md text-sm px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
-          >
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-          </select>
-        </div>
-      }
-    >
+    <AdminLayout title={title}>
       <div className="max-w-3xl">
-        {/* Draft warning */}
-        {currentStatus === 'draft' && (
-          <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-            <span>
-              This product is a <strong>Draft</strong> — it will not appear on the shop until you set it to <strong>Active</strong>.
-            </span>
-          </div>
-        )}
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
@@ -703,11 +666,6 @@ export default function ProductForm() {
                     Stock Quantity
                   </label>
                   <input type="number" {...register('stock_qty')} min="0" placeholder="3" />
-                  {!isNew && (
-                    <p className="mt-1 text-xs text-kb-muted">
-                      Use the <strong>Adjust Stock</strong> button for tracked changes with audit log.
-                    </p>
-                  )}
                 </div>
 
                 <div>
@@ -915,17 +873,38 @@ export default function ProductForm() {
           </div>
 
           {/* ── Sticky footer ────────────────────────────────────────────── */}
-          <div
-            className="sticky bottom-0 flex items-center justify-between mt-6 px-6 py-3 bg-white rounded-lg border border-gray-100 shadow-sm"
-          >
+          <div className="sticky bottom-0 flex items-center justify-between mt-6 px-6 py-3 bg-white rounded-lg border border-gray-100 shadow-sm gap-4">
             <button
               type="button"
               onClick={() => navigate('/products')}
-              className="btn-secondary"
+              className="btn-secondary flex-shrink-0"
             >
-              ← Back to Products
+              ← Back
             </button>
-            <div className="flex items-center gap-3">
+
+            {/* Status pills */}
+            <div className="flex items-center gap-1 rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+              {(['draft', 'active', 'archived'] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setValue('status', s, { shouldDirty: true })}
+                  className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors ${
+                    currentStatus === s
+                      ? s === 'active'
+                        ? 'bg-green-600 text-white shadow-sm'
+                        : s === 'archived'
+                          ? 'bg-gray-500 text-white shadow-sm'
+                          : 'bg-amber-500 text-white shadow-sm'
+                      : 'text-kb-muted hover:text-kb-charcoal'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3 flex-shrink-0">
               {isDirty && !saveMutation.isPending && (
                 <span className="text-xs text-kb-amber">Unsaved changes</span>
               )}
@@ -948,16 +927,6 @@ export default function ProductForm() {
         </form>
       </div>
 
-      {/* Stock adjust modal (edit mode) */}
-      {showStockModal && productData && (
-        <StockAdjustModal
-          product={{ id: productData.id, name: productData.name, stock_qty: productData.stock_qty }}
-          onClose={() => {
-            setShowStockModal(false);
-            queryClient.invalidateQueries({ queryKey: ['admin-product', id] });
-          }}
-        />
-      )}
     </AdminLayout>
   );
 }
