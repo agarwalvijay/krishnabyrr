@@ -191,6 +191,9 @@ export default function CheckoutPage() {
             currency?: string;
             name?: string;
             description?: string;
+            // PhonePe fields
+            redirect_url?: string;
+            merchant_transaction_id?: string;
             // Manual fallback
             whatsapp_link?: string;
           };
@@ -238,6 +241,9 @@ export default function CheckoutPage() {
           },
         });
         rzp.open();
+      } else if (payment.method === 'phonepe' && payment.redirect_url) {
+        // Full-page redirect to PhonePe payment page
+        window.location.href = payment.redirect_url;
       } else {
         // Manual payment fallback
         router.push(`/order/${orderNumber}/confirmation${emailSuffix}`);

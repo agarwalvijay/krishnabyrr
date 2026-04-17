@@ -168,6 +168,7 @@ export async function runSeed(pool: Pool): Promise<void> {
       ['whatsapp_number',       ''],
       ['support_email',         ''],
       ['ga_tag',                'G-Q0ZM2KVMMM'],
+      ['payment_gateway',       'razorpay'],
     ];
 
     for (const [key, value] of settings) {

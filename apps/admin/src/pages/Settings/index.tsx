@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import { api } from '../../lib/api';
 
-type Tab = 'store' | 'shipping' | 'exchange' | 'notifications';
+type Tab = 'store' | 'shipping' | 'exchange' | 'notifications' | 'payments';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -218,6 +218,84 @@ function NotificationsTab({ settings }: { settings: Record<string, unknown> }) {
   );
 }
 
+// ── Payments settings ─────────────────────────────────────────────────────────
+
+const GATEWAYS = [
+  {
+    id:          'razorpay',
+    label:       'Razorpay',
+    description: 'Modal-based card / UPI / netbanking. Requires RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET env vars.',
+  },
+  {
+    id:          'phonepe',
+    label:       'PhonePe',
+    description: 'Redirect-based UPI / card payments. Requires PHONEPE_MERCHANT_ID and PHONEPE_SALT_KEY env vars.',
+  },
+  {
+    id:          'manual',
+    label:       'Manual (WhatsApp)',
+    description: 'Orders are held pending confirmation. Owner coordinates payment via WhatsApp.',
+  },
+];
+
+function PaymentsTab({ settings }: { settings: Record<string, unknown> }) {
+  const queryClient = useQueryClient();
+  const [gateway, setGateway] = useState(String(settings.payment_gateway ?? 'razorpay'));
+
+  const saveMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => api.put('/admin/settings', data),
+    onSuccess: () => {
+      toast.success('Payment settings saved');
+      queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+    },
+    onError: () => toast.error('Save failed'),
+  });
+
+  return (
+    <div className="space-y-5 max-w-lg">
+      <Field
+        label="Active Payment Gateway"
+        hint="Takes effect immediately for all new orders. Existing orders are unaffected."
+      >
+        <div className="space-y-2 mt-1">
+          {GATEWAYS.map((g) => (
+            <label
+              key={g.id}
+              className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition-colors ${
+                gateway === g.id
+                  ? 'border-kb-teal bg-teal-50/50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="gateway"
+                value={g.id}
+                checked={gateway === g.id}
+                onChange={() => setGateway(g.id)}
+                className="mt-0.5 accent-kb-teal flex-shrink-0"
+              />
+              <div>
+                <p className="text-sm font-medium text-kb-charcoal">{g.label}</p>
+                <p className="text-xs text-kb-muted mt-0.5">{g.description}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+      </Field>
+      <div className="pt-2">
+        <button
+          onClick={() => saveMutation.mutate({ payment_gateway: gateway })}
+          disabled={saveMutation.isPending}
+          className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
+        >
+          {saveMutation.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -225,6 +303,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'shipping',      label: 'Shipping' },
   { id: 'exchange',      label: 'Exchange' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'payments',      label: 'Payments' },
 ];
 
 export default function SettingsPage() {
@@ -269,6 +348,7 @@ export default function SettingsPage() {
           {activeTab === 'shipping'      && <ShippingTab settings={settings} />}
           {activeTab === 'exchange'      && <ExchangeTab settings={settings} />}
           {activeTab === 'notifications' && <NotificationsTab settings={settings} />}
+          {activeTab === 'payments'      && <PaymentsTab settings={settings} />}
         </>
       )}
     </AdminLayout>

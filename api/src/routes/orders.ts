@@ -17,6 +17,79 @@ function getRazorpay(): Razorpay | null {
   return new Razorpay({ key_id: keyId, key_secret: keySecret });
 }
 
+// PhonePe payment initiation
+async function initiatePhonePe(params: {
+  orderNumber: string;
+  total:       number;
+  phone:       string;
+}): Promise<{ merchantTransactionId: string; redirectUrl: string } | null> {
+  const merchantId = process.env.PHONEPE_MERCHANT_ID;
+  const saltKey    = process.env.PHONEPE_SALT_KEY;
+  const saltIndex  = process.env.PHONEPE_SALT_INDEX ?? '1';
+  const mode       = process.env.PHONEPE_MODE        ?? 'UAT';
+  const appUrl     = (process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+  const apiUrl     = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+
+  if (!merchantId || !saltKey) return null;
+
+  const baseUrl = mode === 'PROD'
+    ? 'https://api.phonepe.com/apis/hermes'
+    : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+
+  // Max 38 chars, alphanumeric + underscore only
+  const merchantTransactionId = `${params.orderNumber.replace('-', '')}T${Date.now()}`.slice(0, 38);
+
+  const payload = {
+    merchantId,
+    merchantTransactionId,
+    amount:       Math.round(params.total * 100), // paise
+    redirectUrl:  `${appUrl}/order/${params.orderNumber}/confirmation`,
+    redirectMode: 'REDIRECT',
+    callbackUrl:  `${apiUrl}/api/payments/phonepe/callback`,
+    mobileNumber: params.phone,
+    paymentInstrument: { type: 'PAY_PAGE' },
+  };
+
+  const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
+  const endpoint      = '/pg/v1/pay';
+  const checksum      = crypto
+    .createHash('sha256')
+    .update(base64Payload + endpoint + saltKey)
+    .digest('hex');
+
+  try {
+    const response = await fetch(`${baseUrl}${endpoint}`, {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-VERIFY':     `${checksum}###${saltIndex}`,
+      },
+      body: JSON.stringify({ request: base64Payload }),
+    });
+
+    if (!response.ok) {
+      console.error('[phonepe] API error', response.status, await response.text());
+      return null;
+    }
+
+    const data = await response.json() as {
+      success: boolean;
+      data?: { instrumentResponse?: { redirectInfo?: { url: string } } };
+    };
+
+    const redirectUrl = data.data?.instrumentResponse?.redirectInfo?.url;
+    if (!data.success || !redirectUrl) {
+      console.error('[phonepe] Initiation failed', JSON.stringify(data));
+      return null;
+    }
+
+    return { merchantTransactionId, redirectUrl };
+  } catch (err) {
+    console.error('[phonepe] Network error:', err);
+    return null;
+  }
+}
+
 const router = Router();
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -121,7 +194,7 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
     const { rows: settingRows } = await pool.query<{ key: string; value: unknown }>(
       `SELECT key, value FROM settings WHERE key IN (
          'zone_a_rate','zone_a_free_above','zone_b_rate','zone_b_free_above',
-         'exchange_window_days','exchange_active','whatsapp_number'
+         'exchange_window_days','exchange_active','whatsapp_number','payment_gateway'
        )`,
     );
     const settings: Record<string, string> = {};
@@ -264,17 +337,36 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
         country: shippingAddress.country?.trim() ?? 'India',
       };
 
-      // ── Create Razorpay order (before DB insert, so we can include order ID) ──
-      const rzp = getRazorpay();
+      // ── Initiate payment via selected gateway ─────────────────────────────────
+      const gateway = settings.payment_gateway ?? 'razorpay';
+
       let rzpOrder: { id: string } | null = null;
-      if (rzp) {
-        rzpOrder = await rzp.orders.create({
-          amount:   Math.round(total * 100), // paise
-          currency: 'INR',
-          receipt:  orderNumber,
-          notes:    { order_number: orderNumber },
-        }) as { id: string };
+      if (gateway === 'razorpay') {
+        const rzp = getRazorpay();
+        if (rzp) {
+          rzpOrder = await rzp.orders.create({
+            amount:   Math.round(total * 100), // paise
+            currency: 'INR',
+            receipt:  orderNumber,
+            notes:    { order_number: orderNumber },
+          }) as { id: string };
+        }
       }
+
+      let ppResult: { merchantTransactionId: string; redirectUrl: string } | null = null;
+      if (gateway === 'phonepe') {
+        ppResult = await initiatePhonePe({
+          orderNumber,
+          total,
+          phone: normalizedAddress.phone,
+        });
+      }
+
+      // ── Determine payment status / method ─────────────────────────────────────
+      const paymentStatus = (rzpOrder || ppResult) ? 'pending' : 'pending_confirmation';
+      const paymentMethod = rzpOrder  ? 'razorpay'
+                          : ppResult  ? 'phonepe'
+                          : 'manual';
 
       // ── Insert order ───────────────────────────────────────────────────────────
       const { rows: [order] } = await client.query<{ id: string; order_number: string; created_at: Date }>(
@@ -285,7 +377,7 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
            shipping_address, billing_gstin,
            payment_status, payment_method, fulfillment_status,
            exchange_eligible_until, policy_snapshot,
-           razorpay_order_id
+           razorpay_order_id, phonepe_transaction_id
          ) VALUES (
            $1, $2, $3, $4,
            $5, $6, $7, $8,
@@ -293,7 +385,7 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
            $12, $13,
            $16, $17, 'unfulfilled',
            $14, $15,
-           $18
+           $18, $19
          )
          RETURNING id, order_number, created_at`,
         [
@@ -302,9 +394,10 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
           shipping, gst, total,
           JSON.stringify(normalizedAddress), billingGstin?.trim() ?? null,
           exchangeEligibleUntil, JSON.stringify(policySnapshot),
-          rzpOrder ? 'pending' : 'pending_confirmation',
-          rzpOrder ? 'razorpay' : 'manual',
+          paymentStatus,
+          paymentMethod,
           rzpOrder?.id ?? null,
+          ppResult?.merchantTransactionId ?? null,
         ],
       );
 
@@ -357,8 +450,8 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
       await clearAllReserves(sessionId, cart.items).catch(() => {});
       await clearCart(sessionId).catch(() => {});
 
-      // ── Notify owner for manual/WhatsApp orders (Razorpay notifies after verify) ─
-      if (!rzpOrder) {
+      // ── Notify owner for manual orders only (gateway orders notify after payment confirm) ─
+      if (paymentMethod === 'manual') {
         notifyNewOrder({
           orderNumber,
           total,
@@ -378,6 +471,28 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
         total,
       );
 
+      const paymentPayload = rzpOrder
+        ? {
+            method:            'razorpay',
+            key_id:            process.env.RAZORPAY_KEY_ID,
+            razorpay_order_id: rzpOrder.id,
+            amount:            Math.round(total * 100),
+            currency:          'INR',
+            name:              "Krishna's Bliss",
+            description:       `Order ${orderNumber}`,
+          }
+        : ppResult
+        ? {
+            method:                  'phonepe',
+            redirect_url:            ppResult.redirectUrl,
+            merchant_transaction_id: ppResult.merchantTransactionId,
+          }
+        : {
+            method:        'pay_on_confirmation',
+            whatsapp_link: whatsappLink,
+            instructions:  'Please contact us on WhatsApp to confirm your order and receive the UPI payment link.',
+          };
+
       res.status(201).json({
         data: {
           order: {
@@ -391,26 +506,12 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
             gst_amount:       gst,
             total,
             shipping_address: normalizedAddress,
-            payment_status:   rzpOrder ? 'pending' : 'pending_confirmation',
+            payment_status:   paymentStatus,
             fulfillment_status: 'unfulfilled',
             exchange_eligible_until: exchangeEligibleUntil,
             created_at:       order.created_at,
           },
-          payment: rzpOrder
-            ? {
-                method:       'razorpay',
-                key_id:       process.env.RAZORPAY_KEY_ID,
-                razorpay_order_id: rzpOrder.id,
-                amount:       Math.round(total * 100),
-                currency:     'INR',
-                name:         "Krishna's Bliss",
-                description:  `Order ${orderNumber}`,
-              }
-            : {
-                method:         'pay_on_confirmation',
-                whatsapp_link:  whatsappLink,
-                instructions:   'Please contact us on WhatsApp to confirm your order and receive the UPI payment link.',
-              },
+          payment: paymentPayload,
         },
       });
     } catch (err) {
