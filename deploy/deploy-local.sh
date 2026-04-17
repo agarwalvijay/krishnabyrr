@@ -72,9 +72,14 @@ npm run build -w api --silent
 echo "      admin..."
 npm run build -w apps/admin --silent
 
-# Web (Next.js → apps/web/.next/)
+# Web (Next.js → apps/web/.next/ with standalone output)
 echo "      web (this takes ~60s)..."
 npm run build -w apps/web --silent
+
+# Standalone doesn't auto-copy static assets — do it now so the bundle is self-contained.
+echo "      copying static assets into standalone..."
+cp -r apps/web/.next/static   apps/web/.next/standalone/apps/web/.next/static
+cp -r apps/web/public         apps/web/.next/standalone/apps/web/public
 
 echo "      done."
 
@@ -129,21 +134,15 @@ eval $RSYNC "${COMMON_EXCLUDES[@]}" \
   --exclude='*' \
   api/ "$GCP_HOST:$REMOTE_DIR/api/"
 
-# Web: .next build output only — exclude fetch cache (has localhost data baked in)
-# and pre-rendered page HTML/RSC (will be regenerated fresh from production DB on first request)
-eval $RSYNC "${COMMON_EXCLUDES[@]}" \
-  --exclude='.next/cache' \
-  --exclude='.next/server/app/*.html' \
-  --exclude='.next/server/app/*.rsc' \
-  --exclude='.next/server/app/**/*.html' \
-  --exclude='.next/server/app/**/*.rsc' \
-  --include='package.json' \
-  --include='next.config.*' \
-  --include='.env.production' \
-  --include='public/***' \
-  --include='.next/***' \
-  --exclude='*' \
-  apps/web/ "$GCP_HOST:$REMOTE_DIR/apps/web/"
+# Web: push the standalone bundle (self-contained, includes its own minimal node_modules).
+# Static assets and public/ were already copied into standalone above.
+# We deliberately exclude node_modules from COMMON_EXCLUDES here — the standalone
+# node_modules are pure-JS and intentionally part of the artifact.
+eval "rsync -az --no-owner --no-group -e 'ssh $SSH_OPTS'" \
+  --exclude='.git' \
+  --exclude='.env.local' \
+  --delete \
+  apps/web/.next/standalone/ "$GCP_HOST:$REMOTE_DIR/apps/web/.next/standalone/"
 
 # Admin: compiled dist/ only (static files served by nginx)
 # Note: Vite bakes public/ assets into dist/ at build time, so no separate copy needed
@@ -152,9 +151,11 @@ eval $RSYNC "${COMMON_EXCLUDES[@]}" \
 
 echo "      files pushed."
 
-# ── 5. Install production deps on server (fast — no build) ────────────────────
-echo "==> [5/6] Installing production node_modules on server..."
-$SSH "$GCP_HOST" "cd $REMOTE_DIR && npm install --workspaces --include-workspace-root --omit=dev --silent"
+# ── 5. Install API production deps on server ───────────────────────────────────
+# The web app uses a standalone bundle (self-contained node_modules included in artifact).
+# Only the API needs a server-side install — its production deps are small (~50 MB).
+echo "==> [5/6] Installing API production node_modules on server..."
+$SSH "$GCP_HOST" "cd $REMOTE_DIR/api && npm ci --omit=dev --silent"
 
 # ── 6. Run migrations + reload pm2 ────────────────────────────────────────────
 echo "==> [6/6] Running migrations and reloading services..."

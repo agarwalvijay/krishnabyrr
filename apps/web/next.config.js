@@ -1,5 +1,11 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Bundle only the minimal runtime needed — server never has to npm install Next.js.
+  output: 'standalone',
+  // Monorepo root so the file tracer picks up shared packages.
+  outputFileTracingRoot: path.join(__dirname, '../../'),
   images: {
     minimumCacheTTL: 60 * 60 * 24 * 30, // 30 days
     formats: ['image/avif', 'image/webp'],

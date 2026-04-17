@@ -19,9 +19,9 @@ module.exports = {
     },
     {
       name: 'kb-web',
-      cwd: path.join(APP_DIR, 'apps/web'),
-      script: 'node_modules/.bin/next',
-      args: 'start -p 3000',
+      // Standalone build bundles its own minimal node_modules — no npm install needed on server.
+      cwd: path.join(APP_DIR, 'apps/web/.next/standalone/apps/web'),
+      script: 'server.js',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -29,6 +29,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
+        HOSTNAME: '0.0.0.0',
       },
     },
   ],
