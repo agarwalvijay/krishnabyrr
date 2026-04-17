@@ -38,6 +38,15 @@ export default function Footer() {
               </button>
             </div>
 
+            {/* Policies */}
+            <div className="flex flex-col items-center sm:items-start gap-2 text-sm">
+              <p className="text-white/40 text-xs uppercase tracking-widest font-medium mb-1">Policies</p>
+              <Link href="/pages/shipping" className="text-white/70 hover:text-white transition-colors">Shipping</Link>
+              <Link href="/pages/refund"   className="text-white/70 hover:text-white transition-colors">Refund &amp; Exchange</Link>
+              <Link href="/pages/privacy"  className="text-white/70 hover:text-white transition-colors">Privacy</Link>
+              <Link href="/pages/terms"    className="text-white/70 hover:text-white transition-colors">Terms &amp; Conditions</Link>
+            </div>
+
             {/* Contact */}
             <div className="flex flex-col items-center sm:items-start gap-2 text-sm">
               <p className="text-white/40 text-xs uppercase tracking-widest font-medium mb-1">Contact Us</p>
@@ -91,14 +100,14 @@ export default function Footer() {
           </div>
 
           {/* Bottom bar */}
-          <div className="mt-8 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-white/40">
+          <div className="mt-8 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-white/40">
             <p>© {new Date().getFullYear()} Krishna&apos;s Bliss. All rights reserved.</p>
-            <button
-              onClick={() => setPolicyOpen(true)}
-              className="hover:text-white/70 transition-colors underline underline-offset-2"
-            >
-              Exchange Policy
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+              <Link href="/pages/terms"    className="hover:text-white/70 transition-colors">Terms</Link>
+              <Link href="/pages/privacy"  className="hover:text-white/70 transition-colors">Privacy</Link>
+              <Link href="/pages/refund"   className="hover:text-white/70 transition-colors">Refund Policy</Link>
+              <Link href="/pages/shipping" className="hover:text-white/70 transition-colors">Shipping</Link>
+            </div>
           </div>
         </div>
       </footer>
