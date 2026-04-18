@@ -346,13 +346,13 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
       if (gateway === 'razorpay') {
         const rzp = getRazorpay();
         if (rzp) {
-          rzpOrder = await rzp.orders.create({
+          rzpOrder = await (rzp.orders.create as unknown as (opts: Record<string, unknown>) => Promise<{ id: string }>)({
             amount:          Math.round(total * 100), // paise
             currency:        'INR',
             receipt:         orderNumber,
             notes:           { order_number: orderNumber },
-            payment_capture: 0, // manual capture — we capture after confirming we can fulfill
-          }) as { id: string };
+            payment_capture: 0, // manual capture — funds held, not charged until admin captures
+          });
         }
       }
 
