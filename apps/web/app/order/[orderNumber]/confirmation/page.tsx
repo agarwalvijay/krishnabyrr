@@ -48,6 +48,7 @@ interface Order {
   total:                   number;
   shipping_address:        ShippingAddress;
   payment_status:          string;
+  payment_method:          string | null;
   fulfillment_status:      string;
   exchange_eligible_until: string | null;
   policy_snapshot:         PolicySnapshot;
@@ -69,28 +70,50 @@ export default function ConfirmationPage() {
   const guestEmail   = searchParams.get('email') ?? undefined;
   const orderNumber  = params.orderNumber.toUpperCase();
 
-  const [order, setOrder]       = useState<Order | null>(null);
-  const [settings, setSettings] = useState<Settings>({});
-  const [loading, setLoading]   = useState(true);
+  const [order, setOrder]           = useState<Order | null>(null);
+  const [settings, setSettings]     = useState<Settings>({});
+  const [loading, setLoading]       = useState(true);
+  const [awaitingPhonePe, setAwaitingPhonePe] = useState(false);
 
   useEffect(() => {
-    async function load() {
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function load(isRetry = false) {
       try {
         const [orderRes, settingsRes] = await Promise.all([
           apiClient.get<{ data: Order }>(
             `/orders/${orderNumber}${guestEmail ? `?email=${encodeURIComponent(guestEmail)}` : ''}`,
           ),
-          apiClient.get<{ data: Settings }>('/settings/public').catch(() => ({ data: { data: {} } })),
+          isRetry
+            ? Promise.resolve(null)
+            : apiClient.get<{ data: Settings }>('/settings/public').catch(() => null),
         ]);
-        setOrder(orderRes.data.data);
-        setSettings((settingsRes as { data: { data: Settings } }).data.data ?? {});
+
+        const fetchedOrder = orderRes.data.data;
+        setOrder(fetchedOrder);
+        if (settingsRes) {
+          setSettings((settingsRes as { data: { data: Settings } }).data.data ?? {});
+        }
+
+        // PhonePe payments: poll until callback confirms payment (up to ~20s)
+        if (
+          fetchedOrder.payment_method === 'phonepe' &&
+          fetchedOrder.payment_status === 'pending'
+        ) {
+          setAwaitingPhonePe(true);
+          pollTimer = setTimeout(() => load(true), 3000);
+        } else {
+          setAwaitingPhonePe(false);
+        }
       } catch {
-        router.replace('/');
+        if (!isRetry) router.replace('/');
       } finally {
-        setLoading(false);
+        if (!isRetry) setLoading(false);
       }
     }
+
     load();
+    return () => { if (pollTimer) clearTimeout(pollTimer); };
   }, [orderNumber, guestEmail, router]);
 
   if (loading) {
@@ -116,6 +139,16 @@ export default function ConfirmationPage() {
   return (
     <div className="min-h-screen py-10 px-4" style={{ background: 'var(--kb-cream)' }}>
       <div className="max-w-[600px] mx-auto space-y-6">
+
+        {/* PhonePe payment pending banner */}
+        {awaitingPhonePe && (
+          <div className="rounded-2xl p-4 flex items-center gap-3 text-sm"
+            style={{ background: 'rgba(200,151,26,0.08)', border: '1px solid rgba(200,151,26,0.3)', color: 'var(--kb-charcoal)' }}>
+            <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin flex-shrink-0"
+              style={{ borderColor: 'var(--kb-gold)' }} />
+            Confirming your PhonePe payment…
+          </div>
+        )}
 
         {/* Header */}
         <div className="bg-white rounded-2xl p-8 shadow-sm text-center space-y-4">
@@ -150,6 +183,20 @@ export default function ConfirmationPage() {
                   'We\'ll carefully pack and dispatch your order',
                   `Delivery: ${deliveryEta}`,
                   'You\'ll receive tracking details once shipped',
+                ]
+              : order.payment_status === 'authorized'
+              ? [
+                  'Your payment is authorized and funds are reserved',
+                  'We\'ll review and confirm your order within 1 business day',
+                  'Once confirmed we\'ll dispatch — your card is only charged then',
+                  `Delivery: ${deliveryEta}`,
+                ]
+              : order.payment_method === 'phonepe'
+              ? [
+                  'Your PhonePe payment is being confirmed',
+                  'This page will update automatically once confirmed',
+                  'We\'ll pack and dispatch your order once payment clears',
+                  `Delivery: ${deliveryEta}`,
                 ]
               : [
                   'We\'ll review your order shortly',

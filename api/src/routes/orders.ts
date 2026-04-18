@@ -148,12 +148,14 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
       couponCode,
       guestEmail,
       guestPhone,
+      saveAddress,
     } = req.body as {
       shippingAddress?: Partial<ShippingAddress>;
       billingGstin?:    string;
       couponCode?:      string;
       guestEmail?:      string;
       guestPhone?:      string;
+      saveAddress?:     boolean;
     };
 
     // ── Validate address ───────────────────────────────────────────────────────
@@ -345,10 +347,11 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
         const rzp = getRazorpay();
         if (rzp) {
           rzpOrder = await rzp.orders.create({
-            amount:   Math.round(total * 100), // paise
-            currency: 'INR',
-            receipt:  orderNumber,
-            notes:    { order_number: orderNumber },
+            amount:          Math.round(total * 100), // paise
+            currency:        'INR',
+            receipt:         orderNumber,
+            notes:           { order_number: orderNumber },
+            payment_capture: 0, // manual capture — we capture after confirming we can fulfill
           }) as { id: string };
         }
       }
@@ -442,6 +445,31 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
            WHERE id = $2`,
           [total, customerId],
         );
+      }
+
+      // ── Optionally save shipping address to customer's address book ────────────
+      if (customerId && saveAddress) {
+        const { rows: [{ cnt }] } = await client.query<{ cnt: string }>(
+          `SELECT COUNT(*)::text AS cnt FROM addresses WHERE customer_id = $1`,
+          [customerId],
+        );
+        if (parseInt(cnt, 10) < 5) {
+          await client.query(
+            `INSERT INTO addresses (customer_id, name, phone, line1, line2, city, state, pincode, country, is_default)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)`,
+            [
+              customerId,
+              normalizedAddress.name,
+              normalizedAddress.phone,
+              normalizedAddress.line1,
+              normalizedAddress.line2 ?? null,
+              normalizedAddress.city,
+              normalizedAddress.state,
+              normalizedAddress.pincode,
+              normalizedAddress.country ?? 'India',
+            ],
+          );
+        }
       }
 
       await client.query('COMMIT');
@@ -559,7 +587,7 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
       return;
     }
 
-    // Mark order as paid
+    // Mark order as authorized (funds held, not yet captured)
     const { rows: [updated] } = await pool.query<{
       id: string; order_number: string; total: string;
       line_items: Array<{ name: string; quantity: number }>;
@@ -567,9 +595,10 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
       guest_email: string | null;
     }>(
       `UPDATE orders
-         SET payment_status      = 'paid',
-             razorpay_payment_id = $1,
-             updated_at          = NOW()
+         SET payment_status          = 'authorized',
+             razorpay_payment_id     = $1,
+             razorpay_authorized_at  = NOW(),
+             updated_at              = NOW()
        WHERE UPPER(order_number) = UPPER($2)
          AND razorpay_order_id   = $3
        RETURNING id, order_number, total, line_items, shipping_address, guest_email`,
@@ -581,7 +610,7 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
       return;
     }
 
-    // Notify owner — payment is now confirmed
+    // Notify owner — new order received, awaiting capture decision
     notifyNewOrder({
       orderNumber:     updated.order_number,
       total:           parseFloat(updated.total),
@@ -593,7 +622,7 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
       paymentMethod:   'razorpay',
     });
 
-    res.json({ data: { order_number: updated.order_number, payment_status: 'paid' } });
+    res.json({ data: { order_number: updated.order_number, payment_status: 'authorized' } });
   } catch (err) {
     next(err);
   }

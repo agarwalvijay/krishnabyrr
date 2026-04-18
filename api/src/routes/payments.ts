@@ -49,8 +49,9 @@ router.post('/phonepe/callback', async (req, res) => {
       return;
     }
 
-    const mtId  = decoded.data?.merchantTransactionId;
-    const state = decoded.data?.state;
+    const mtId          = decoded.data?.merchantTransactionId;
+    const state         = decoded.data?.state;
+    const phonePePayId  = decoded.data?.transactionId ?? null;
 
     if (!mtId) {
       res.status(200).json({ success: false, message: 'Missing merchantTransactionId' });
@@ -66,12 +67,13 @@ router.post('/phonepe/callback', async (req, res) => {
         guest_email:      string | null;
       }>(
         `UPDATE orders
-           SET payment_status = 'paid',
-               updated_at     = NOW()
+           SET payment_status    = 'paid',
+               phonepe_payment_id = $2,
+               updated_at        = NOW()
          WHERE phonepe_transaction_id = $1
            AND payment_status NOT IN ('paid', 'refunded')
          RETURNING order_number, total, line_items, shipping_address, guest_email`,
-        [mtId],
+        [mtId, phonePePayId],
       );
 
       if (updated) {

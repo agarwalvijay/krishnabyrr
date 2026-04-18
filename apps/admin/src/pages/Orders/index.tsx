@@ -12,6 +12,7 @@ interface OrderRow {
   order_number: string;
   created_at: string;
   payment_status: string;
+  payment_method: string | null;
   fulfillment_status: string;
   total: string;
   customer_email: string;
@@ -33,8 +34,12 @@ interface OrderDetail extends OrderRow {
   fulfilled_at: string | null;
   exchange_eligible_until: string | null;
   exchanges: ExchangeRow[];
+  refunds: RefundRow[];
   razorpay_payment_id: string | null;
+  razorpay_authorized_at: string | null;
+  phonepe_transaction_id: string | null;
   refunded_amount: string;
+  captured_amount: string | null;
 }
 
 interface ExchangeRow {
@@ -47,16 +52,42 @@ interface ExchangeRow {
   created_at: string;
 }
 
+interface RefundRow {
+  id: string;
+  amount: string;
+  razorpay_refund_id: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 interface Meta { total: number; page: number; limit: number; pages: number }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const PAYMENT_COLORS: Record<string, string> = {
   paid:                 'bg-green-50 text-green-700',
+  authorized:           'bg-blue-50 text-blue-700',
   pending_confirmation: 'bg-amber-50 text-amber-700',
   failed:               'bg-red-50 text-red-700',
   refunded:             'bg-gray-50 text-gray-600',
+  voided:               'bg-gray-50 text-gray-500',
 };
+
+const METHOD_LABELS: Record<string, { label: string; cls: string }> = {
+  razorpay: { label: 'Razorpay',  cls: 'bg-blue-50 text-blue-700' },
+  phonepe:  { label: 'PhonePe',   cls: 'bg-purple-50 text-purple-700' },
+  manual:   { label: 'Manual',    cls: 'bg-gray-50 text-gray-600' },
+};
+
+function PaymentMethodBadge({ method }: { method: string | null }) {
+  if (!method) return null;
+  const m = METHOD_LABELS[method] ?? { label: method, cls: 'bg-gray-50 text-gray-600' };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${m.cls}`}>
+      {m.label}
+    </span>
+  );
+}
 const FULFIL_COLORS: Record<string, string> = {
   unfulfilled:          'bg-gray-50 text-gray-600',
   partially_fulfilled:  'bg-blue-50 text-blue-700',
@@ -89,6 +120,7 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
   const [initialized, setInitialized]             = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [refundAmount, setRefundAmount]           = useState('');
+  const [captureAmount, setCaptureAmount]         = useState('');
   const refundInputRef                            = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery<{ data: OrderDetail }>({
@@ -123,8 +155,12 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
   const cancelMutation = useMutation({
     mutationFn: () => api.post(`/admin/orders/${orderId}/cancel`, {}),
     onSuccess: (resp) => {
-      const refundIssued = (resp.data as { data: { refund_issued: boolean } }).data.refund_issued;
-      toast.success(refundIssued ? 'Order cancelled and refund issued' : 'Order cancelled');
+      const { refund_issued, refund_warning } = (resp.data as { data: { refund_issued: boolean; refund_warning?: string } }).data;
+      if (refund_warning) {
+        toast.error(`Order cancelled — refund failed: ${refund_warning}`, { duration: 8000 });
+      } else {
+        toast.success(refund_issued ? 'Order cancelled and refund issued' : 'Order cancelled');
+      }
       setShowCancelConfirm(false);
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
       queryClient.invalidateQueries({ queryKey: ['admin-order', orderId] });
@@ -147,6 +183,33 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
       toast.error(msg ?? 'Refund failed');
+    },
+  });
+
+  const captureMutation = useMutation({
+    mutationFn: (amount: number | null) => api.post(`/admin/orders/${orderId}/capture`, { amount }),
+    onSuccess: () => {
+      toast.success('Payment captured — order is now paid');
+      setCaptureAmount('');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-order', orderId] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      toast.error(msg ?? 'Capture failed');
+    },
+  });
+
+  const voidMutation = useMutation({
+    mutationFn: () => api.post(`/admin/orders/${orderId}/void`, {}),
+    onSuccess: () => {
+      toast.success('Authorization voided — order cancelled, inventory restored');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-order', orderId] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      toast.error(msg ?? 'Void failed');
     },
   });
 
@@ -174,10 +237,13 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
               {isLoading ? 'Loading…' : order?.order_number}
             </h2>
             {order && (
-              <p className="text-xs text-kb-muted mt-0.5">
-                {new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                {' · '}{order.customer_email}
-              </p>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                <p className="text-xs text-kb-muted">
+                  {new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {' · '}{order.customer_email}
+                </p>
+                <PaymentMethodBadge method={order.payment_method} />
+              </div>
             )}
           </div>
           <button onClick={onClose} className="p-2 rounded-md hover:bg-gray-50 text-kb-muted">
@@ -211,6 +277,12 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
                 <div className="flex justify-between font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
                   <span>Total</span><span>{fmt(order.total)}</span>
                 </div>
+                {order.captured_amount && parseFloat(order.captured_amount) < parseFloat(order.total) - 0.01 && (
+                  <div className="flex justify-between text-xs text-blue-700 border-t border-gray-100 pt-1.5 mt-0.5">
+                    <span>Captured</span>
+                    <span className="font-medium">{fmt(order.captured_amount)} <span className="font-normal text-kb-muted">(partial — {fmt(parseFloat(order.total) - parseFloat(order.captured_amount))} released)</span></span>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -292,61 +364,162 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
               />
             </section>
 
-            {/* Refund section — only for paid Razorpay orders with remaining balance */}
-            {order.payment_status === 'paid' && order.razorpay_payment_id && (() => {
-              const total      = parseFloat(order.total);
-              const refunded   = parseFloat(order.refunded_amount ?? '0');
-              const remaining  = total - refunded;
-              if (remaining <= 0) return null;
+            {/* Refund history — show even when fully refunded */}
+            {(order.refunds?.length > 0 || (order.payment_status === 'paid' && order.razorpay_payment_id)) && (() => {
+              const total     = parseFloat(order.total);
+              const refunded  = parseFloat(order.refunded_amount ?? '0');
+              const remaining = total - refunded;
+              const canRefund = order.payment_status === 'paid' && order.razorpay_payment_id && remaining > 0;
+
               return (
                 <section className="border border-amber-200 rounded-xl p-4 bg-amber-50/50">
-                  <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Issue Refund</h3>
-                  {refunded > 0 && (
-                    <p className="text-xs text-kb-muted mb-2">
-                      Already refunded: {fmt(refunded)} · Remaining: {fmt(remaining)}
-                    </p>
-                  )}
-                  <div className="flex gap-2 items-end">
-                    <div className="flex-1">
-                      <label className="block text-xs text-kb-muted mb-1">
-                        Amount (₹) — leave blank for full {fmt(remaining)}
-                      </label>
-                      <input
-                        ref={refundInputRef}
-                        type="number"
-                        min={1}
-                        max={remaining}
-                        step={0.01}
-                        value={refundAmount}
-                        onChange={(e) => setRefundAmount(e.target.value)}
-                        placeholder={remaining.toFixed(2)}
-                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 outline-none"
-                      />
+                  <h3 className="text-sm font-semibold text-kb-charcoal mb-3">Refunds</h3>
+
+                  {/* Individual refund transactions */}
+                  {order.refunds?.length > 0 && (
+                    <div className="space-y-1.5 mb-3">
+                      {order.refunds.map((r) => (
+                        <div key={r.id} className="flex items-center justify-between text-sm">
+                          <div>
+                            <span className="font-medium text-kb-charcoal">{fmt(r.amount)}</span>
+                            {r.notes && <span className="text-kb-muted text-xs ml-1.5">· {r.notes}</span>}
+                            {r.razorpay_refund_id && (
+                              <span className="text-kb-muted text-xs ml-1.5 font-mono">{r.razorpay_refund_id}</span>
+                            )}
+                          </div>
+                          <span className="text-xs text-kb-muted whitespace-nowrap ml-3">
+                            {new Date(r.created_at).toLocaleString('en-IN', {
+                              day: 'numeric', month: 'short', year: 'numeric',
+                              hour: '2-digit', minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between text-xs text-kb-muted border-t border-amber-200 pt-1.5 mt-1.5">
+                        <span>Total refunded</span>
+                        <span className="font-medium">{fmt(refunded)}{remaining > 0 ? ` · ₹${remaining.toFixed(0)} remaining` : ' · Fully refunded'}</span>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => {
-                        const amt = refundAmount.trim() ? parseFloat(refundAmount) : null;
-                        refundMutation.mutate(amt);
-                      }}
-                      disabled={refundMutation.isPending}
-                      className="px-4 py-2 rounded-md bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-50 whitespace-nowrap"
-                    >
-                      {refundMutation.isPending ? 'Processing…' : 'Issue Refund'}
-                    </button>
-                  </div>
+                  )}
+
+                  {/* Issue new refund — only when balance remains */}
+                  {canRefund && (
+                    <div className="flex gap-2 items-end pt-1">
+                      <div className="flex-1">
+                        <label className="block text-xs text-kb-muted mb-1">
+                          Amount (₹) — leave blank for full {fmt(remaining)}
+                        </label>
+                        <input
+                          ref={refundInputRef}
+                          type="number"
+                          min={1}
+                          max={remaining}
+                          step={0.01}
+                          value={refundAmount}
+                          onChange={(e) => setRefundAmount(e.target.value)}
+                          placeholder={remaining.toFixed(2)}
+                          className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 outline-none"
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          const amt = refundAmount.trim() ? parseFloat(refundAmount) : null;
+                          refundMutation.mutate(amt);
+                        }}
+                        disabled={refundMutation.isPending}
+                        className="px-4 py-2 rounded-md bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {refundMutation.isPending ? 'Processing…' : 'Issue Refund'}
+                      </button>
+                    </div>
+                  )}
                 </section>
               );
             })()}
 
-            {/* Cancel order */}
-            {order.fulfillment_status !== 'cancelled' && order.fulfillment_status !== 'fulfilled' && (
+            {/* Capture / Void — only for authorized Razorpay payments */}
+            {order.payment_status === 'authorized' && order.razorpay_payment_id && (() => {
+              const authAt     = order.razorpay_authorized_at ? new Date(order.razorpay_authorized_at) : null;
+              const expiresAt  = authAt ? new Date(authAt.getTime() + 5 * 24 * 60 * 60 * 1000) : null;
+              const hoursLeft  = expiresAt ? Math.max(0, Math.round((expiresAt.getTime() - Date.now()) / 3_600_000)) : null;
+              const expireSoon = hoursLeft !== null && hoursLeft < 24;
+              const authTotal  = parseFloat(order.total);
+              const capAmt     = captureAmount.trim() ? parseFloat(captureAmount) : null;
+              const isPartial  = capAmt !== null && capAmt < authTotal - 0.01;
+
+              return (
+                <section className="border border-blue-200 rounded-xl p-4 bg-blue-50/40 space-y-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-kb-charcoal">Payment Authorized</h3>
+                    <p className="text-xs text-kb-muted mt-0.5">
+                      {fmt(order.total)} is held on the customer's card but not yet captured.
+                      {expiresAt && (
+                        <span className={expireSoon ? ' text-red-600 font-medium' : ''}>
+                          {' '}Expires {expiresAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                          {hoursLeft !== null && ` (${hoursLeft}h left)`}.
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Partial capture input */}
+                  <div>
+                    <label className="block text-xs text-kb-muted mb-1">
+                      Capture amount (₹) — leave blank to capture full {fmt(order.total)}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={authTotal}
+                      step={0.01}
+                      value={captureAmount}
+                      onChange={(e) => setCaptureAmount(e.target.value)}
+                      placeholder={authTotal.toFixed(2)}
+                      className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none"
+                    />
+                    {isPartial && (
+                      <p className="text-xs text-blue-700 mt-1">
+                        Capturing {fmt(capAmt!)} — Razorpay will auto-release the remaining {fmt(authTotal - capAmt!)} back to the customer.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => captureMutation.mutate(capAmt)}
+                      disabled={captureMutation.isPending || voidMutation.isPending}
+                      className="flex-1 px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {captureMutation.isPending
+                        ? 'Capturing…'
+                        : isPartial ? `Capture ${fmt(capAmt!)}` : 'Capture Full Amount'}
+                    </button>
+                    <button
+                      onClick={() => voidMutation.mutate()}
+                      disabled={captureMutation.isPending || voidMutation.isPending}
+                      className="px-4 py-2 rounded-md border border-gray-300 text-sm text-kb-muted hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {voidMutation.isPending ? 'Voiding…' : 'Void & Cancel'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-kb-muted">
+                    Void cancels the order and restores inventory. The hold releases automatically within 5 days — no refund issued.
+                  </p>
+                </section>
+              );
+            })()}
+
+            {/* Cancel order — hidden for authorized payments (use Void above instead) */}
+            {order.fulfillment_status !== 'cancelled' && order.fulfillment_status !== 'fulfilled' && order.payment_status !== 'authorized' && (
               <section className="border border-red-100 rounded-xl p-4 bg-red-50/40">
                 <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Cancel Order</h3>
                 <p className="text-xs text-kb-muted mb-3">
-                  Cancels the order, restores inventory
+                  Cancels the order and restores inventory.
                   {order.payment_status === 'paid' && order.razorpay_payment_id
-                    ? ', and issues a full Razorpay refund automatically.'
-                    : '.'}
+                    ? ' Issues a full Razorpay refund automatically.'
+                    : order.payment_status === 'paid' && order.phonepe_transaction_id
+                    ? ' PhonePe refund must be issued manually from the PhonePe dashboard.'
+                    : ''}
                 </p>
                 {showCancelConfirm ? (
                   <div className="flex gap-2">
@@ -485,10 +658,12 @@ export default function OrdersPage() {
           className="select-inline border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
         >
           <option value="">All Payment</option>
+          <option value="authorized">Authorized</option>
           <option value="pending_confirmation">Pending</option>
           <option value="paid">Paid</option>
           <option value="failed">Failed</option>
           <option value="refunded">Refunded</option>
+          <option value="voided">Voided</option>
         </select>
         <select
           value={fulfillFilter}
@@ -547,7 +722,10 @@ export default function OrdersPage() {
                     {new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge label={order.payment_status} colorClass={PAYMENT_COLORS[order.payment_status] ?? 'bg-gray-50 text-gray-600'} />
+                    <div className="flex flex-col gap-1">
+                      <Badge label={order.payment_status} colorClass={PAYMENT_COLORS[order.payment_status] ?? 'bg-gray-50 text-gray-600'} />
+                      <PaymentMethodBadge method={order.payment_method} />
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <Badge label={order.fulfillment_status} colorClass={FULFIL_COLORS[order.fulfillment_status] ?? 'bg-gray-50 text-gray-600'} />

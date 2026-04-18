@@ -25,9 +25,9 @@ export const metadata: Metadata = {
     type: 'website',
   },
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
-    apple: '/favicon.svg',
+    icon: '/logo-krishnas-bliss.png',
+    shortcut: '/logo-krishnas-bliss.png',
+    apple: '/logo-krishnas-bliss.png',
   },
 };
 

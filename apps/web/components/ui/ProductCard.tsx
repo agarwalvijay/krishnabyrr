@@ -168,6 +168,7 @@ export default function ProductCard({ product, showQuickView = true }: ProductCa
     <>
       <article className="group">
         {/* Image area */}
+        <Link href={`/product/${product.slug}`} tabIndex={-1} aria-hidden="true">
         <div className="product-card-image rounded-xl overflow-hidden bg-gray-100 aspect-[3/4] relative">
           {/* Primary image */}
           {primarySrc ? (
@@ -261,6 +262,7 @@ export default function ProductCard({ product, showQuickView = true }: ProductCa
             </div>
           )}
         </div>
+        </Link>
 
         {/* Card body */}
         <Link href={`/product/${product.slug}`} className="block mt-3 group/link">

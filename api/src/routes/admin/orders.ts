@@ -66,7 +66,7 @@ router.get('/', requireAuth, async (req, res, next) => {
     const dataSql = `
       SELECT
         o.id, o.order_number, o.created_at,
-        o.payment_status, o.fulfillment_status,
+        o.payment_status, o.payment_method, o.fulfillment_status,
         o.subtotal, o.discount_amount, o.shipping_amount, o.gst_amount, o.total,
         o.coupon_code, o.courier_name, o.tracking_number, o.tracking_url,
         o.fulfilled_at, o.exchange_eligible_until,
@@ -125,7 +125,14 @@ router.get('/:id', requireAuth, async (req, res, next) => {
       [order.id]
     );
 
-    res.json({ data: { ...order, exchanges } });
+    // Individual refund transactions
+    const { rows: refunds } = await pool.query(
+      `SELECT id, amount, razorpay_refund_id, notes, created_at
+       FROM order_refunds WHERE order_id = $1 ORDER BY created_at ASC`,
+      [order.id]
+    );
+
+    res.json({ data: { ...order, exchanges, refunds } });
   } catch (err) { next(err); }
 });
 
@@ -142,7 +149,7 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
       admin_notes,
     } = req.body as Record<string, unknown>;
 
-    const VALID_PAYMENT   = ['pending_confirmation', 'paid', 'failed', 'refunded'] as const;
+    const VALID_PAYMENT   = ['pending_confirmation', 'authorized', 'paid', 'failed', 'refunded'] as const;
     const VALID_FULFIL    = ['unfulfilled', 'partially_fulfilled', 'fulfilled', 'cancelled'] as const;
 
     const setClauses = ['updated_at = NOW()'];
@@ -240,28 +247,50 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
         }
       }
 
-      // Issue Razorpay refund if the order was paid via Razorpay
       let razorpayRefundId: string | null = null;
       let refundedAmount = 0;
-      if (order.payment_status === 'paid' && order.razorpay_payment_id) {
+      let refundWarning: string | null = null;
+
+      if (order.payment_status === 'authorized' && order.razorpay_payment_id) {
+        // Payment was authorized but never captured — no refund needed.
+        // The authorization hold will auto-expire at Razorpay within 5 days.
+        refundWarning = null; // no warning — no money was ever moved
+      } else if (order.payment_status === 'paid' && order.phonepe_transaction_id && !order.razorpay_payment_id) {
+        // PhonePe orders: we don't have an automated refund API — warn the admin
+        refundWarning = 'PhonePe refunds must be issued manually from the PhonePe merchant dashboard. Order has been cancelled and inventory restored.';
+      } else if (order.payment_status === 'paid' && order.razorpay_payment_id) {
+        // Razorpay captured payment — issue a refund
         const rzp = getRazorpay();
         if (rzp) {
-          const remainingRefundable = parseFloat(order.total) - parseFloat(order.refunded_amount ?? 0);
+          const refundableCeiling   = parseFloat(order.captured_amount ?? order.total);
+          const remainingRefundable = refundableCeiling - parseFloat(order.refunded_amount ?? 0);
           if (remainingRefundable > 0) {
-            const refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
-              amount: Math.round(remainingRefundable * 100), // paise
-              speed: 'normal',
-              notes: { reason: 'Order cancelled', order_number: order.order_number },
-            } as Parameters<typeof rzp.payments.refund>[1]);
-            razorpayRefundId = (refundResp as { id: string }).id;
-            refundedAmount = remainingRefundable;
+            try {
+              const refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
+                amount: Math.round(remainingRefundable * 100), // paise
+                speed: 'normal',
+                notes: { reason: 'Order cancelled', order_number: order.order_number },
+              } as Parameters<typeof rzp.payments.refund>[1]);
+              razorpayRefundId = (refundResp as { id: string }).id;
+              refundedAmount = remainingRefundable;
+            } catch (rzpErr: unknown) {
+              const desc = (rzpErr as { error?: { description?: string } })?.error?.description;
+              refundWarning = desc ?? 'Razorpay refund could not be issued — please refund manually from the Razorpay dashboard.';
+              console.error('[cancel] Razorpay refund failed:', rzpErr);
+            }
           }
         }
       }
 
-      // Update order status
-      const newPaymentStatus = refundedAmount > 0 ? 'refunded' : order.payment_status;
-      const totalRefunded    = parseFloat(order.refunded_amount ?? 0) + refundedAmount;
+      // Determine new payment status:
+      // - authorized → voided (hold auto-expires at Razorpay, no money moved)
+      // - paid + refund issued → refunded
+      // - anything else → unchanged
+      const newPaymentStatus =
+        order.payment_status === 'authorized' ? 'voided'
+        : refundedAmount > 0 ? 'refunded'
+        : order.payment_status;
+      const totalRefunded = parseFloat(order.refunded_amount ?? 0) + refundedAmount;
 
       const { rows: [updated] } = await client.query(
         `UPDATE orders SET
@@ -281,8 +310,165 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
           ...updated,
           refund_issued: refundedAmount > 0,
           razorpay_refund_id: razorpayRefundId,
+          refund_warning: refundWarning,
         },
       });
+
+      // Record the individual refund transaction — best-effort, outside the main transaction
+      if (refundedAmount > 0 && razorpayRefundId) {
+        pool.query(
+          `INSERT INTO order_refunds (order_id, amount, razorpay_refund_id, notes) VALUES ($1, $2, $3, $4)`,
+          [order.id, refundedAmount, razorpayRefundId, 'Order cancelled']
+        ).catch((e) => console.error('[cancel] order_refunds insert failed:', e.message));
+      }
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) { next(err); }
+});
+
+// ── POST /api/admin/orders/:id/capture ───────────────────────────────────────
+// Captures an authorized Razorpay payment, marking the order as paid.
+// Body: { amount?: number } — omit for full capture; pass a lower value for
+// partial capture (Razorpay auto-releases the uncaptured remainder).
+router.post('/:id/capture', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { amount: rawAmount } = req.body as { amount?: number | null };
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    const { rows: [order] } = await pool.query(
+      `SELECT * FROM orders WHERE ${isUUID ? 'id = $1' : 'order_number = $1'}`,
+      [id]
+    );
+    if (!order) {
+      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+      return;
+    }
+    if (order.payment_status !== 'authorized') {
+      res.status(409).json({ error: { message: 'Order is not in authorized status', code: 'NOT_AUTHORIZED' } });
+      return;
+    }
+    if (!order.razorpay_payment_id) {
+      res.status(409).json({ error: { message: 'No Razorpay payment ID on this order', code: 'NO_PAYMENT' } });
+      return;
+    }
+
+    const authorizedTotal = parseFloat(order.total);
+    const captureAmount   = (rawAmount != null) ? rawAmount : authorizedTotal;
+
+    if (typeof captureAmount !== 'number' || captureAmount <= 0) {
+      res.status(422).json({ error: { message: 'amount must be a positive number', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    if (captureAmount > authorizedTotal + 0.01) {
+      res.status(422).json({
+        error: {
+          message: `Capture amount ₹${captureAmount} exceeds the authorized amount ₹${authorizedTotal.toFixed(2)}`,
+          code: 'EXCEEDS_AUTHORIZED',
+        },
+      });
+      return;
+    }
+
+    const rzp = getRazorpay();
+    if (!rzp) {
+      res.status(503).json({ error: { message: 'Razorpay is not configured on this server', code: 'RAZORPAY_NOT_CONFIGURED' } });
+      return;
+    }
+
+    try {
+      await (rzp.payments as unknown as {
+        capture: (id: string, amount: number, currency: string) => Promise<unknown>;
+      }).capture(order.razorpay_payment_id, Math.round(captureAmount * 100), 'INR');
+    } catch (rzpErr: unknown) {
+      const desc = (rzpErr as { error?: { description?: string } })?.error?.description;
+      res.status(422).json({
+        error: {
+          message: desc ?? 'Razorpay capture failed — the authorization may have expired.',
+          code: 'RAZORPAY_ERROR',
+        },
+      });
+      return;
+    }
+
+    const { rows: [updated] } = await pool.query(
+      `UPDATE orders SET
+         payment_status  = 'paid',
+         captured_amount = $1,
+         updated_at      = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [captureAmount, order.id]
+    );
+
+    res.json({ data: updated });
+  } catch (err) { next(err); }
+});
+
+// ── POST /api/admin/orders/:id/void ──────────────────────────────────────────
+// Voids an authorized payment — cancels the order and lets the auth expire.
+// No money was ever captured, so no refund is needed.
+router.post('/:id/void', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    const { rows: [order] } = await pool.query(
+      `SELECT * FROM orders WHERE ${isUUID ? 'id = $1' : 'order_number = $1'}`,
+      [id]
+    );
+    if (!order) {
+      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+      return;
+    }
+    if (order.payment_status !== 'authorized') {
+      res.status(409).json({ error: { message: 'Order is not in authorized status', code: 'NOT_AUTHORIZED' } });
+      return;
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Restore stock for each line item
+      const lineItems = order.line_items as Array<{ product_id: string; quantity: number; name: string }>;
+      for (const item of lineItems) {
+        const { rows: [prod] } = await client.query<{ stock_qty: number }>(
+          'SELECT stock_qty FROM products WHERE id = $1 FOR UPDATE',
+          [item.product_id]
+        );
+        if (prod) {
+          const qtyAfter = prod.stock_qty + item.quantity;
+          await client.query(
+            'UPDATE products SET stock_qty = $1, updated_at = NOW() WHERE id = $2',
+            [qtyAfter, item.product_id]
+          );
+          await client.query(
+            `INSERT INTO inventory_log
+               (product_id, change_type, qty_before, qty_change, qty_after, reason, order_id, admin_user_id)
+             VALUES ($1, 'order_cancelled', $2, $3, $4, $5, $6, $7)`,
+            [item.product_id, prod.stock_qty, item.quantity, qtyAfter,
+             `Order ${order.order_number} voided (auth not captured)`, order.id, req.user?.id ?? null]
+          );
+        }
+      }
+
+      const { rows: [updated] } = await client.query(
+        `UPDATE orders SET
+           fulfillment_status = 'cancelled',
+           payment_status     = 'voided',
+           updated_at         = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [order.id]
+      );
+
+      await client.query('COMMIT');
+      res.json({ data: updated });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -314,12 +500,21 @@ router.post('/:id/refund', requireAuth, async (req, res, next) => {
       return;
     }
     if (!order.razorpay_payment_id) {
-      res.status(409).json({ error: { message: 'No Razorpay payment on this order', code: 'NO_RAZORPAY_PAYMENT' } });
+      const isPhonePe = !!order.phonepe_transaction_id;
+      res.status(409).json({
+        error: {
+          message: isPhonePe
+            ? 'PhonePe refunds must be issued manually from the PhonePe merchant dashboard'
+            : 'No payment recorded on this order',
+          code: isPhonePe ? 'PHONEPE_MANUAL_REFUND' : 'NO_PAYMENT',
+        },
+      });
       return;
     }
 
-    const alreadyRefunded    = parseFloat(order.refunded_amount ?? 0);
-    const remainingRefundable = parseFloat(order.total) - alreadyRefunded;
+    const alreadyRefunded     = parseFloat(order.refunded_amount ?? 0);
+    const refundableCeiling   = parseFloat(order.captured_amount ?? order.total);
+    const remainingRefundable = refundableCeiling - alreadyRefunded;
 
     if (remainingRefundable <= 0) {
       res.status(409).json({ error: { message: 'Order has already been fully refunded', code: 'FULLY_REFUNDED' } });
@@ -348,15 +543,27 @@ router.post('/:id/refund', requireAuth, async (req, res, next) => {
       return;
     }
 
-    const refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
-      amount: Math.round(refundAmount * 100), // paise
-      speed: 'normal',
-      notes: { order_number: order.order_number },
-    } as Parameters<typeof rzp.payments.refund>[1]);
-    const razorpayRefundId = (refundResp as { id: string }).id;
+    let refundResp: { id: string };
+    try {
+      refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
+        amount: Math.round(refundAmount * 100), // paise
+        speed: 'normal',
+        notes: { order_number: order.order_number },
+      } as Parameters<typeof rzp.payments.refund>[1]) as { id: string };
+    } catch (rzpErr: unknown) {
+      const desc = (rzpErr as { error?: { description?: string } })?.error?.description;
+      res.status(422).json({
+        error: {
+          message: desc ?? 'Razorpay refund was rejected — please try a different amount or refund from the Razorpay dashboard.',
+          code: 'RAZORPAY_ERROR',
+        },
+      });
+      return;
+    }
+    const razorpayRefundId = refundResp.id;
 
     const newRefundedAmount  = alreadyRefunded + refundAmount;
-    const isFullyRefunded    = newRefundedAmount >= parseFloat(order.total) - 0.01;
+    const isFullyRefunded    = newRefundedAmount >= refundableCeiling - 0.01;
     const newPaymentStatus   = isFullyRefunded ? 'refunded' : 'paid';
 
     const { rows: [updated] } = await pool.query(
@@ -371,6 +578,12 @@ router.post('/:id/refund', requireAuth, async (req, res, next) => {
     );
 
     res.json({ data: { ...updated, razorpay_refund_id: razorpayRefundId } });
+
+    // Record the individual refund transaction — best-effort, does not affect response
+    pool.query(
+      `INSERT INTO order_refunds (order_id, amount, razorpay_refund_id) VALUES ($1, $2, $3)`,
+      [order.id, refundAmount, razorpayRefundId]
+    ).catch((e) => console.error('[refund] order_refunds insert failed:', e.message));
   } catch (err) { next(err); }
 });
 

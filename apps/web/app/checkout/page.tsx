@@ -75,6 +75,20 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface SavedAddress {
+  id:         string;
+  name:       string;
+  phone:      string;
+  line1:      string;
+  line2:      string | null;
+  city:       string;
+  state:      string;
+  pincode:    string;
+  is_default: boolean;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function FieldError({ msg }: { msg?: string }) {
@@ -97,6 +111,11 @@ export default function CheckoutPage() {
   const [toast, setToast]                       = useState<string | null>(null);
   const [submitting, setSubmitting]             = useState(false);
   const [showExchangePolicy, setShowExchangePolicy] = useState(false);
+
+  // Saved addresses (logged-in users)
+  const [savedAddresses, setSavedAddresses]     = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | 'new' | null>(null);
+  const [saveAddress, setSaveAddress]           = useState(false);
 
   // Razorpay script is loaded lazily on demand (see loadRazorpay below)
 
@@ -156,6 +175,36 @@ export default function CheckoutPage() {
     } catch {}
   }, [fetchCart]);
 
+  // Fill address form fields from a saved address
+  const fillAddress = useCallback((addr: SavedAddress) => {
+    setValue('name',    addr.name);
+    setValue('phone',   addr.phone);
+    setValue('line1',   addr.line1);
+    setValue('line2',   addr.line2 ?? '');
+    setValue('city',    addr.city);
+    setValue('state',   addr.state);
+    setValue('pincode', addr.pincode);
+    handlePincodeBlur(addr.pincode);
+  }, [setValue, handlePincodeBlur]);
+
+  // Fetch saved addresses for logged-in users and auto-select default
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    apiClient.get<{ data: SavedAddress[] }>('/account/addresses')
+      .then(res => {
+        const addrs = res.data.data;
+        setSavedAddresses(addrs);
+        if (addrs.length > 0) {
+          const def = addrs.find(a => a.is_default) ?? addrs[0];
+          setSelectedAddressId(def.id);
+          fillAddress(def);
+        } else {
+          setSelectedAddressId('new');
+        }
+      })
+      .catch(() => setSelectedAddressId('new'));
+  }, [isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const onSubmit = useCallback(async (values: FormValues) => {
     setSubmitting(true);
     try {
@@ -172,6 +221,7 @@ export default function CheckoutPage() {
         },
         billingGstin: values.billing_gstin || undefined,
         couponCode:   cart?.couponCode || undefined,
+        saveAddress:  isLoggedIn && selectedAddressId === 'new' && saveAddress,
       };
 
       if (!isLoggedIn) {
@@ -372,6 +422,66 @@ export default function CheckoutPage() {
               <h2 className="font-semibold text-lg mb-4" style={{ color: 'var(--kb-charcoal)' }}>
                 Delivery Address
               </h2>
+
+              {/* Saved address picker — logged-in users with at least one saved address */}
+              {isLoggedIn && savedAddresses.length > 0 && (
+                <div className="mb-5 space-y-2">
+                  {savedAddresses.map(addr => (
+                    <button
+                      key={addr.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAddressId(addr.id);
+                        setSaveAddress(false);
+                        fillAddress(addr);
+                      }}
+                      className="w-full text-left rounded-xl border px-4 py-3 text-sm transition-colors"
+                      style={{
+                        borderColor: selectedAddressId === addr.id ? 'var(--kb-teal)' : '#e5e7eb',
+                        background:  selectedAddressId === addr.id ? 'rgba(26,107,107,0.04)' : 'transparent',
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium" style={{ color: 'var(--kb-charcoal)' }}>{addr.name}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {addr.is_default && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(26,107,107,0.1)', color: 'var(--kb-teal)' }}>
+                              Default
+                            </span>
+                          )}
+                          {selectedAddressId === addr.id && (
+                            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--kb-teal)' }} fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--kb-muted)' }}>
+                        {addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.state} – {addr.pincode}
+                      </p>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedAddressId('new');
+                      setValue('line1',   '');
+                      setValue('line2',   '');
+                      setValue('city',    '');
+                      setValue('state',   '');
+                      setValue('pincode', '');
+                    }}
+                    className="w-full text-left rounded-xl border-2 border-dashed px-4 py-3 text-sm transition-colors"
+                    style={{
+                      borderColor: selectedAddressId === 'new' ? 'var(--kb-teal)' : '#e5e7eb',
+                      color:       selectedAddressId === 'new' ? 'var(--kb-teal)' : 'var(--kb-muted)',
+                    }}
+                  >
+                    + Use a different address
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>
@@ -493,6 +603,21 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Save to address book — shown only when entering a new address while logged in */}
+                {isLoggedIn && selectedAddressId === 'new' && savedAddresses.length < 5 && (
+                  <label className="flex items-center gap-3 cursor-pointer pt-1">
+                    <input
+                      type="checkbox"
+                      checked={saveAddress}
+                      onChange={e => setSaveAddress(e.target.checked)}
+                      className="w-4 h-4 rounded accent-teal-600 flex-shrink-0"
+                    />
+                    <span className="text-sm" style={{ color: 'var(--kb-muted)' }}>
+                      Save this address to my address book
+                    </span>
+                  </label>
+                )}
               </div>
             </div>
 
