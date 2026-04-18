@@ -584,10 +584,20 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
             </button>
           </div>
           {order && (
-            <a
-              href={`/api/admin/orders/${orderId}/pdf`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={async () => {
+                try {
+                  const resp = await api.get(`/admin/orders/${orderId}/pdf`, { responseType: 'blob' });
+                  const url  = URL.createObjectURL(new Blob([resp.data as BlobPart], { type: 'application/pdf' }));
+                  const a    = document.createElement('a');
+                  a.href     = url;
+                  a.download = `order-${order.order_number}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch {
+                  toast.error('Could not download PDF');
+                }
+              }}
               className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-gray-200 text-sm text-kb-muted hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -595,7 +605,7 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
                   d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
               </svg>
               Download Order PDF
-            </a>
+            </button>
           )}
         </div>
       </div>
