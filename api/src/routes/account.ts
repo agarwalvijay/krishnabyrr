@@ -270,4 +270,52 @@ router.put('/profile', requireCustomerAuth, async (req, res, next) => {
   }
 });
 
+// ── POST /api/account/device-token ───────────────────────────────────────────
+// Register (or refresh) an FCM device token for push notifications.
+// Called by the mobile app after login.
+router.post('/device-token', requireCustomerAuth, async (req, res, next) => {
+  try {
+    const { fcm_token, platform } = req.body as { fcm_token?: string; platform?: string };
+
+    if (!fcm_token || typeof fcm_token !== 'string') {
+      res.status(422).json({ error: { message: 'fcm_token is required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    const validPlatforms = ['android', 'ios'];
+    const plat = validPlatforms.includes(platform ?? '') ? platform : 'android';
+
+    // Upsert — update updated_at if token already exists for this customer
+    await pool.query(
+      `INSERT INTO device_tokens (customer_id, fcm_token, platform)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (customer_id, fcm_token)
+       DO UPDATE SET platform = EXCLUDED.platform, updated_at = NOW()`,
+      [req.customer!.id, fcm_token, plat],
+    );
+
+    res.json({ data: { registered: true } });
+  } catch (err) { next(err); }
+});
+
+// ── DELETE /api/account/device-token ─────────────────────────────────────────
+// Unregister a device token on logout.
+router.delete('/device-token', requireCustomerAuth, async (req, res, next) => {
+  try {
+    const { fcm_token } = req.body as { fcm_token?: string };
+
+    if (!fcm_token) {
+      res.status(422).json({ error: { message: 'fcm_token is required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    await pool.query(
+      `DELETE FROM device_tokens WHERE customer_id = $1 AND fcm_token = $2`,
+      [req.customer!.id, fcm_token],
+    );
+
+    res.json({ data: { unregistered: true } });
+  } catch (err) { next(err); }
+});
+
 export default router;

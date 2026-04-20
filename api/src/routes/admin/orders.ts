@@ -3,6 +3,7 @@ import Razorpay from 'razorpay';
 import PDFDocument from 'pdfkit';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
+import { pushToCustomer } from '../../services/push';
 
 function getRazorpay(): Razorpay | null {
   const keyId     = process.env.RAZORPAY_KEY_ID;
@@ -193,6 +194,18 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
       return;
     }
     res.json({ data: order });
+
+    // Push when order is marked fulfilled/shipped
+    if (fulfillment_status === 'fulfilled' && order.customer_id) {
+      const tracking = order.tracking_number ?? order.courier_name;
+      pushToCustomer(order.customer_id, {
+        title: 'Your Order Has Shipped! 🎉',
+        body:  tracking
+          ? `Order #${order.order_number} is on its way — tracking: ${tracking}`
+          : `Order #${order.order_number} has been dispatched. Delivery in 2–7 business days.`,
+        data: { url: `/account/orders` },
+      }).catch(() => {});
+    }
   } catch (err) { next(err); }
 });
 
@@ -314,6 +327,16 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
         },
       });
 
+      if (order.customer_id) {
+        pushToCustomer(order.customer_id, {
+          title: 'Order Cancelled',
+          body:  refundedAmount > 0
+            ? `Order #${order.order_number} has been cancelled. A refund of ₹${refundedAmount.toLocaleString('en-IN')} is on its way.`
+            : `Order #${order.order_number} has been cancelled.`,
+          data: { url: `/account/orders` },
+        }).catch(() => {});
+      }
+
       // Record the individual refund transaction — best-effort, outside the main transaction
       if (refundedAmount > 0 && razorpayRefundId) {
         pool.query(
@@ -406,6 +429,17 @@ router.post('/:id/capture', requireAuth, async (req, res, next) => {
     );
 
     res.json({ data: updated });
+
+    if (order.customer_id) {
+      const isPartial = captureAmount < parseFloat(order.total) - 0.01;
+      pushToCustomer(order.customer_id, {
+        title: 'Payment Confirmed',
+        body:  isPartial
+          ? `Your payment of ₹${captureAmount.toLocaleString('en-IN')} for order #${order.order_number} has been confirmed.`
+          : `Your order #${order.order_number} payment is confirmed. We're preparing your order!`,
+        data: { url: `/order/${order.order_number}/confirmation` },
+      }).catch(() => {});
+    }
   } catch (err) { next(err); }
 });
 

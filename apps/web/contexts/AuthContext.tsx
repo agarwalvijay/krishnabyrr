@@ -46,6 +46,18 @@ export function useIsLoggedIn(): boolean {
 
 const TOKEN_KEY = 'kb_customer_token';
 
+// ── Native app bridge ─────────────────────────────────────────────────────────
+// When the website runs inside the Krishna's Bliss Android/iOS app (WebView),
+// window.ReactNativeWebView is injected by the native shell. We use it to
+// pass the auth token so the app can register the device for push notifications.
+
+function notifyNativeApp(type: 'USER_LOGIN' | 'USER_LOGOUT', token?: string) {
+  if (typeof window === 'undefined') return;
+  const rn = (window as Window & { ReactNativeWebView?: { postMessage: (msg: string) => void } }).ReactNativeWebView;
+  if (!rn) return;
+  rn.postMessage(JSON.stringify({ type, token }));
+}
+
 export function CustomerAuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     customer:  null,
@@ -71,6 +83,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       })
       .then(res => {
         setState({ customer: res.data.data, token, isLoading: false });
+        notifyNativeApp('USER_LOGIN', token); // re-register device on app open
       })
       .catch(() => {
         localStorage.removeItem(TOKEN_KEY);
@@ -92,6 +105,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     const { token, customer } = res.data.data;
     storeToken(token);
     setState({ customer, token, isLoading: false });
+    notifyNativeApp('USER_LOGIN', token);
   }, [storeToken]);
 
   const register = useCallback(async (name: string, email: string, phone: string, password: string) => {
@@ -102,9 +116,12 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     const { token, customer } = res.data.data;
     storeToken(token);
     setState({ customer, token, isLoading: false });
+    notifyNativeApp('USER_LOGIN', token);
   }, [storeToken]);
 
   const logout = useCallback(() => {
+    const currentToken = localStorage.getItem(TOKEN_KEY);
+    notifyNativeApp('USER_LOGOUT', currentToken ?? undefined); // deregister device before clearing
     localStorage.removeItem(TOKEN_KEY);
     delete apiClient.defaults.headers.common['Authorization'];
     setState({ customer: null, token: null, isLoading: false });

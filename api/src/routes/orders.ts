@@ -8,6 +8,7 @@ import { getCart, clearCart, clearAllReserves } from '../services/cart';
 import { validateCoupon } from '../services/coupon-engine';
 import { optionalCustomerAuth, requireCustomerAuth } from '../middleware/auth';
 import { notifyNewOrder } from '../services/notifications';
+import { pushToCustomer } from '../services/push';
 
 // Razorpay client — only initialised when env vars are present
 function getRazorpay(): Razorpay | null {
@@ -623,6 +624,20 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
     });
 
     res.json({ data: { order_number: updated.order_number, payment_status: 'authorized' } });
+
+    // Push notification — fire-and-forget, only for logged-in customers
+    if (updated.id) {
+      const { rows: [orderRow] } = await pool.query<{ customer_id: string | null }>(
+        `SELECT customer_id FROM orders WHERE id = $1`, [updated.id]
+      );
+      if (orderRow?.customer_id) {
+        pushToCustomer(orderRow.customer_id, {
+          title: 'Order Received!',
+          body:  `Your order #${updated.order_number} is confirmed. We'll process it shortly.`,
+          data:  { url: `/order/${updated.order_number}/confirmation` },
+        }).catch(() => {});
+      }
+    }
   } catch (err) {
     next(err);
   }
