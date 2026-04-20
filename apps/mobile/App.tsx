@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
   Platform,
   StatusBar as RNStatusBar,
   StyleSheet,
@@ -87,19 +88,21 @@ export default function App() {
     await SplashScreen.hideAsync();
 
     Animated.sequence([
-      // Phase 1: Zoom in — logo grows from 82% → 100% over 900ms (spring feel)
-      Animated.spring(scale, {
+      // Phase 1: Smooth zoom in — logo glides from 82% → 100%, decelerating
+      // to rest. Easing.out(cubic) starts fast and slows gracefully — no bounce.
+      Animated.timing(scale, {
         toValue:         1.0,
-        friction:        7,    // lower = more bounce, higher = more damped
-        tension:         40,
+        duration:        1100,
+        easing:          Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-      // Phase 2: Brief pause at full size (spring's natural settle handles this)
-      Animated.delay(200),
-      // Phase 3: Fade the overlay out to reveal the WebView
+      // Phase 2: Hold at full size so the logo has a moment to breathe
+      Animated.delay(900),
+      // Phase 3: Elegant fade out to reveal the WebView
       Animated.timing(opacity, {
         toValue:         0,
-        duration:        450,
+        duration:        550,
+        easing:          Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
     ]).start(() => setSplashDone(true));
