@@ -109,12 +109,11 @@
     .store-badge img,
     .store-badge svg,
     .store-badge object {
-      height: 58px;
-      width: auto;
+      width: 200px;
+      height: auto;
     }
-    /* Play Store PNG has ~16% built-in padding — needs extra height to appear visually equal */
+    /* Play Store PNG has built-in padding — fill the same width with black background */
     .store-badge.play img {
-      height: 70px;
       background: #000;
       border-radius: 10px;
     }
