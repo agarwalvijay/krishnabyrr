@@ -11,12 +11,43 @@ const WA_URL        = `https://wa.me/91${PHONE}`;
 const INSTAGRAM_URL = 'https://www.instagram.com/krishnas_bliss_';
 const FACEBOOK_URL  = 'https://www.facebook.com/krishnasbliss';
 
+const APP_URL = 'https://dlapp.krishnasbliss.com';
+
 export default function Footer() {
   const [policyOpen, setPolicyOpen] = useState(false);
 
   return (
     <>
       <footer className="bg-kb-charcoal text-white">
+
+        {/* ── App promo strip ── */}
+        <div className="border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white leading-tight">Get the Krishna&apos;s Bliss App</p>
+                <p className="text-xs text-white/50 leading-tight">Shop on the go — available on iOS &amp; Android</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <a href={APP_URL} target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/badge-app-store.svg" alt="Download on the App Store" className="h-9 w-auto opacity-90 hover:opacity-100 transition-opacity" />
+              </a>
+              <a href={APP_URL} target="_blank" rel="noopener noreferrer" aria-label="Get it on Google Play">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/badge-google-play.png" alt="Get it on Google Play" className="h-9 w-auto opacity-90 hover:opacity-100 transition-opacity" />
+              </a>
+            </div>
+          </div>
+        </div>
+
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10">
           <div className="flex flex-col sm:flex-row gap-8 justify-between">
 
