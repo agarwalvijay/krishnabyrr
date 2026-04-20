@@ -9,6 +9,8 @@ dist/
 *.orig.*
 web-build/
 
-# Firebase credentials — never commit
-google-services.json
+# Firebase iOS credentials — never commit (contains signing keys)
 GoogleService-Info.plist
+
+# Firebase Admin SDK — never commit (contains private key)
+# krishna-s-bliss-firebase-adminsdk-*.json
