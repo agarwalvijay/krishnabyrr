@@ -69,8 +69,7 @@ export default function RefundPage() {
 
       <h2>Contact Us</h2>
       <p>
-        For exchange or refund queries, email us at <strong>care@krishnasbliss.com</strong> or WhatsApp us
-        at <strong>+91 80766 64500</strong>.
+        For exchange or refund queries, WhatsApp us at <strong>+91 80766 64500</strong>.
       </p>
     </PolicyPage>
   );

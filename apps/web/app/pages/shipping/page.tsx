@@ -74,8 +74,8 @@ export default function ShippingPage() {
 
       <h2>Damaged or Lost Shipments</h2>
       <p>
-        If your order arrives damaged or is lost in transit, please contact us within <strong>48 hours</strong>{' '}
-        of the expected delivery date at <strong>care@krishnasbliss.com</strong>. We will coordinate with
+        If your order arrives damaged or is lost in transit, please WhatsApp us at <strong>+91 80766 64500</strong> within <strong>48 hours</strong>{' '}
+        of the expected delivery date. We will coordinate with
         the courier and, where applicable, arrange a replacement or refund as per our{' '}
         <a href="/pages/refund">Refund &amp; Exchange Policy</a>.
       </p>
@@ -88,8 +88,7 @@ export default function ShippingPage() {
 
       <h2>Contact Us</h2>
       <p>
-        For shipping queries, email <strong>care@krishnasbliss.com</strong> or WhatsApp us at{' '}
-        <strong>+91 80766 64500</strong>.
+        For shipping queries, WhatsApp us at <strong>+91 80766 64500</strong>.
       </p>
     </PolicyPage>
   );

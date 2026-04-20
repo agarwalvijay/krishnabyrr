@@ -89,8 +89,7 @@ export default function TermsPage() {
 
       <h2>11. Contact Us</h2>
       <p>
-        For any questions regarding these Terms, please contact us at{' '}
-        <strong>care@krishnasbliss.com</strong> or call <strong>+91 80766 64500</strong>.
+        For any questions regarding these Terms, please WhatsApp us at <strong>+91 80766 64500</strong>.
       </p>
     </PolicyPage>
   );

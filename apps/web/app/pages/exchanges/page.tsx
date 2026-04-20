@@ -58,7 +58,7 @@ export default async function ExchangesPolicyPage() {
               <li>To initiate an exchange, go to <strong>My Account → Orders → Request Exchange</strong>.</li>
               <li>Our team will reach out within 24 hours to coordinate the pickup and replacement.</li>
             </ul>
-            <p>For any questions, write to us at <strong>care@krishnasbliss.com</strong>.</p>
+            <p>For any questions, WhatsApp us at <strong>+91 80766 64500</strong>.</p>
           </div>
         )}
       </div>

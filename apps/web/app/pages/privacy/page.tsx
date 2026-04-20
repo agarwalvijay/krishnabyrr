@@ -34,7 +34,7 @@ export default function PrivacyPage() {
           tools (e.g., Google Analytics) to improve our service.
         </li>
         <li>
-          <strong>Communications:</strong> Messages you send us via email or WhatsApp.
+          <strong>Communications:</strong> Messages you send us via WhatsApp.
         </li>
       </ul>
 
@@ -76,7 +76,7 @@ export default function PrivacyPage() {
       <ul>
         <li>Request a copy of the personal data we hold about you</li>
         <li>Ask us to correct inaccurate information</li>
-        <li>Opt out of marketing communications by emailing us or clicking the unsubscribe link</li>
+        <li>Opt out of marketing communications by messaging us on WhatsApp</li>
         <li>Request deletion of your account (subject to legal retention obligations)</li>
       </ul>
 
@@ -106,8 +106,7 @@ export default function PrivacyPage() {
 
       <h2>10. Contact Us</h2>
       <p>
-        For any privacy-related queries, please contact:{' '}
-        <strong>care@krishnasbliss.com</strong> or call <strong>+91 80766 64500</strong>.
+        For any privacy-related queries, please WhatsApp us at <strong>+91 80766 64500</strong>.
       </p>
     </PolicyPage>
   );
