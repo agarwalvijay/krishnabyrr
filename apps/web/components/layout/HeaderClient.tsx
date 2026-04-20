@@ -293,12 +293,12 @@ function AccountMenu() {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Avatar trigger */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        aria-label={`Account menu for ${customer.name}`}
-        aria-expanded={open}
+      {/* Avatar trigger — navigates to account dashboard */}
+      <Link
+        href="/account"
+        aria-label={`Account dashboard for ${customer.name}`}
         className="flex w-9 h-9 items-center justify-center rounded-full hover:opacity-90 transition-opacity"
+        onClick={() => setOpen(false)}
       >
         <span
           className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
@@ -306,7 +306,7 @@ function AccountMenu() {
         >
           {initial}
         </span>
-      </button>
+      </Link>
 
       {/* Dropdown panel */}
       <div
