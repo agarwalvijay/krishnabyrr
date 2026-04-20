@@ -149,6 +149,10 @@ eval "rsync -az --no-owner --no-group -e 'ssh $SSH_OPTS'" \
 eval $RSYNC "${COMMON_EXCLUDES[@]}" \
   apps/admin/dist/ "$GCP_HOST:$REMOTE_DIR/apps/admin/dist/"
 
+# dlapp: static files served directly by nginx from repo path
+eval $RSYNC "${COMMON_EXCLUDES[@]}" \
+  apps/dlapp/ "$GCP_HOST:$REMOTE_DIR/apps/dlapp/"
+
 echo "      files pushed."
 
 # ── 5. Install API production deps on server ───────────────────────────────────
