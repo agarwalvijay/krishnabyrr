@@ -53,8 +53,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "krishna-s-bliss"
+        "projectId": "d70abaa7-b4ad-4041-b4fa-9a2c3f0f76af"
       }
-    }
+    },
+    "owner": "krishnasbliss"
   }
 }
