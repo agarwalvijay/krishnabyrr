@@ -14,10 +14,11 @@ const BCRYPT_ROUNDS = 12;
 
 router.post('/register', async (req, res, next) => {
   try {
-    const { email, password, name } = req.body as {
+    const { email, password, name, phone } = req.body as {
       email?: string;
       password?: string;
       name?: string;
+      phone?: string;
     };
 
     if (!email || !password || !name) {
@@ -50,11 +51,13 @@ router.post('/register', async (req, res, next) => {
 
     const password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-    const { rows: [customer] } = await pool.query<{ id: string; email: string; name: string }>(
-      `INSERT INTO customers (email, name, password_hash)
-       VALUES ($1, $2, $3)
-       RETURNING id, email, name`,
-      [normalEmail, name.trim(), password_hash],
+    const cleanPhone = phone?.replace(/\D/g, '').slice(-10) || null;
+
+    const { rows: [customer] } = await pool.query<{ id: string; email: string; name: string; phone: string | null }>(
+      `INSERT INTO customers (email, name, password_hash, phone)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, email, name, phone`,
+      [normalEmail, name.trim(), password_hash, cleanPhone],
     );
 
     const token = jwt.sign(
