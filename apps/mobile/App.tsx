@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Image,
   Platform,
+  StatusBar as RNStatusBar,
   StyleSheet,
   View,
 } from 'react-native';
@@ -173,6 +173,8 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: CREAM,
+    // Push content below the Android status bar so the website header isn't hidden
+    paddingTop: Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0,
   },
   webview: {
     flex: 1,
