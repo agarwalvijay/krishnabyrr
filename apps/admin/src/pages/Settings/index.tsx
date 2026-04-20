@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import { api } from '../../lib/api';
 
-type Tab = 'store' | 'shipping' | 'exchange' | 'notifications' | 'payments';
+type Tab = 'store' | 'shipping' | 'exchange' | 'notifications' | 'payments' | 'mobile';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -296,6 +296,70 @@ function PaymentsTab({ settings }: { settings: Record<string, unknown> }) {
   );
 }
 
+// ── Mobile App settings ───────────────────────────────────────────────────────
+
+function MobileAppTab({ settings }: { settings: Record<string, unknown> }) {
+  const queryClient = useQueryClient();
+  const [androidUrl, setAndroidUrl] = useState(String(settings.android_url ?? ''));
+  const [iosUrl, setIosUrl]         = useState(String(settings.ios_url ?? ''));
+
+  const saveMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => api.put('/admin/settings', data),
+    onSuccess: () => {
+      toast.success('Mobile App settings saved');
+      queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+    },
+    onError: () => toast.error('Save failed'),
+  });
+
+  return (
+    <div className="space-y-5 max-w-lg">
+      <p className="text-sm text-kb-muted">
+        These URLs power the smart download page at{' '}
+        <a href="https://dlapp.krishnasbliss.com" target="_blank" rel="noopener noreferrer"
+           className="text-kb-teal underline underline-offset-2">
+          dlapp.krishnasbliss.com
+        </a>.
+        Leave a field blank to hide that store button.
+      </p>
+      <Field
+        label="Google Play Store URL"
+        hint="Full URL, e.g. https://play.google.com/store/apps/details?id=com.krishnasbliss.shop"
+      >
+        <input
+          value={androidUrl}
+          onChange={(e) => setAndroidUrl(e.target.value.trim())}
+          className={inputCls}
+          placeholder="https://play.google.com/store/apps/details?id=…"
+        />
+      </Field>
+      <Field
+        label="Apple App Store URL"
+        hint="Full URL, e.g. https://apps.apple.com/app/krishnas-bliss/id123456789"
+      >
+        <input
+          value={iosUrl}
+          onChange={(e) => setIosUrl(e.target.value.trim())}
+          className={inputCls}
+          placeholder="https://apps.apple.com/app/…"
+        />
+      </Field>
+      <div className="pt-2">
+        <button
+          onClick={() => saveMutation.mutate({
+            android_url: androidUrl || null,
+            ios_url:     iosUrl     || null,
+          })}
+          disabled={saveMutation.isPending}
+          className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
+        >
+          {saveMutation.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -304,6 +368,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'exchange',      label: 'Exchange' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'payments',      label: 'Payments' },
+  { id: 'mobile',        label: 'Mobile App' },
 ];
 
 export default function SettingsPage() {
@@ -349,6 +414,7 @@ export default function SettingsPage() {
           {activeTab === 'exchange'      && <ExchangeTab settings={settings} />}
           {activeTab === 'notifications' && <NotificationsTab settings={settings} />}
           {activeTab === 'payments'      && <PaymentsTab settings={settings} />}
+          {activeTab === 'mobile'        && <MobileAppTab settings={settings} />}
         </>
       )}
     </AdminLayout>

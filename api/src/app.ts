@@ -19,6 +19,7 @@ import exchangesRouter from './routes/exchanges';
 import accountRouter from './routes/account';
 import pagesRouter from './routes/pages';
 import paymentsRouter from './routes/payments';
+import appLinksRouter from './routes/app-links';
 import { errorHandler } from './middleware/error';
 
 const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:3002,http://localhost:5173')
@@ -61,6 +62,9 @@ app.use('/api/account', accountRouter);
 
 // ── Pages (CMS static pages) ──────────────────────────────────────────────────
 app.use('/api/pages', pagesRouter);
+
+// ── App download links (public, CORS *) ───────────────────────────────────────
+app.use('/api/app-links', appLinksRouter);
 
 // ── Payment gateway callbacks (public — no auth, PhonePe etc) ────────────────
 app.use('/api/payments', paymentsRouter);
