@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -197,16 +197,185 @@ function MobileAccordion({ label, items, browseHref, isExpanded, onToggle, onNav
   );
 }
 
+// ── Mobile account section (inside hamburger menu) ───────────────────────────
+
+function MobileAccountSection({ onNav }: { onNav: () => void }) {
+  const { customer, logout } = useCustomerAuth();
+  const router               = useRouter();
+
+  const handleSignOut = () => {
+    onNav();
+    logout();
+    router.push('/');
+  };
+
+  if (!customer) {
+    return (
+      <div className="border-t border-gray-100 pt-2 mt-2">
+        <Link href="/account/login" className={mobileLinkBase} onClick={onNav}>Sign In</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-gray-100 pt-2 mt-2 space-y-0.5">
+      <p className="px-3 py-1 text-xs font-semibold text-kb-muted uppercase tracking-wide">
+        {customer.name}
+      </p>
+      <Link href="/account"          className={mobileLinkBase} onClick={onNav}>My Profile</Link>
+      <Link href="/account/orders"   className={mobileLinkBase} onClick={onNav}>My Orders</Link>
+      <Link href="/account/wishlist" className={mobileLinkBase} onClick={onNav}>Wishlist</Link>
+      <button
+        onClick={handleSignOut}
+        className={`${mobileLinkBase} w-full text-left text-red-500 hover:text-red-600 hover:bg-red-50`}
+      >
+        Sign Out
+      </button>
+    </div>
+  );
+}
+
+// ── Account menu ─────────────────────────────────────────────────────────────
+
+function AccountMenu() {
+  const { customer, logout } = useCustomerAuth();
+  const router               = useRouter();
+  const [open, setOpen]      = useState(false);
+  const containerRef         = useRef<HTMLDivElement>(null);
+  const hoverTimerRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleMouseEnter = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    setOpen(true);
+  };
+  const handleMouseLeave = () => {
+    hoverTimerRef.current = setTimeout(() => setOpen(false), 150);
+  };
+
+  const handleSignOut = () => {
+    setOpen(false);
+    logout();
+    router.push('/');
+  };
+
+  // Guest — just navigate to login, no dropdown
+  if (!customer) {
+    return (
+      <Link
+        href="/account/login"
+        aria-label="Sign in"
+        className="flex w-9 h-9 items-center justify-center rounded-full hover:bg-gray-50 transition-colors text-gray-400 hover:text-kb-charcoal"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      </Link>
+    );
+  }
+
+  const initial = customer.name.charAt(0).toUpperCase();
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Avatar trigger */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-label={`Account menu for ${customer.name}`}
+        aria-expanded={open}
+        className="flex w-9 h-9 items-center justify-center rounded-full hover:opacity-90 transition-opacity"
+      >
+        <span
+          className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
+          style={{ background: 'var(--kb-teal)' }}
+        >
+          {initial}
+        </span>
+      </button>
+
+      {/* Dropdown panel */}
+      <div
+        className={[
+          'absolute right-0 top-full pt-2 w-52 z-50',
+          'transition-all duration-150 origin-top-right',
+          open
+            ? 'opacity-100 scale-100 pointer-events-auto'
+            : 'opacity-0 scale-95 pointer-events-none',
+        ].join(' ')}
+      >
+        <div className="bg-white rounded-xl shadow-lg ring-1 ring-black/5 overflow-hidden">
+          {/* Name header */}
+          <div className="px-4 py-3 border-b border-gray-100">
+            <p className="text-sm font-semibold text-kb-charcoal truncate">{customer.name}</p>
+            {'email' in customer && (
+              <p className="text-xs text-kb-muted truncate">{(customer as { email: string }).email}</p>
+            )}
+          </div>
+
+          {/* Menu items */}
+          <nav className="py-1.5">
+            {[
+              { label: 'My Profile',  href: '/account',         icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+              { label: 'My Orders',   href: '/account/orders',  icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+              { label: 'Wishlist',    href: '/account/wishlist', icon: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z' },
+            ].map(({ label, href, icon }) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-500 hover:text-kb-charcoal hover:bg-gray-50 transition-colors"
+              >
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} />
+                </svg>
+                {label}
+              </Link>
+            ))}
+          </nav>
+
+          {/* Sign out */}
+          <div className="border-t border-gray-100 py-1.5">
+            <button
+              onClick={handleSignOut}
+              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-red-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Header ───────────────────────────────────────────────────────────────
 
 export default function HeaderClient({ collections, tagGroups, categories }: HeaderNavData) {
   const [openMenu, setOpenMenu]         = useState<string | null>(null);
   const [mobileOpen, setMobileOpen]     = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
-  const { cart, openCart }  = useCart();
-  const { customer }        = useCustomerAuth();
-  const router              = useRouter();
+  const { cart, openCart } = useCart();
 
+  const router    = useRouter();
   const itemCount = cart?.items.reduce((s, i) => s + i.quantity, 0) ?? 0;
 
   const handleSearchSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
@@ -376,26 +545,8 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
               )}
             </button>
 
-            {/* Account */}
-            <Link
-              href={customer ? '/account' : '/account/login'}
-              aria-label={customer ? `My account (${customer.name})` : 'Sign in'}
-              className="hidden md:flex w-9 h-9 items-center justify-center rounded-full hover:bg-gray-50 transition-colors text-gray-400 hover:text-kb-charcoal"
-            >
-              {customer ? (
-                <span
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                  style={{ background: 'var(--kb-teal)' }}
-                >
-                  {customer.name.charAt(0).toUpperCase()}
-                </span>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              )}
-            </Link>
+            {/* Account — visible on all screen sizes */}
+            <AccountMenu />
 
             {/* Mobile hamburger */}
             <button
@@ -489,15 +640,7 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
                 Sale
               </Link>
 
-              <div className="border-t border-gray-100 pt-2 mt-2">
-                <Link
-                  href={customer ? '/account' : '/account/login'}
-                  className={mobileLinkBase}
-                  onClick={closeMobile}
-                >
-                  {customer ? `My Account (${customer.name})` : 'Sign In'}
-                </Link>
-              </div>
+              <MobileAccountSection onNav={closeMobile} />
             </nav>
           </div>
         )}
