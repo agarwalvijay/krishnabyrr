@@ -42,7 +42,8 @@ export default function Footer() {
               </a>
               <a href={APP_URL} target="_blank" rel="noopener noreferrer" aria-label="Get it on Google Play">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/badge-google-play.png" alt="Get it on Google Play" className="h-9 w-auto opacity-90 hover:opacity-100 transition-opacity" />
+                {/* Play Store PNG has ~16% built-in padding so needs to be taller to appear the same visual size */}
+                <img src="/badge-google-play.png" alt="Get it on Google Play" className="h-11 w-auto opacity-90 hover:opacity-100 transition-opacity" />
               </a>
             </div>
           </div>

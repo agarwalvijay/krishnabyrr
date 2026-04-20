@@ -107,9 +107,14 @@
     .store-badge:active { opacity: 0.7;  transform: translateY(0); }
 
     .store-badge img,
-    .store-badge svg {
+    .store-badge svg,
+    .store-badge object {
       height: 58px;
       width: auto;
+    }
+    /* Play Store PNG has ~16% built-in padding — needs extra height to appear visually equal */
+    .store-badge.play img {
+      height: 70px;
     }
 
     /* ── Divider ── */
