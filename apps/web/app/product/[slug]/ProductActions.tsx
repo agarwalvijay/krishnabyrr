@@ -61,7 +61,7 @@ export default function ProductActions({ product, whatsappNumber }: Props) {
   useRecentlyViewed(product);
 
   const waText = encodeURIComponent(
-    `Hi, I'm interested in "${product.name}": ${typeof window !== 'undefined' ? window.location.href : ''}`
+    `Hi, I'm interested in "${product.name}": https://krishnasbliss.com/product/${product.slug}`
   );
   const waNumber = (() => {
     if (!whatsappNumber) return '919999999999';
