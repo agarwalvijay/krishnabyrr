@@ -43,12 +43,20 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 }
 
 export default async function ProductDetailPage({ params }: { params: Params }) {
-  const [product, settings] = await Promise.all([
-    serverFetch<ProductDetail>(`/api/products/${params.slug}`, { revalidate: 3600 }).catch(() => null),
+  // Fetch product and settings in parallel.
+  // notFound() is called directly inside the try-catch so Next.js's special
+  // NEXT_NOT_FOUND signal is thrown at the top level, not inside a .catch()
+  // callback — avoids the unhandledRejection / null.digest crash during ISR.
+  let product: ProductDetail;
+  const [productResult, settings] = await Promise.all([
+    serverFetch<ProductDetail>(`/api/products/${params.slug}`, { revalidate: 3600 })
+      .then((p) => ({ ok: true as const, data: p }))
+      .catch(() => ({ ok: false as const })),
     serverFetch<PublicSettings>('/api/settings/public', { revalidate: 3600 }).catch(() => ({} as PublicSettings)),
   ]);
 
-  if (!product) notFound();
+  if (!productResult.ok) notFound();
+  product = productResult.data;
 
   const status        = getStockStatus(product.stock_qty);
   const hasSale       = product.sale_price != null && product.sale_price < product.mrp;
