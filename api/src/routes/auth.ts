@@ -10,65 +10,95 @@ const JWT_SECRET  = () => process.env.JWT_SECRET ?? 'change-me-in-production';
 const JWT_EXPIRES = '30d';
 const BCRYPT_ROUNDS = 12;
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function isEmail(val: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+}
+
+/** Strip non-digits and keep last 10 — our canonical phone format */
+function cleanPhone(raw: string): string {
+  return raw.replace(/\D/g, '').slice(-10);
+}
+
 // ── POST /api/auth/register ───────────────────────────────────────────────────
 
 router.post('/register', async (req, res, next) => {
   try {
     const { email, password, name, phone } = req.body as {
-      email?: string;
+      email?:    string;
       password?: string;
-      name?: string;
-      phone?: string;
+      name?:     string;
+      phone?:    string;
     };
 
-    if (!email || !password || !name) {
-      res.status(400).json({
-        error: { message: 'email, password, and name are required', code: 'VALIDATION_ERROR' },
-      });
+    if (!name?.trim()) {
+      res.status(400).json({ error: { message: 'Name is required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    if (!password) {
+      res.status(400).json({ error: { message: 'Password is required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    if (!email && !phone) {
+      res.status(400).json({ error: { message: 'Phone number or email is required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    if (password.length < 8) {
+      res.status(400).json({ error: { message: 'Password must be at least 8 characters', code: 'VALIDATION_ERROR' } });
       return;
     }
 
-    const normalEmail = email.toLowerCase().trim();
+    const normalEmail  = email ? email.toLowerCase().trim() : null;
+    const normalPhone  = phone ? cleanPhone(phone) : null;
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalEmail)) {
+    if (normalEmail && !isEmail(normalEmail)) {
       res.status(400).json({ error: { message: 'Invalid email address', code: 'VALIDATION_ERROR' } });
       return;
     }
-
-    if (password.length < 8) {
-      res.status(400).json({
-        error: { message: 'Password must be at least 8 characters', code: 'VALIDATION_ERROR' },
-      });
+    if (normalPhone && normalPhone.length !== 10) {
+      res.status(400).json({ error: { message: 'Enter a valid 10-digit mobile number', code: 'VALIDATION_ERROR' } });
       return;
     }
 
-    // Check for duplicate email
-    const existing = await pool.query('SELECT id FROM customers WHERE email = $1', [normalEmail]);
-    if (existing.rowCount && existing.rowCount > 0) {
-      res.status(409).json({ error: { message: 'Email already registered', code: 'EMAIL_TAKEN' } });
-      return;
+    // Uniqueness checks
+    if (normalEmail) {
+      const { rowCount } = await pool.query('SELECT id FROM customers WHERE email = $1', [normalEmail]);
+      if (rowCount && rowCount > 0) {
+        res.status(409).json({ error: { message: 'Email already registered', code: 'EMAIL_TAKEN' } });
+        return;
+      }
+    }
+    if (normalPhone) {
+      const { rowCount } = await pool.query('SELECT id FROM customers WHERE phone = $1', [normalPhone]);
+      if (rowCount && rowCount > 0) {
+        res.status(409).json({ error: { message: 'Phone number already registered', code: 'PHONE_TAKEN' } });
+        return;
+      }
     }
 
     const password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-    const cleanPhone = phone?.replace(/\D/g, '').slice(-10) || null;
-
-    const { rows: [customer] } = await pool.query<{ id: string; email: string; name: string; phone: string | null }>(
+    const { rows: [customer] } = await pool.query<{
+      id: string; email: string | null; name: string; phone: string | null;
+    }>(
       `INSERT INTO customers (email, name, password_hash, phone)
        VALUES ($1, $2, $3, $4)
        RETURNING id, email, name, phone`,
-      [normalEmail, name.trim(), password_hash, cleanPhone],
+      [normalEmail, name.trim(), password_hash, normalPhone],
     );
 
     // Auto-link any guest orders placed with this email before registration
-    await pool.query(
-      `UPDATE orders SET customer_id = $1, updated_at = NOW()
-       WHERE LOWER(guest_email) = $2 AND customer_id IS NULL`,
-      [customer.id, normalEmail],
-    );
+    if (normalEmail) {
+      await pool.query(
+        `UPDATE orders SET customer_id = $1, updated_at = NOW()
+         WHERE LOWER(guest_email) = $2 AND customer_id IS NULL`,
+        [customer.id, normalEmail],
+      );
+    }
 
     const token = jwt.sign(
-      { id: customer.id, email: customer.email, name: customer.name, sub: 'customer' },
+      { id: customer.id, email: customer.email, name: customer.name, phone: customer.phone, sub: 'customer' },
       JWT_SECRET(),
       { expiresIn: JWT_EXPIRES },
     );
@@ -80,23 +110,30 @@ router.post('/register', async (req, res, next) => {
 });
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
+// Accepts { identifier, password } where identifier is an email or phone number.
 
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body as { email?: string; password?: string };
+    const { identifier, password } = req.body as { identifier?: string; password?: string };
 
-    if (!email || !password) {
+    if (!identifier || !password) {
       res.status(401).json({ error: { message: 'Invalid credentials', code: 'INVALID_CREDENTIALS' } });
       return;
     }
 
-    const normalEmail = email.toLowerCase().trim();
+    // Detect whether identifier is email or phone
+    const trimmed    = identifier.trim();
+    const byEmail    = isEmail(trimmed);
+    const byPhone    = !byEmail;
+    const lookupVal  = byEmail ? trimmed.toLowerCase() : cleanPhone(trimmed);
 
     const { rows: [customer] } = await pool.query<{
-      id: string; email: string; name: string; password_hash: string | null;
+      id: string; email: string | null; name: string; phone: string | null; password_hash: string | null;
     }>(
-      'SELECT id, email, name, password_hash FROM customers WHERE email = $1',
-      [normalEmail],
+      byEmail
+        ? 'SELECT id, email, name, phone, password_hash FROM customers WHERE email = $1'
+        : 'SELECT id, email, name, phone, password_hash FROM customers WHERE phone = $1',
+      [lookupVal],
     );
 
     // Always run bcrypt to prevent timing attacks
@@ -110,12 +147,12 @@ router.post('/login', async (req, res, next) => {
     }
 
     const token = jwt.sign(
-      { id: customer.id, email: customer.email, name: customer.name, sub: 'customer' },
+      { id: customer.id, email: customer.email, name: customer.name, phone: customer.phone, sub: 'customer' },
       JWT_SECRET(),
       { expiresIn: JWT_EXPIRES },
     );
 
-    res.json({ data: { token, customer: { id: customer.id, email: customer.email, name: customer.name } } });
+    res.json({ data: { token, customer: { id: customer.id, email: customer.email, name: customer.name, phone: customer.phone } } });
   } catch (err) {
     next(err);
   }
@@ -126,7 +163,7 @@ router.post('/login', async (req, res, next) => {
 router.get('/me', requireCustomerAuth, async (req, res, next) => {
   try {
     const { rows: [customer] } = await pool.query<{
-      id: string; email: string; name: string; phone: string | null;
+      id: string; email: string | null; name: string; phone: string | null;
       total_orders: number; lifetime_value: string; created_at: Date;
     }>(
       `SELECT id, email, name, phone, total_orders, lifetime_value::text, created_at
@@ -146,8 +183,6 @@ router.get('/me', requireCustomerAuth, async (req, res, next) => {
 });
 
 // ── POST /api/auth/link-order ─────────────────────────────────────────────────
-// Called from registration page: links a guest order to the newly-created customer.
-// Only links if order.guest_email === email AND order.customer_id IS NULL.
 
 router.post('/link-order', async (req, res, next) => {
   try {
@@ -160,7 +195,6 @@ router.post('/link-order', async (req, res, next) => {
 
     const normalEmail = email.toLowerCase().trim();
 
-    // Find the customer who just registered with this email
     const { rows: [customer] } = await pool.query<{ id: string }>(
       'SELECT id FROM customers WHERE email = $1',
       [normalEmail],
@@ -171,7 +205,6 @@ router.post('/link-order', async (req, res, next) => {
       return;
     }
 
-    // Only link if the order is unlinked and guest_email matches
     const { rows: [order] } = await pool.query<{ id: string }>(
       `SELECT id FROM orders
        WHERE order_number = $1
@@ -181,7 +214,6 @@ router.post('/link-order', async (req, res, next) => {
     );
 
     if (!order) {
-      // Silent success — order may already be linked or not belong to this email
       res.json({ data: { linked: false } });
       return;
     }
@@ -210,7 +242,6 @@ router.post('/change-password', requireCustomerAuth, async (req, res, next) => {
       res.status(400).json({ error: { message: 'currentPassword and newPassword are required', code: 'VALIDATION_ERROR' } });
       return;
     }
-
     if (newPassword.length < 8) {
       res.status(400).json({ error: { message: 'New password must be at least 8 characters', code: 'VALIDATION_ERROR' } });
       return;

@@ -19,7 +19,7 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login:    (email: string, password: string) => Promise<void>;
+  login:    (identifier: string, password: string) => Promise<void>;
   register: (name: string, email: string, phone: string, password: string) => Promise<void>;
   logout:   () => void;
 }
@@ -97,10 +97,10 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string) => {
     const res = await apiClient.post<{ data: { token: string; customer: Customer } }>(
       '/auth/login',
-      { email, password },
+      { identifier, password },
     );
     const { token, customer } = res.data.data;
     storeToken(token);

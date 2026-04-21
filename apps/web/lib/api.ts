@@ -135,7 +135,7 @@ export interface ApiMeta {
 
 export interface Customer {
   id:             string;
-  email:          string;
+  email:          string | null;
   name:           string;
   phone:          string | null;
   total_orders:   number;

@@ -9,8 +9,8 @@ import Link from 'next/link';
 import { useCustomerAuth } from '@/contexts/AuthContext';
 
 const schema = z.object({
-  email:    z.string().email('Enter a valid email address'),
-  password: z.string().min(1, 'Password is required'),
+  identifier: z.string().min(1, 'Email or mobile number is required'),
+  password:   z.string().min(1, 'Password is required'),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -29,11 +29,11 @@ function LoginPage() {
   const onSubmit = async (values: FormValues) => {
     setApiError(null);
     try {
-      await login(values.email, values.password);
+      await login(values.identifier, values.password);
       router.push(redirect);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: { message?: string } } } };
-      setApiError(axiosErr?.response?.data?.error?.message ?? 'Invalid email or password');
+      setApiError(axiosErr?.response?.data?.error?.message ?? 'Invalid credentials');
     }
   };
 
@@ -51,16 +51,17 @@ function LoginPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>
-              Email
+              Email or Mobile Number
             </label>
             <input
-              {...register('email')}
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
+              {...register('identifier')}
+              type="text"
+              autoComplete="email tel"
+              placeholder="you@example.com or 9876543210"
+              inputMode="email"
               className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
             />
-            {errors.email && <p className="mt-1 text-xs" style={{ color: 'var(--kb-error)' }}>{errors.email.message}</p>}
+            {errors.identifier && <p className="mt-1 text-xs" style={{ color: 'var(--kb-error)' }}>{errors.identifier.message}</p>}
           </div>
 
           <div>

@@ -160,7 +160,7 @@ export default function CheckoutPage() {
   // Pre-fill from customer context
   useEffect(() => {
     if (customer) {
-      setValue('email', customer.email);
+      if (customer.email) setValue('email', customer.email);
       setValue('name',  customer.name);
       if (customer.phone) setValue('phone', customer.phone);
     }

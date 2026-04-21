@@ -11,7 +11,7 @@ import { apiClient } from '@/lib/api';
 
 const schema = z.object({
   name:            z.string().min(1, 'Name is required').max(100),
-  email:           z.string().email('Enter a valid email address'),
+  email:           z.union([z.string().email('Enter a valid email address'), z.literal('')]).optional(),
   phone:           z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number'),
   password:        z.string().min(8, 'Password must be at least 8 characters'),
   confirmPassword: z.string().min(1, 'Please confirm your password'),
@@ -44,12 +44,13 @@ function RegisterPage() {
   const onSubmit = async (values: FormValues) => {
     setApiError(null);
     try {
-      await registerCustomer(values.name, values.email, values.phone, values.password);
+      const emailVal = values.email?.trim() || '';
+      await registerCustomer(values.name, emailVal, values.phone, values.password);
 
       // Link the guest order if we came from the confirmation page
-      if (linkedOrder && values.email) {
+      if (linkedOrder && emailVal) {
         try {
-          await apiClient.post('/auth/link-order', { orderNumber: linkedOrder, email: values.email });
+          await apiClient.post('/auth/link-order', { orderNumber: linkedOrder, email: emailVal });
           setLinkToast(true);
         } catch {}
       }
@@ -80,7 +81,7 @@ function RegisterPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {[
             { name: 'name',  label: 'Full Name',       type: 'text',     placeholder: 'Priya Sharma',   autoComplete: 'name' },
-            { name: 'email', label: 'Email',            type: 'email',    placeholder: 'you@example.com', autoComplete: 'email' },
+            { name: 'email', label: 'Email (optional)', type: 'email',    placeholder: 'you@example.com', autoComplete: 'email' },
             { name: 'phone', label: 'Mobile Number',    type: 'tel',      placeholder: '9876543210',     autoComplete: 'tel', inputMode: 'numeric', maxLength: 10 },
           ].map(field => (
             <div key={field.name}>

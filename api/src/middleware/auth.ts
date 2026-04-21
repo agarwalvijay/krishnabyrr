@@ -9,10 +9,11 @@ export interface AdminTokenPayload {
 }
 
 export interface CustomerTokenPayload {
-  id: string;
-  email: string;
-  name: string;
-  sub: 'customer';
+  id:     string;
+  email:  string | null;
+  name:   string;
+  phone:  string | null;
+  sub:    'customer';
 }
 
 // Extend Express Request to carry authenticated user context
@@ -27,9 +28,10 @@ declare global {
         is_active: boolean;
       };
       customer?: {
-        id: string;
-        email: string;
-        name: string;
+        id:    string;
+        email: string | null;
+        name:  string;
+        phone: string | null;
       };
     }
   }
@@ -39,7 +41,9 @@ declare global {
 
 const jwtSecret = () => process.env.JWT_SECRET ?? 'change-me-in-production';
 
-async function resolveCustomerFromToken(token: string): Promise<{ id: string; email: string; name: string } | null> {
+async function resolveCustomerFromToken(
+  token: string,
+): Promise<{ id: string; email: string | null; name: string; phone: string | null } | null> {
   let payload: CustomerTokenPayload;
   try {
     payload = jwt.verify(token, jwtSecret()) as CustomerTokenPayload;
@@ -48,8 +52,8 @@ async function resolveCustomerFromToken(token: string): Promise<{ id: string; em
   }
   if (payload.sub !== 'customer') return null;
 
-  const { rows } = await pool.query<{ id: string; email: string; name: string }>(
-    'SELECT id, email, name FROM customers WHERE id = $1',
+  const { rows } = await pool.query<{ id: string; email: string | null; name: string; phone: string | null }>(
+    'SELECT id, email, name, phone FROM customers WHERE id = $1',
     [payload.id],
   );
   return rows[0] ?? null;
