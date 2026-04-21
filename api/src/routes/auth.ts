@@ -60,6 +60,13 @@ router.post('/register', async (req, res, next) => {
       [normalEmail, name.trim(), password_hash, cleanPhone],
     );
 
+    // Auto-link any guest orders placed with this email before registration
+    await pool.query(
+      `UPDATE orders SET customer_id = $1, updated_at = NOW()
+       WHERE LOWER(guest_email) = $2 AND customer_id IS NULL`,
+      [customer.id, normalEmail],
+    );
+
     const token = jwt.sign(
       { id: customer.id, email: customer.email, name: customer.name, sub: 'customer' },
       JWT_SECRET(),
