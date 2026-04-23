@@ -3,8 +3,8 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import pool from '../db/client';
 import { requireCustomerAuth } from '../middleware/auth';
-import { createOtp, verifyOtp } from '../services/otp';
-import { sendOtp, sendPasswordChanged } from '../services/whatsapp';
+import { createVerificationToken, verifyToken } from '../services/otp';
+import { sendVerificationLink, sendPasswordChanged } from '../services/whatsapp';
 
 const router = Router();
 
@@ -105,11 +105,11 @@ router.post('/register', async (req, res, next) => {
       { expiresIn: JWT_EXPIRES },
     );
 
-    // Send phone verification OTP (fire-and-forget)
+    // Send phone verification magic link (fire-and-forget)
     if (normalPhone) {
-      createOtp(normalPhone)
-        .then(otp => sendOtp(normalPhone, otp))
-        .catch(() => {}); // never block registration on OTP failure
+      createVerificationToken(normalPhone)
+        .then(token => sendVerificationLink(normalPhone, name.trim(), token))
+        .catch(() => {}); // never block registration on verification failure
     }
 
     res.status(201).json({ data: { token, customer } });
@@ -286,11 +286,11 @@ router.post('/change-password', requireCustomerAuth, async (req, res, next) => {
   }
 });
 
-// ── POST /api/auth/send-otp ───────────────────────────────────────────────────
-// Sends (or resends) a verification OTP to the customer's phone.
-// Requires auth so we always know the phone from the DB.
+// ── POST /api/auth/send-verification ─────────────────────────────────────────
+// (Re)sends a magic-link verification message to the customer's phone.
+// Requires auth — we look up the phone from the DB.
 
-router.post('/send-otp', requireCustomerAuth, async (req, res, next) => {
+router.post('/send-verification', requireCustomerAuth, async (req, res, next) => {
   try {
     const phone = req.customer!.phone;
     if (!phone) {
@@ -298,9 +298,8 @@ router.post('/send-otp', requireCustomerAuth, async (req, res, next) => {
       return;
     }
 
-    // Check already verified
-    const { rows: [c] } = await pool.query<{ phone_verified: boolean }>(
-      'SELECT phone_verified FROM customers WHERE id = $1',
+    const { rows: [c] } = await pool.query<{ phone_verified: boolean; name: string }>(
+      'SELECT phone_verified, name FROM customers WHERE id = $1',
       [req.customer!.id],
     );
     if (c?.phone_verified) {
@@ -309,57 +308,73 @@ router.post('/send-otp', requireCustomerAuth, async (req, res, next) => {
     }
 
     try {
-      const otp = await createOtp(phone);
-      sendOtp(phone, otp);
+      const token = await createVerificationToken(phone);
+      sendVerificationLink(phone, c?.name ?? req.customer!.name, token);
     } catch (err) {
       if ((err as Error).message === 'RATE_LIMITED') {
-        res.status(429).json({ error: { message: 'Too many requests. Please wait before requesting another code.', code: 'RATE_LIMITED' } });
+        res.status(429).json({ error: { message: 'Too many requests. Please wait a few minutes before trying again.', code: 'RATE_LIMITED' } });
         return;
       }
       throw err;
     }
 
-    res.json({ data: { message: 'OTP sent' } });
+    res.json({ data: { message: 'Verification link sent' } });
   } catch (err) {
     next(err);
   }
 });
 
-// ── POST /api/auth/verify-otp ─────────────────────────────────────────────────
+// ── POST /api/auth/verify-phone ───────────────────────────────────────────────
+// Called by the /verify-phone frontend page after the user taps the magic link.
+// No auth required — the token itself proves phone ownership.
+// Returns a fresh JWT so the user is logged in even if they opened the link
+// in a fresh browser (e.g. from WhatsApp on a different device).
 
-router.post('/verify-otp', requireCustomerAuth, async (req, res, next) => {
+router.post('/verify-phone', async (req, res, next) => {
   try {
-    const { code } = req.body as { code?: string };
-    if (!code) {
-      res.status(400).json({ error: { message: 'code is required', code: 'VALIDATION_ERROR' } });
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: { message: 'token is required', code: 'VALIDATION_ERROR' } });
       return;
     }
 
-    const phone = req.customer!.phone;
-    if (!phone) {
-      res.status(400).json({ error: { message: 'No phone number on this account', code: 'NO_PHONE' } });
-      return;
-    }
-
+    let phone: string;
     try {
-      await verifyOtp(phone, code);
+      phone = await verifyToken(token);
     } catch (err) {
       const code_ = (err as Error).message;
       const messages: Record<string, string> = {
-        INVALID:      'Invalid verification code',
-        EXPIRED:      'Code has expired. Please request a new one.',
-        ALREADY_USED: 'Code has already been used. Please request a new one.',
+        INVALID:      'This verification link is invalid.',
+        EXPIRED:      'This verification link has expired. Please request a new one.',
+        ALREADY_USED: 'This link has already been used.',
       };
       res.status(422).json({ error: { message: messages[code_] ?? 'Verification failed', code: code_ } });
       return;
     }
 
-    await pool.query(
-      'UPDATE customers SET phone_verified = true, updated_at = NOW() WHERE id = $1',
-      [req.customer!.id],
+    // Mark the customer's phone as verified and return a fresh JWT
+    const { rows: [customer] } = await pool.query<{
+      id: string; email: string | null; name: string; phone: string | null;
+    }>(
+      `UPDATE customers SET phone_verified = true, updated_at = NOW()
+       WHERE phone = $1
+       RETURNING id, email, name, phone`,
+      [phone],
     );
 
-    res.json({ data: { message: 'Phone verified successfully' } });
+    if (!customer) {
+      res.status(404).json({ error: { message: 'Account not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const jwt_ = await import('jsonwebtoken');
+    const freshToken = jwt_.default.sign(
+      { id: customer.id, email: customer.email, name: customer.name, phone: customer.phone, sub: 'customer' },
+      JWT_SECRET(),
+      { expiresIn: JWT_EXPIRES },
+    );
+
+    res.json({ data: { verified: true, token: freshToken, customer } });
   } catch (err) {
     next(err);
   }

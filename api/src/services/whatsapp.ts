@@ -12,7 +12,7 @@
  *        WHATSAPP_WEBHOOK_SECRET=<any random string you choose>
  *
  * Template names to register with Meta (category in parentheses):
- *   kb_otp               (AUTHENTICATION)  — phone verification OTP
+ *   kb_verify_phone      (UTILITY)          — magic link phone verification
  *   kb_order_confirmed   (UTILITY)          — payment succeeded
  *   kb_payment_failed    (UTILITY)          — payment failed
  *   kb_order_shipped     (UTILITY)          — order fulfilled/shipped
@@ -22,9 +22,13 @@
  *
  * Template body copy (submit exactly as below during Meta approval):
  *
- *   kb_otp:
- *     "{{1}} is your Krishna's Bliss verification code. Valid for 10 minutes."
- *     (add OTP copy-code button with {{1}})
+ *   kb_verify_phone:
+ *     Header: none
+ *     Body: "Hi {{1}}! Tap the button below to verify your phone number for your
+ *            Krishna's Bliss account. This link expires in 30 minutes."
+ *     Button: [Call to Action — Visit Website] label="Verify Phone"
+ *             URL: https://krishnasbliss.com/verify-phone?t={{1}}
+ *     (note: Meta requires the base URL to be fixed; only the token suffix is dynamic)
  *
  *   kb_order_confirmed:
  *     "Hi {{1}}! Your order *{{2}}* for ₹{{3}} is confirmed. We'll notify you when it ships."
@@ -183,16 +187,22 @@ function txt(text: string): TextParameter {
 
 // ── Template senders ──────────────────────────────────────────────────────────
 
-export function sendOtp(phone: string, otp: string): void {
+/**
+ * Sends a magic-link verification message.
+ * The template has a CTA button whose URL is:
+ *   https://krishnasbliss.com/verify-phone?t=<token>
+ * Meta templates require the base URL to be fixed; only the suffix (token) is dynamic.
+ */
+export function sendVerificationLink(phone: string, name: string, token: string): void {
   send(
     phone,
-    'kb_otp',
+    'kb_verify_phone',
     [
-      { type: 'body', parameters: [txt(otp)] },
-      // Copy-code button — index 0, same OTP as parameter
-      { type: 'button', sub_type: 'url', index: '0', parameters: [txt(otp)] },
+      { type: 'body',   parameters: [txt(name)] },
+      // Button index 0: URL suffix = token (base URL fixed in template config)
+      { type: 'button', sub_type: 'url', index: '0', parameters: [txt(token)] },
     ],
-    { purpose: 'otp' },
+    { purpose: 'phone_verification' },
   );
 }
 

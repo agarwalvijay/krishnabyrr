@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import AccountLayout from '@/components/account/AccountLayout';
 import { useCustomer } from '@/contexts/AuthContext';
-import { apiClient, formatINR } from '@/lib/api';
+import { apiClient, formatINR, type Customer } from '@/lib/api';
 
 interface Order {
   id:                 string;
@@ -32,10 +32,85 @@ function paymentLabel(status: string) {
   return map[status] ?? [status, 'var(--kb-muted)'];
 }
 
+// ── Phone verification banner ─────────────────────────────────────────────────
+
+function PhoneVerificationBanner({ phone }: { phone: string }) {
+  const [sending, setSending]   = useState(false);
+  const [sent, setSent]         = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  const resend = async () => {
+    setSending(true);
+    setError(null);
+    try {
+      await apiClient.post('/auth/send-verification');
+      setSent(true);
+    } catch (err) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message ?? 'Failed to send. Please try again.';
+      setError(msg);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div
+      className="rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3"
+      style={{ background: 'rgba(191,155,48,0.10)', border: '1px solid rgba(191,155,48,0.3)' }}
+    >
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold" style={{ color: 'var(--kb-charcoal)' }}>
+          Verify your WhatsApp number
+        </p>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--kb-muted)' }}>
+          We sent a verification link to +91 {phone}. Tap it in WhatsApp to confirm your number.
+        </p>
+        {sent  && <p className="text-xs mt-1 font-medium" style={{ color: 'var(--kb-success)' }}>New link sent!</p>}
+        {error && <p className="text-xs mt-1" style={{ color: 'var(--kb-error)' }}>{error}</p>}
+      </div>
+      <button
+        onClick={resend}
+        disabled={sending}
+        className="text-xs font-semibold px-4 py-2 rounded-xl whitespace-nowrap disabled:opacity-50 transition-opacity"
+        style={{ background: 'var(--kb-gold)', color: '#fff' }}
+      >
+        {sending ? 'Sending…' : 'Resend link'}
+      </button>
+    </div>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
 export default function AccountDashboard() {
   const customer = useCustomer();
-  const [orders, setOrders]           = useState<Order[]>([]);
+  const [orders, setOrders]               = useState<Order[]>([]);
   const [wishlistCount, setWishlistCount] = useState<number>(0);
+  const [phoneVerified, setPhoneVerified] = useState<boolean>(customer?.phone_verified ?? true);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Poll /auth/me every 4s while phone is unverified — detects when user taps the link
+  const startPolling = useCallback(() => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await apiClient.get<{ data: Customer }>('/auth/me');
+        if (res.data.data.phone_verified) {
+          setPhoneVerified(true);
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        }
+      } catch {}
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    if (customer && !customer.phone_verified) {
+      setPhoneVerified(false);
+      startPolling();
+    }
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [customer, startPolling]);
 
   useEffect(() => {
     apiClient.get<{ data: Order[] }>('/orders').then(r => setOrders(r.data.data)).catch(() => {});
@@ -48,6 +123,11 @@ export default function AccountDashboard() {
   return (
     <AccountLayout title={`Welcome back, ${customer?.name ?? ''}!`}>
       <div className="space-y-6">
+        {/* Phone verification banner — shown until user taps the WhatsApp link */}
+        {!phoneVerified && customer?.phone && (
+          <PhoneVerificationBanner phone={customer.phone} />
+        )}
+
         {/* Quick-link cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
