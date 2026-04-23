@@ -53,7 +53,7 @@ async function resolveCustomerFromToken(
   if (payload.sub !== 'customer') return null;
 
   const { rows } = await pool.query<{ id: string; email: string | null; name: string; phone: string | null }>(
-    'SELECT id, email, name, phone FROM customers WHERE id = $1',
+    'SELECT id, email, name, phone FROM customers WHERE id = $1 AND is_suspended = false',
     [payload.id],
   );
   return rows[0] ?? null;

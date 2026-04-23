@@ -15,6 +15,63 @@ function getRazorpay(): Razorpay | null {
 
 const router = Router();
 
+// ── GET /api/admin/orders/export — CSV download ───────────────────────────────
+// Must be before /:id to avoid matching 'export' as an id.
+
+router.get('/export', requireAuth, async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        o.order_number, o.created_at,
+        COALESCE(c.name,  o.shipping_address->>'name')  AS customer_name,
+        COALESCE(c.email, o.guest_email)                AS customer_email,
+        COALESCE(c.phone, o.shipping_address->>'phone') AS customer_phone,
+        o.shipping_address->>'city'    AS city,
+        o.shipping_address->>'pincode' AS pincode,
+        o.subtotal, o.discount_amount, o.shipping_amount, o.gst_amount, o.total,
+        o.coupon_code,
+        o.payment_status, o.payment_method,
+        o.fulfillment_status,
+        o.courier_name, o.tracking_number,
+        o.fulfilled_at
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      ORDER BY o.created_at DESC
+    `);
+
+    const header = [
+      'Order #','Date','Customer Name','Email','Phone','City','Pincode',
+      'Subtotal','Discount','Shipping','GST','Total','Coupon',
+      'Payment Status','Payment Method','Fulfillment Status',
+      'Courier','Tracking','Fulfilled At',
+    ];
+    const escape = (v: unknown) => {
+      const s = v == null ? '' : String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const lines = [
+      header.join(','),
+      ...rows.map(r => [
+        r.order_number,
+        new Date(r.created_at).toISOString().slice(0, 10),
+        r.customer_name, r.customer_email, r.customer_phone,
+        r.city, r.pincode,
+        r.subtotal, r.discount_amount, r.shipping_amount, r.gst_amount, r.total,
+        r.coupon_code,
+        r.payment_status, r.payment_method, r.fulfillment_status,
+        r.courier_name, r.tracking_number,
+        r.fulfilled_at ? new Date(r.fulfilled_at).toISOString().slice(0, 10) : '',
+      ].map(escape).join(',')),
+    ];
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="orders-${new Date().toISOString().slice(0,10)}.csv"`);
+    res.send('\uFEFF' + lines.join('\r\n'));
+  } catch (err) { next(err); }
+});
+
 // ── List orders ───────────────────────────────────────────────────────────────
 
 // GET /api/admin/orders

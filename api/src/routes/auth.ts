@@ -137,11 +137,11 @@ router.post('/login', async (req, res, next) => {
     const lookupVal  = byEmail ? trimmed.toLowerCase() : cleanPhone(trimmed);
 
     const { rows: [customer] } = await pool.query<{
-      id: string; email: string | null; name: string; phone: string | null; password_hash: string | null;
+      id: string; email: string | null; name: string; phone: string | null; password_hash: string | null; is_suspended: boolean;
     }>(
       byEmail
-        ? 'SELECT id, email, name, phone, password_hash FROM customers WHERE email = $1'
-        : 'SELECT id, email, name, phone, password_hash FROM customers WHERE phone = $1',
+        ? 'SELECT id, email, name, phone, password_hash, is_suspended FROM customers WHERE email = $1'
+        : 'SELECT id, email, name, phone, password_hash, is_suspended FROM customers WHERE phone = $1',
       [lookupVal],
     );
 
@@ -152,6 +152,10 @@ router.post('/login', async (req, res, next) => {
 
     if (!customer || !customer.password_hash || !passwordMatch) {
       res.status(401).json({ error: { message: 'Invalid credentials', code: 'INVALID_CREDENTIALS' } });
+      return;
+    }
+    if (customer.is_suspended) {
+      res.status(403).json({ error: { message: 'This account has been suspended. Please contact us on WhatsApp.', code: 'ACCOUNT_SUSPENDED' } });
       return;
     }
 
@@ -363,14 +367,18 @@ router.post('/verify-login-link', async (req, res, next) => {
     }
 
     const { rows: [customer] } = await pool.query<{
-      id: string; email: string | null; name: string; phone: string | null;
+      id: string; email: string | null; name: string; phone: string | null; is_suspended: boolean;
     }>(
-      'SELECT id, email, name, phone FROM customers WHERE phone = $1',
+      'SELECT id, email, name, phone, is_suspended FROM customers WHERE phone = $1',
       [phone],
     );
 
     if (!customer) {
       res.status(404).json({ error: { message: 'Account not found', code: 'NOT_FOUND' } });
+      return;
+    }
+    if (customer.is_suspended) {
+      res.status(403).json({ error: { message: 'This account has been suspended. Please contact us on WhatsApp.', code: 'ACCOUNT_SUSPENDED' } });
       return;
     }
 
