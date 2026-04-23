@@ -11,6 +11,7 @@ import { useCustomerAuth, useIsLoggedIn } from '@/contexts/AuthContext';
 import { useSiteSettings } from '@/contexts/SiteSettingsContext';
 import { apiClient, formatINR, imageUrl, type CartData, type CartTotals } from '@/lib/api';
 import ExchangePolicyModal from '@/components/ui/ExchangePolicyModal';
+import PhoneInput from '@/components/ui/PhoneInput';
 
 // ── Razorpay types (minimal) ───────────────────────────────────────────────────
 interface RazorpayOptions {
@@ -380,14 +381,11 @@ export default function CheckoutPage() {
                     <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>
                       Mobile Number <span style={{ color: 'var(--kb-error)' }}>*</span>
                     </label>
-                    <input
+                    <PhoneInput
                       {...register('phone')}
-                      type="tel"
-                      inputMode="numeric"
                       autoComplete="tel"
                       placeholder="9876543210"
-                      maxLength={10}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                      hasError={!!errors.phone}
                     />
                     <FieldError msg={errors.phone?.message} />
                   </div>
@@ -404,7 +402,7 @@ export default function CheckoutPage() {
             {isLoggedIn && (
               <div className="bg-white rounded-2xl p-5 shadow-sm flex items-center justify-between">
                 <p className="text-sm" style={{ color: 'var(--kb-charcoal)' }}>
-                  Ordering as <strong>{customer?.email}</strong>
+                  Ordering as <strong>{customer?.email ?? (customer?.phone ? `+91 ${customer.phone}` : customer?.name)}</strong>
                 </p>
                 <Link
                   href="#"
@@ -503,14 +501,11 @@ export default function CheckoutPage() {
                     <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>
                       Mobile Number <span style={{ color: 'var(--kb-error)' }}>*</span>
                     </label>
-                    <input
+                    <PhoneInput
                       {...register('phone')}
-                      type="tel"
-                      inputMode="numeric"
                       autoComplete="tel"
                       placeholder="9876543210"
-                      maxLength={10}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                      hasError={!!errors.phone}
                     />
                     <FieldError msg={errors.phone?.message} />
                   </div>

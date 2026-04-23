@@ -8,6 +8,7 @@ import { z } from 'zod';
 import Link from 'next/link';
 import { useCustomerAuth } from '@/contexts/AuthContext';
 import { apiClient } from '@/lib/api';
+import PhoneInput from '@/components/ui/PhoneInput';
 
 const schema = z.object({
   name:            z.string().min(1, 'Name is required').max(100),
@@ -81,8 +82,7 @@ function RegisterPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {[
             { name: 'name',  label: 'Full Name',       type: 'text',     placeholder: 'Priya Sharma',   autoComplete: 'name' },
-            { name: 'email', label: 'Email (optional)', type: 'email',    placeholder: 'you@example.com', autoComplete: 'email' },
-            { name: 'phone', label: 'Mobile Number',    type: 'tel',      placeholder: '9876543210',     autoComplete: 'tel', inputMode: 'numeric', maxLength: 10 },
+            { name: 'email', label: 'Email (optional)', type: 'email', placeholder: 'you@example.com', autoComplete: 'email' },
           ].map(field => (
             <div key={field.name}>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>
@@ -93,8 +93,6 @@ function RegisterPage() {
                 type={field.type}
                 placeholder={field.placeholder}
                 autoComplete={field.autoComplete}
-                inputMode={field.inputMode as 'text' | 'numeric' | undefined}
-                maxLength={field.maxLength}
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
               />
               {errors[field.name as keyof FormValues] && (
@@ -104,6 +102,22 @@ function RegisterPage() {
               )}
             </div>
           ))}
+
+          {/* Phone — rendered separately to use PhoneInput */}
+          <div>
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>
+              Mobile Number
+            </label>
+            <PhoneInput
+              {...register('phone')}
+              placeholder="9876543210"
+              autoComplete="tel"
+              hasError={!!errors.phone}
+            />
+            {errors.phone && (
+              <p className="mt-1 text-xs" style={{ color: 'var(--kb-error)' }}>{errors.phone.message}</p>
+            )}
+          </div>
 
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Password</label>

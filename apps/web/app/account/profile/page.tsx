@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AccountLayout from '@/components/account/AccountLayout';
 import { useCustomerAuth, useCustomer } from '@/contexts/AuthContext';
 import { apiClient } from '@/lib/api';
+import PhoneInput from '@/components/ui/PhoneInput';
 
 export default function ProfilePage() {
   const customer = useCustomer();
@@ -99,12 +100,10 @@ export default function ProfilePage() {
 
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Mobile Number</label>
-            <input
-              type="tel"
+            <PhoneInput
               value={phone}
               onChange={e => setPhone(e.target.value)}
-              placeholder="10-digit mobile number"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none"
+              placeholder="9876543210"
             />
           </div>
 

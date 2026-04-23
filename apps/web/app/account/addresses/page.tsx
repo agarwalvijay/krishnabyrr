@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import AccountLayout from '@/components/account/AccountLayout';
 import { apiClient } from '@/lib/api';
+import PhoneInput from '@/components/ui/PhoneInput';
 
 const INDIAN_STATES = [
   'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat',
@@ -175,8 +176,17 @@ export default function AddressesPage() {
                 {editId ? 'Edit Address' : 'New Address'}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {field('name',    'Full Name',      { placeholder: 'Recipient name' })}
-                {field('phone',   'Mobile Number',  { placeholder: '10-digit number', type: 'tel' })}
+                {field('name', 'Full Name', { placeholder: 'Recipient name' })}
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Mobile Number</label>
+                  <PhoneInput
+                    value={form.phone}
+                    onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))}
+                    placeholder="9876543210"
+                    hasError={!!errors.phone}
+                  />
+                  {errors.phone && <p className="text-xs mt-1" style={{ color: 'var(--kb-error)' }}>{errors.phone}</p>}
+                </div>
                 <div className="sm:col-span-2">{field('line1', 'Address Line 1', { placeholder: 'House no., street, locality' })}</div>
                 <div className="sm:col-span-2">{field('line2', 'Address Line 2 (optional)', { placeholder: 'Landmark, area' })}</div>
                 {field('city',    'City',           { placeholder: 'City' })}
