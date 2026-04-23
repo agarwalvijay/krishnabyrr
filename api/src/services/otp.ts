@@ -17,7 +17,8 @@
 import crypto from 'crypto';
 import pool from '../db/client';
 
-const TOKEN_EXPIRY_MINUTES    = 30;
+const TOKEN_EXPIRY_MINUTES         = 30; // phone verification
+const LOGIN_TOKEN_EXPIRY_MINUTES   = 15; // login links — shorter for security
 const RATE_LIMIT_WINDOW_MINUTES = 15;
 const RATE_LIMIT_MAX          = 3;
 
@@ -25,8 +26,7 @@ function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-/** Creates a verification token for a phone number. Throws 'RATE_LIMITED' if too many recent sends. */
-export async function createVerificationToken(phone: string): Promise<string> {
+async function createToken(phone: string, expiryMinutes: number): Promise<string> {
   const normalPhone = phone.replace(/\D/g, '').slice(-10);
 
   // Rate limit
@@ -48,7 +48,7 @@ export async function createVerificationToken(phone: string): Promise<string> {
   );
 
   const token     = crypto.randomBytes(32).toString('hex'); // 64-char hex string
-  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MINUTES * 60_000);
+  const expiresAt = new Date(Date.now() + expiryMinutes * 60_000);
 
   await pool.query(
     `INSERT INTO phone_otps (phone, otp_hash, expires_at) VALUES ($1, $2, $3)`,
@@ -56,6 +56,16 @@ export async function createVerificationToken(phone: string): Promise<string> {
   );
 
   return token;
+}
+
+/** Creates a 30-min phone verification token. */
+export async function createVerificationToken(phone: string): Promise<string> {
+  return createToken(phone, TOKEN_EXPIRY_MINUTES);
+}
+
+/** Creates a 15-min login token. */
+export async function createLoginToken(phone: string): Promise<string> {
+  return createToken(phone, LOGIN_TOKEN_EXPIRY_MINUTES);
 }
 
 /**

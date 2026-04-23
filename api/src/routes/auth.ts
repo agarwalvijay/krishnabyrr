@@ -3,8 +3,8 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import pool from '../db/client';
 import { requireCustomerAuth } from '../middleware/auth';
-import { createVerificationToken, verifyToken } from '../services/otp';
-import { sendVerificationLink, sendPasswordChanged } from '../services/whatsapp';
+import { createVerificationToken, createLoginToken, verifyToken } from '../services/otp';
+import { sendVerificationLink, sendLoginLink, sendPasswordChanged } from '../services/whatsapp';
 
 const router = Router();
 
@@ -281,6 +281,106 @@ router.post('/change-password', requireCustomerAuth, async (req, res, next) => {
     }
 
     res.json({ data: { message: 'Password updated successfully' } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/auth/send-login-link ───────────────────────────────────────────
+// Passwordless login: find account by email or phone, send WhatsApp magic link.
+// No auth required — this is the entry point for unauthenticated users.
+
+router.post('/send-login-link', async (req, res, next) => {
+  try {
+    const { identifier } = req.body as { identifier?: string };
+    if (!identifier?.trim()) {
+      res.status(400).json({ error: { message: 'Email or mobile number is required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    const trimmed  = identifier.trim();
+    const byEmail  = isEmail(trimmed);
+    const lookupVal = byEmail ? trimmed.toLowerCase() : cleanPhone(trimmed);
+
+    const { rows: [customer] } = await pool.query<{
+      id: string; name: string; phone: string | null; email: string | null;
+    }>(
+      byEmail
+        ? 'SELECT id, name, phone, email FROM customers WHERE email = $1'
+        : 'SELECT id, name, phone, email FROM customers WHERE phone = $1',
+      [lookupVal],
+    );
+
+    // Always respond with success to prevent account enumeration
+    if (!customer?.phone) {
+      // Either account not found or account has no phone — can't send WhatsApp
+      // Respond success anyway; don't reveal whether the account exists
+      res.json({ data: { message: 'If an account exists, a login link has been sent via WhatsApp.' } });
+      return;
+    }
+
+    try {
+      const token = await createLoginToken(customer.phone);
+      sendLoginLink(customer.phone, customer.name, token);
+    } catch (err) {
+      if ((err as Error).message === 'RATE_LIMITED') {
+        res.status(429).json({ error: { message: 'Too many requests. Please wait a few minutes before trying again.', code: 'RATE_LIMITED' } });
+        return;
+      }
+      throw err;
+    }
+
+    res.json({ data: { message: 'If an account exists, a login link has been sent via WhatsApp.' } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/auth/verify-login-link ─────────────────────────────────────────
+// Called by /login-link?t=<token> — verifies token and returns a full JWT.
+// No auth required — token proves identity.
+
+router.post('/verify-login-link', async (req, res, next) => {
+  try {
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: { message: 'token is required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    let phone: string;
+    try {
+      phone = await verifyToken(token);
+    } catch (err) {
+      const code_ = (err as Error).message;
+      const messages: Record<string, string> = {
+        INVALID:      'This login link is invalid.',
+        EXPIRED:      'This login link has expired. Please request a new one.',
+        ALREADY_USED: 'This link has already been used. Please request a new one.',
+      };
+      res.status(422).json({ error: { message: messages[code_] ?? 'Login failed', code: code_ } });
+      return;
+    }
+
+    const { rows: [customer] } = await pool.query<{
+      id: string; email: string | null; name: string; phone: string | null;
+    }>(
+      'SELECT id, email, name, phone FROM customers WHERE phone = $1',
+      [phone],
+    );
+
+    if (!customer) {
+      res.status(404).json({ error: { message: 'Account not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const freshToken = jwt.sign(
+      { id: customer.id, email: customer.email, name: customer.name, phone: customer.phone, sub: 'customer' },
+      JWT_SECRET(),
+      { expiresIn: JWT_EXPIRES },
+    );
+
+    res.json({ data: { token: freshToken, customer } });
   } catch (err) {
     next(err);
   }

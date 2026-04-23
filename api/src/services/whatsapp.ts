@@ -13,6 +13,7 @@
  *
  * Template names to register with Meta (category in parentheses):
  *   kb_verify_phone      (UTILITY)          — magic link phone verification
+ *   kb_login_link        (UTILITY)          — passwordless WhatsApp login
  *   kb_order_confirmed   (UTILITY)          — payment succeeded
  *   kb_payment_failed    (UTILITY)          — payment failed
  *   kb_order_shipped     (UTILITY)          — order fulfilled/shipped
@@ -29,6 +30,12 @@
  *     Button: [Call to Action — Visit Website] label="Verify Phone"
  *             URL: https://krishnasbliss.com/verify-phone?t={{1}}
  *     (note: Meta requires the base URL to be fixed; only the token suffix is dynamic)
+ *
+ *   kb_login_link:
+ *     Body: "Hi {{1}}! Tap the button below to sign in to your Krishna's Bliss account.
+ *            This link expires in 15 minutes. If you didn't request this, ignore this message."
+ *     Button: [Call to Action — Visit Website] label="Sign In"
+ *             URL: https://krishnasbliss.com/login-link?t={{1}}
  *
  *   kb_order_confirmed:
  *     "Hi {{1}}! Your order *{{2}}* for ₹{{3}} is confirmed. We'll notify you when it ships."
@@ -276,6 +283,18 @@ export function sendRefundInitiated(params: {
     'kb_refund_initiated',
     [{ type: 'body', parameters: [txt(params.name), txt(params.amount.toLocaleString('en-IN')), txt(params.orderNumber)] }],
     { order_number: params.orderNumber },
+  );
+}
+
+export function sendLoginLink(phone: string, name: string, token: string): void {
+  send(
+    phone,
+    'kb_login_link',
+    [
+      { type: 'body',   parameters: [txt(name)] },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [txt(token)] },
+    ],
+    { purpose: 'login' },
   );
 }
 
