@@ -9,6 +9,7 @@ import { validateCoupon } from '../services/coupon-engine';
 import { optionalCustomerAuth, requireCustomerAuth } from '../middleware/auth';
 import { notifyNewOrder } from '../services/notifications';
 import { pushToCustomer } from '../services/push';
+import { sendOrderConfirmed } from '../services/whatsapp';
 
 // Razorpay client — only initialised when env vars are present
 function getRazorpay(): Razorpay | null {
@@ -621,6 +622,14 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
       customerContact: updated.guest_email ?? updated.shipping_address.phone,
       pincode:         updated.shipping_address.pincode,
       paymentMethod:   'razorpay',
+    });
+
+    // WhatsApp order confirmed to customer
+    sendOrderConfirmed({
+      phone:       updated.shipping_address.phone,
+      name:        updated.shipping_address.name,
+      orderNumber: updated.order_number,
+      total:       parseFloat(updated.total),
     });
 
     res.json({ data: { order_number: updated.order_number, payment_status: 'authorized' } });

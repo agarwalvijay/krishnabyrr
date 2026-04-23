@@ -20,6 +20,7 @@ import accountRouter from './routes/account';
 import pagesRouter from './routes/pages';
 import paymentsRouter from './routes/payments';
 import appLinksRouter from './routes/app-links';
+import whatsappWebhookRouter from './routes/whatsapp-webhook';
 import { errorHandler } from './middleware/error';
 
 const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:3002,http://localhost:5173')
@@ -68,6 +69,9 @@ app.use('/api/app-links', appLinksRouter);
 
 // ── Payment gateway callbacks (public — no auth, PhonePe etc) ────────────────
 app.use('/api/payments', paymentsRouter);
+
+// ── WhatsApp webhook (public — verified by token, not auth) ──────────────────
+app.use('/api/whatsapp/webhook', whatsappWebhookRouter);
 
 // ── Admin routes (all require auth via their own middleware) ──────────────────
 app.use('/api/admin', adminRouter);

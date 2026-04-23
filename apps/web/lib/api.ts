@@ -138,6 +138,7 @@ export interface Customer {
   email:          string | null;
   name:           string;
   phone:          string | null;
+  phone_verified: boolean;
   total_orders:   number;
   lifetime_value: string;
   created_at:     string;

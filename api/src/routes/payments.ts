@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db/client';
 import { notifyNewOrder } from '../services/notifications';
+import { sendOrderConfirmed, sendPaymentFailed } from '../services/whatsapp';
 
 const router = Router();
 
@@ -87,16 +88,36 @@ router.post('/phonepe/callback', async (req, res) => {
           pincode:         updated.shipping_address.pincode,
           paymentMethod:   'phonepe',
         });
+
+        // WhatsApp order confirmed to customer
+        sendOrderConfirmed({
+          phone:       updated.shipping_address.phone,
+          name:        updated.shipping_address.name,
+          orderNumber: updated.order_number,
+          total:       parseFloat(updated.total),
+        });
       }
     } else if (state === 'FAILED') {
-      await pool.query(
+      const { rows: [failed] } = await pool.query<{
+        order_number: string;
+        shipping_address: { name: string; phone: string };
+      }>(
         `UPDATE orders
            SET payment_status = 'failed',
                updated_at     = NOW()
          WHERE phonepe_transaction_id = $1
-           AND payment_status = 'pending'`,
+           AND payment_status = 'pending'
+         RETURNING order_number, shipping_address`,
         [mtId],
       );
+
+      if (failed) {
+        sendPaymentFailed({
+          phone:       failed.shipping_address.phone,
+          name:        failed.shipping_address.name,
+          orderNumber: failed.order_number,
+        });
+      }
     }
     // PENDING — leave as-is
 

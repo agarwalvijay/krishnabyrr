@@ -4,6 +4,7 @@ import PDFDocument from 'pdfkit';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { pushToCustomer } from '../../services/push';
+import { sendOrderShipped, sendOrderCancelled, sendRefundInitiated } from '../../services/whatsapp';
 
 function getRazorpay(): Razorpay | null {
   const keyId     = process.env.RAZORPAY_KEY_ID;
@@ -195,16 +196,41 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
     }
     res.json({ data: order });
 
-    // Push when order is marked fulfilled/shipped
-    if (fulfillment_status === 'fulfilled' && order.customer_id) {
-      const tracking = order.tracking_number ?? order.courier_name;
-      pushToCustomer(order.customer_id, {
-        title: 'Your Order Has Shipped! 🎉',
-        body:  tracking
-          ? `Order #${order.order_number} is on its way — tracking: ${tracking}`
-          : `Order #${order.order_number} has been dispatched. Delivery in 2–7 business days.`,
-        data: { url: `/account/orders` },
-      }).catch(() => {});
+    // Push + WhatsApp when order is marked fulfilled/shipped
+    if (fulfillment_status === 'fulfilled') {
+      const tracking    = order.tracking_number ?? order.courier_name ?? '';
+      const courier     = order.courier_name ?? 'courier';
+      const trackingTxt = tracking || 'will be shared shortly';
+
+      // Fetch customer phone for WhatsApp
+      const { rows: [cust] } = await pool.query<{ phone: string | null; name: string | null }>(
+        `SELECT c.phone, c.name FROM customers c
+         JOIN orders o ON o.customer_id = c.id
+         WHERE o.id = $1`,
+        [order.id],
+      );
+      const shipPhone = cust?.phone ?? (order.shipping_address as { phone?: string })?.phone;
+      const shipName  = cust?.name  ?? (order.shipping_address as { name?: string })?.name ?? '';
+
+      if (shipPhone) {
+        sendOrderShipped({
+          phone:       shipPhone,
+          name:        shipName,
+          orderNumber: order.order_number,
+          courier,
+          tracking:    trackingTxt,
+        });
+      }
+
+      if (order.customer_id) {
+        pushToCustomer(order.customer_id, {
+          title: 'Your Order Has Shipped!',
+          body:  tracking
+            ? `Order #${order.order_number} is on its way — tracking: ${tracking}`
+            : `Order #${order.order_number} has been dispatched. Delivery in 2–7 business days.`,
+          data: { url: `/account/orders` },
+        }).catch(() => {});
+      }
     }
   } catch (err) { next(err); }
 });
@@ -326,6 +352,28 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
           refund_warning: refundWarning,
         },
       });
+
+      // WhatsApp notification — use customer phone or shipping address phone
+      const cancelPhone = (order.customer_phone as string | null)
+        ?? (order.shipping_address as { phone?: string })?.phone;
+      const cancelName  = (order.customer_name as string | null)
+        ?? (order.shipping_address as { name?: string })?.name ?? '';
+      if (cancelPhone) {
+        sendOrderCancelled({
+          phone:         cancelPhone,
+          name:          cancelName,
+          orderNumber:   order.order_number,
+          refundAmount:  refundedAmount > 0 ? refundedAmount : undefined,
+        });
+        if (refundedAmount > 0) {
+          sendRefundInitiated({
+            phone:       cancelPhone,
+            name:        cancelName,
+            orderNumber: order.order_number,
+            amount:      refundedAmount,
+          });
+        }
+      }
 
       if (order.customer_id) {
         pushToCustomer(order.customer_id, {
