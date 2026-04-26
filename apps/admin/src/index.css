@@ -35,12 +35,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Form inputs */
-input[type="text"],
-input[type="email"],
-input[type="password"],
-input[type="number"],
-input[type="url"],
+/* Form inputs — catch all text-like inputs without enumerating every type */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
 textarea,
 select {
   @apply w-full border border-gray-200 rounded-md px-3 py-2 text-sm text-kb-charcoal bg-white;
@@ -54,8 +50,7 @@ select.select-inline {
   @apply w-auto;
 }
 
-input[type="text"]:disabled,
-input[type="email"]:disabled,
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):disabled,
 textarea:disabled,
 select:disabled {
   @apply bg-gray-50 text-kb-muted cursor-not-allowed;
