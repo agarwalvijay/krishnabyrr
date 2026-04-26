@@ -73,11 +73,10 @@ echo "      admin..."
 npm run build -w apps/admin --silent
 
 # Web (Next.js → apps/web/.next/ with standalone output)
-# Point SERVER_API_ORIGIN at the live production API so static-generation
-# fetch calls succeed. NEXT_PUBLIC_API_ORIGIN is already set in
-# apps/web/.env.production and is used for client-side requests.
+# Build cold — no API calls at build time. Key pages are warmed after
+# pm2 reloads (step 7 below).
 echo "      web (this takes ~60s)..."
-SERVER_API_ORIGIN=https://krishnasbliss.com npm run build -w apps/web --silent
+npm run build -w apps/web --silent
 
 # Standalone doesn't auto-copy static assets — do it now so the bundle is self-contained.
 echo "      copying static assets into standalone..."
@@ -168,7 +167,7 @@ echo "==> [5/6] Installing API production node_modules on server..."
 $SSH "$GCP_HOST" "cd $REMOTE_DIR && npm install --omit=dev --workspace=packages/shared --workspace=api --include-workspace-root --silent"
 
 # ── 6. Run migrations + reload pm2 ────────────────────────────────────────────
-echo "==> [6/6] Running migrations and reloading services..."
+echo "==> [6/7] Running migrations and reloading services..."
 $SSH "$GCP_HOST" "
   set -e
   cd $REMOTE_DIR/api
@@ -177,6 +176,32 @@ $SSH "$GCP_HOST" "
   pm2 reload deploy/ecosystem.config.js --update-env
   pm2 list
 "
+
+# ── 7. Warm the ISR cache ──────────────────────────────────────────────────────
+# Hit key pages so Next.js renders and caches them before real users arrive.
+# Curl with a short timeout — if a page is slow on first hit that's fine,
+# the important thing is the render is triggered.
+echo "==> [7/7] Warming ISR cache..."
+SITE="https://krishnasbliss.com"
+WARM_PAGES=(
+  "/"
+  "/shop"
+)
+
+# Also warm every active category slug from the API
+CATEGORY_SLUGS=$(curl -sf "$SITE/api/categories" \
+  | grep -o '"slug":"[^"]*"' \
+  | sed 's/"slug":"//;s/"//' \
+  || true)
+
+for slug in $CATEGORY_SLUGS; do
+  WARM_PAGES+=("/shop/$slug")
+done
+
+for page in "${WARM_PAGES[@]}"; do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$SITE$page" || echo "err")
+  echo "      $page → $STATUS"
+done
 
 echo ""
 echo "✓ Deploy complete at " $( date )
