@@ -200,25 +200,26 @@ export function getStockStatus(qty: number): StockStatus {
 
 // ── Server-side fetch helpers ──────────────────────────────────────────────────
 
+// During `next build`, NEXT_PHASE is set to 'phase-production-build'.
+// The API server is not running locally at that point, so we skip all
+// network calls entirely. Callers' .catch() / try-catch handle the thrown
+// error, and because we never touch fetch() there are no ECONNREFUSED logs.
+const IS_BUILD_PHASE = process.env.NEXT_PHASE === 'phase-production-build';
+
 /** Fetch with ISR revalidation (default 1 hour) */
 export async function serverFetch<T>(
   path: string,
   options: { revalidate?: number; noStore?: boolean } = {}
 ): Promise<T> {
+  if (IS_BUILD_PHASE) throw new Error(`build-skip: ${path}`);
+
   const url = `${SERVER_API_ORIGIN}${path}`;
   const nextOpts = options.noStore
     ? { cache: 'no-store' as const }
     : { next: { revalidate: options.revalidate ?? 3600 } };
 
-  let res: Response;
-  try {
-    res = await fetch(url, nextOpts);
-  } catch (err) {
-    throw new Error(`API unreachable (${path}): ${(err as Error).message}`);
-  }
-  if (!res.ok) {
-    throw new Error(`API ${res.status}: ${path}`);
-  }
+  const res = await fetch(url, nextOpts);
+  if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
   const json = await res.json();
   return json.data ?? json;
 }
@@ -229,6 +230,8 @@ export async function serverFetchList<T>(
   options: { revalidate?: number; noStore?: boolean } = {}
 ): Promise<{ data: T[]; meta: ApiMeta }> {
   const EMPTY = { data: [] as T[], meta: { total: 0, page: 1, limit: 24, pages: 0 } };
+  if (IS_BUILD_PHASE) return EMPTY;
+
   const url = `${SERVER_API_ORIGIN}${path}`;
   const nextOpts = options.noStore
     ? { cache: 'no-store' as const }
