@@ -43,7 +43,7 @@ const jwtSecret = () => process.env.JWT_SECRET ?? 'change-me-in-production';
 
 async function resolveCustomerFromToken(
   token: string,
-): Promise<{ id: string; email: string | null; name: string; phone: string | null } | null> {
+): Promise<{ id: string; email: string | null; name: string; phone: string | null; is_suspended: boolean } | null> {
   let payload: CustomerTokenPayload;
   try {
     payload = jwt.verify(token, jwtSecret()) as CustomerTokenPayload;
@@ -52,8 +52,8 @@ async function resolveCustomerFromToken(
   }
   if (payload.sub !== 'customer') return null;
 
-  const { rows } = await pool.query<{ id: string; email: string | null; name: string; phone: string | null }>(
-    'SELECT id, email, name, phone FROM customers WHERE id = $1 AND is_suspended = false',
+  const { rows } = await pool.query<{ id: string; email: string | null; name: string; phone: string | null; is_suspended: boolean }>(
+    'SELECT id, email, name, phone, is_suspended FROM customers WHERE id = $1',
     [payload.id],
   );
   return rows[0] ?? null;
@@ -71,7 +71,11 @@ export const requireCustomerAuth: RequestHandler = async (req, res, next) => {
     res.status(401).json({ error: { message: 'Invalid or expired token', code: 'INVALID_TOKEN' } });
     return;
   }
-  req.customer = customer;
+  if (customer.is_suspended) {
+    res.status(403).json({ error: { message: 'This account has been suspended. Please contact us on WhatsApp.', code: 'ACCOUNT_SUSPENDED' } });
+    return;
+  }
+  req.customer = { id: customer.id, email: customer.email, name: customer.name, phone: customer.phone };
   next();
 };
 
@@ -80,7 +84,9 @@ export const optionalCustomerAuth: RequestHandler = async (req, _res, next) => {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
     const customer = await resolveCustomerFromToken(authHeader.slice(7)).catch(() => null);
-    if (customer) req.customer = customer;
+    if (customer && !customer.is_suspended) {
+      req.customer = { id: customer.id, email: customer.email, name: customer.name, phone: customer.phone };
+    }
   }
   next();
 };

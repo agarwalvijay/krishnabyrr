@@ -42,6 +42,20 @@ const TAGS_SUB = `COALESCE(
   ), '[]'::json
 ) AS tags`;
 
+/** Returns active badges as a JSON array ordered by display_order */
+const BADGES_SUB = `COALESCE(
+  (SELECT json_agg(json_build_object(
+      'id', b.id,
+      'name', b.name,
+      'hex_color', b.hex_color,
+      'text_color', b.text_color
+    ) ORDER BY b.display_order)
+   FROM product_badges pb2
+   JOIN badges b ON b.id = pb2.badge_id
+   WHERE pb2.product_id = p.id AND b.is_active = true
+  ), '[]'::json
+) AS badges`;
+
 const SORT_MAP: Record<string, string> = {
   newest: 'p.created_at DESC',
   price_asc: 'COALESCE(p.sale_price, p.mrp) ASC',
@@ -119,8 +133,22 @@ router.get('/', async (req, res, next) => {
       params.push(category); i++;
     }
 
+    // Badge filter: ?badge=name1,name2
+    const badge = (query as Record<string, string>).badge;
+    if (badge) {
+      const names = badge.split(',').map((v) => v.trim()).filter(Boolean);
+      if (names.length > 0) {
+        conditions.push(`EXISTS (
+          SELECT 1 FROM product_badges pb
+          JOIN badges b ON b.id = pb.badge_id
+          WHERE pb.product_id = p.id AND b.name = ANY($${i}::text[]) AND b.is_active = true
+        )`);
+        params.push(names); i++;
+      }
+    }
+
     // Dynamic tag group filters: any query param whose key is a known tag group name
-    const NON_TAG_KEYS = new Set(['q', 'category', 'collection', 'price_min', 'price_max', 'in_stock', 'on_sale', 'sort', 'page', 'limit', 'ids']);
+    const NON_TAG_KEYS = new Set(['q', 'category', 'collection', 'badge', 'price_min', 'price_max', 'in_stock', 'on_sale', 'sort', 'page', 'limit', 'ids']);
     const { rows: tagGroupRows } = await pool.query<{ name: string }>(
       'SELECT name FROM tag_groups WHERE is_filter = TRUE'
     );
@@ -183,7 +211,8 @@ router.get('/', async (req, res, next) => {
         p.status, p.created_at,
         ${PRIMARY_IMAGE_SUB},
         ${SECOND_IMAGE_SUB},
-        ${TAGS_SUB}
+        ${TAGS_SUB},
+        ${BADGES_SUB}
       FROM products p
       WHERE ${where}
       ORDER BY ${orderBy}
@@ -250,6 +279,15 @@ router.get('/:slug', async (req, res, next) => {
       if (!tags[t.group_name]) tags[t.group_name] = [];
       tags[t.group_name].push(t);
     }
+
+    // Badges
+    const { rows: badges } = await pool.query(
+      `SELECT b.id, b.name, b.hex_color, b.text_color
+       FROM badges b JOIN product_badges pb ON pb.badge_id = b.id
+       WHERE pb.product_id = $1 AND b.is_active = true
+       ORDER BY b.display_order`,
+      [id]
+    );
 
     // Categories
     const { rows: categories } = await pool.query(
@@ -321,6 +359,7 @@ router.get('/:slug', async (req, res, next) => {
         ...product,
         images,
         tags,
+        badges,
         categories,
         collections,
         related_similar,
@@ -532,3 +571,17 @@ searchRouter.get('/', async (req, res, next) => {
     next(err);
   }
 });
+
+export const badgesRouter = Router();
+
+badgesRouter.get('/', async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, hex_color, text_color, is_filter, is_nav
+       FROM badges WHERE is_active = true
+       ORDER BY display_order, name`
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+});
+

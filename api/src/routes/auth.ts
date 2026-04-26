@@ -354,7 +354,7 @@ router.post('/verify-login-link', async (req, res, next) => {
 
     let phone: string;
     try {
-      phone = await verifyToken(token);
+      phone = await verifyToken(token, 'login');
     } catch (err) {
       const code_ = (err as Error).message;
       const messages: Record<string, string> = {
@@ -448,7 +448,7 @@ router.post('/verify-phone', async (req, res, next) => {
 
     let phone: string;
     try {
-      phone = await verifyToken(token);
+      phone = await verifyToken(token, 'verify');
     } catch (err) {
       const code_ = (err as Error).message;
       const messages: Record<string, string> = {

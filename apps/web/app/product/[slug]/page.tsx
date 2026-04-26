@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { serverFetch, imageUrl, getStockStatus, formatINR, discountPct, type ProductDetail, type ProductListItem, type PublicSettings } from '@/lib/api';
+import { serverFetch, serverFetchList, imageUrl, getStockStatus, formatINR, discountPct, type ProductDetail, type ProductListItem, type PublicSettings } from '@/lib/api';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 import ProductCard from '@/components/ui/ProductCard';
 import ProductGallery from './ProductGallery';
@@ -13,14 +13,9 @@ export const revalidate = 3600;
 interface Params { slug: string }
 
 export async function generateStaticParams(): Promise<Params[]> {
-  const base = process.env.API_ORIGIN ?? 'http://localhost:3001';
   try {
-    const res = await fetch(`${base}/api/products?limit=200&sort=newest`, {
-      next: { revalidate: 3600 },
-    });
-    if (!res.ok) return [];
-    const json = await res.json();
-    return (json.data ?? []).map((p: { slug: string }) => ({ slug: p.slug }));
+    const { data } = await serverFetchList<{ slug: string }>('/api/products?limit=200&sort=newest');
+    return data.map(p => ({ slug: p.slug }));
   } catch {
     return [];
   }
@@ -115,6 +110,21 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
 
         {/* Right — Product info */}
         <div className="mt-8 lg:mt-0">
+          {/* Custom badges */}
+          {product.badges && product.badges.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {product.badges.map((b) => (
+                <span
+                  key={b.id}
+                  className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                  style={{ backgroundColor: b.hex_color, color: b.text_color }}
+                >
+                  {b.name}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Name */}
           <h1 className="font-display text-3xl sm:text-4xl font-semibold text-kb-charcoal leading-tight mb-4">
             {product.name}

@@ -275,6 +275,7 @@ export default function ProductForm() {
   const [selCategories,  setSelCategories]  = useState<string[]>([]);
   const [selTags,        setSelTags]        = useState<string[]>([]);
   const [selCollections, setSelCollections] = useState<string[]>([]);
+  const [selBadges,      setSelBadges]      = useState<string[]>([]);
 
   const {
     register,
@@ -331,6 +332,7 @@ export default function ProductForm() {
     setSelCategories(productData.categories?.map((c: {id: string}) => c.id) ?? []);
     setSelTags(productData.tags?.map((t: {id: string}) => t.id) ?? []);
     setSelCollections(productData.collections?.map((c: {id: string}) => c.id) ?? []);
+    setSelBadges(productData.badges?.map((b: {id: string}) => b.id) ?? []);
   }, [productData, reset]);
 
   // Pre-fill from clone source (Basic Info + Organisation only)
@@ -385,6 +387,10 @@ export default function ProductForm() {
     queryKey: ['collections'],
     queryFn: () => api.get('/collections').then((r) => r.data.data),
   });
+  const { data: badgesData = [] } = useQuery<Array<{ id: string; name: string; hex_color: string; text_color: string }>>({
+    queryKey: ['admin-badges'],
+    queryFn: () => api.get('/admin/badges').then((r) => r.data.data ?? []),
+  });
 
   // Flatten category tree for checkbox list
   const flatCategories: Array<{ id: string; name: string; parent_id: string | null }> = [];
@@ -425,6 +431,7 @@ export default function ProductForm() {
         api.put(`/admin/products/${productId}/categories`,  { category_ids: selCategories }),
         api.put(`/admin/products/${productId}/tags`,        { tag_ids: selTags }),
         api.put(`/admin/products/${productId}/collections`, { collection_ids: selCollections }),
+        api.put(`/admin/products/${productId}/badges`,      { badge_ids: selBadges }),
       ]);
 
       return productId!;
@@ -803,6 +810,36 @@ export default function ProductForm() {
                         {c.name}
                       </button>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Badges */}
+              <div>
+                <h3 className="text-sm font-semibold text-kb-charcoal mb-2">Badges</h3>
+                {badgesData.length === 0 ? (
+                  <p className="text-sm text-kb-muted">No badges configured. <a href="/badges" className="text-kb-teal hover:underline">Create one →</a></p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {badgesData.map((b) => {
+                      const active = selBadges.includes(b.id);
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => setSelBadges((prev) =>
+                            prev.includes(b.id) ? prev.filter((x) => x !== b.id) : [...prev, b.id]
+                          )}
+                          className="px-2.5 py-1 rounded-full text-xs border transition-all"
+                          style={active
+                            ? { backgroundColor: b.hex_color, color: b.text_color, borderColor: b.hex_color }
+                            : { backgroundColor: 'white', color: '#6B7280', borderColor: '#E5E7EB' }
+                          }
+                        >
+                          {b.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

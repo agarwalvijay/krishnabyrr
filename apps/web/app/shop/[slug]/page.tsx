@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { serverFetch, serverFetchList, imageUrl, type ProductListItem, type CategoryItem, type TagItem } from '@/lib/api';
+import { serverFetch, serverFetchList, imageUrl, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem } from '@/lib/api';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 import ShopClient from '../ShopClient';
 
@@ -53,7 +53,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   }
 }
 
-const RESERVED_PARAMS = new Set(['price_min', 'price_max', 'in_stock', 'sort', 'page', 'q', 'category', 'collection']);
+const RESERVED_PARAMS = new Set(['price_min', 'price_max', 'in_stock', 'sort', 'page', 'q', 'category', 'collection', 'badge']);
 
 function buildQuery(slug: string, sp: SearchParams, tagGroupNames: string[]): string {
   const params = new URLSearchParams();
@@ -80,6 +80,11 @@ export default async function CategoryPage({
   // Fetch tag groups first to know which URL params to forward
   const tagsResult = await serverFetch<Record<string, TagGroupData>>('/api/tags', { revalidate: 3600 }).catch(() => ({} as Record<string, TagGroupData>));
   const tagGroupNames = Object.keys(tagsResult ?? {});
+
+  const badgesRaw = await serverFetch<BadgeItem[]>('/api/badges', { revalidate: 3600 }).catch(() => []);
+  const filterBadges = (Array.isArray(badgesRaw) ? badgesRaw : []).filter(
+    (b) => (b as BadgeItem & { is_filter: boolean }).is_filter
+  ) as (BadgeItem & { is_filter: boolean })[];
 
   const [category, productsResult] = await Promise.all([
     serverFetch<CategoryDetail>(`/api/categories/${params.slug}`, { revalidate: 3600 }).catch(() => null),
@@ -125,6 +130,7 @@ export default async function CategoryPage({
           initialMeta={productsResult.meta}
           categories={[]}
           tags={tagsResult}
+          filterBadges={filterBadges}
           currentFilters={{ ...searchParams, category: params.slug }}
           lockedCategory={{ name: category.name, slug: params.slug }}
         />

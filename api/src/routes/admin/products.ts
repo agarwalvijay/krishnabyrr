@@ -550,7 +550,7 @@ router.get('/:id', requireAuth, async (req, res, next) => {
       return;
     }
 
-    const [{ rows: images }, { rows: tagRows }, { rows: categories }, { rows: collections }] =
+    const [{ rows: images }, { rows: tagRows }, { rows: categories }, { rows: collections }, { rows: badgeRows }] =
       await Promise.all([
         pool.query('SELECT * FROM product_images WHERE product_id = $1 ORDER BY display_order', [id]),
         pool.query(
@@ -568,9 +568,15 @@ router.get('/:id', requireAuth, async (req, res, next) => {
            FROM collections col JOIN collection_products cp ON cp.collection_id = col.id
            WHERE cp.product_id = $1`, [id]
         ),
+        pool.query(
+          `SELECT b.id, b.name, b.hex_color, b.text_color
+           FROM badges b JOIN product_badges pb ON pb.badge_id = b.id
+           WHERE pb.product_id = $1 AND b.is_active = true
+           ORDER BY b.display_order`, [id]
+        ),
       ]);
 
-    res.json({ data: { ...product, images, tags: tagRows, categories, collections } });
+    res.json({ data: { ...product, images, tags: tagRows, categories, collections, badges: badgeRows } });
   } catch (err) {
     next(err);
   }
@@ -719,6 +725,32 @@ router.delete('/:id/related/:relatedId', requireAuth, async (req, res, next) => 
       return;
     }
     res.json({ data: deleted });
+  } catch (err) { next(err); }
+});
+
+// ── PUT /api/admin/products/:id/badges ───────────────────────────────────────
+router.put('/:id/badges', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { badge_ids } = req.body as { badge_ids: string[] };
+    if (!Array.isArray(badge_ids)) {
+      res.status(400).json({ error: { message: 'badge_ids array required', code: 'INVALID_BODY' } });
+      return;
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM product_badges WHERE product_id = $1', [id]);
+      for (const badgeId of badge_ids) {
+        await client.query(
+          'INSERT INTO product_badges (product_id, badge_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [id, badgeId]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
+    res.json({ data: { badge_ids } });
   } catch (err) { next(err); }
 });
 

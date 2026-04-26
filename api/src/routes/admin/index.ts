@@ -12,6 +12,7 @@ import adminHomepageRouter from './homepage';
 import adminRevalidateRouter from './revalidate';
 import adminCustomersRouter from './customers';
 import adminDashboardRouter from './dashboard';
+import adminBadgesRouter from './badges';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use('/homepage', adminHomepageRouter);
 router.use('/revalidate-cache', adminRevalidateRouter);
 router.use('/customers', adminCustomersRouter);
 router.use('/dashboard', adminDashboardRouter);
+router.use('/badges', adminBadgesRouter);
 
 export default router;

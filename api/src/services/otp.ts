@@ -5,13 +5,14 @@
  *   1. createVerificationToken(phone) → returns a random hex token
  *   2. sendVerificationLink() sends a WhatsApp message with a tap-to-verify button
  *   3. User taps the link → opens /verify-phone?t=<token>
- *   4. verifyToken(token) → marks phone_verified = true on the customer record
+ *   4. verifyToken(token, 'verify') → marks phone_verified = true on the customer record
  *
  * Token properties:
  *   - 32 bytes of cryptographic randomness (64 hex chars) — unguessable
  *   - Stored as SHA-256 hash in DB (token itself never persisted)
  *   - Expires in 30 minutes
  *   - Rate limited: max 3 sends per phone per 15-minute window
+ *   - purpose column prevents login tokens from satisfying verify flows and vice versa
  */
 
 import crypto from 'crypto';
@@ -22,11 +23,13 @@ const LOGIN_TOKEN_EXPIRY_MINUTES   = 15; // login links — shorter for security
 const RATE_LIMIT_WINDOW_MINUTES = 15;
 const RATE_LIMIT_MAX          = 3;
 
+export type TokenPurpose = 'login' | 'verify';
+
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-async function createToken(phone: string, expiryMinutes: number): Promise<string> {
+async function createToken(phone: string, expiryMinutes: number, purpose: TokenPurpose): Promise<string> {
   const normalPhone = phone.replace(/\D/g, '').slice(-10);
 
   // Rate limit
@@ -40,19 +43,19 @@ async function createToken(phone: string, expiryMinutes: number): Promise<string
     throw new Error('RATE_LIMITED');
   }
 
-  // Invalidate any prior unused tokens for this phone
+  // Invalidate any prior unused tokens for this phone+purpose
   await pool.query(
     `UPDATE phone_otps SET used_at = NOW()
-     WHERE phone = $1 AND used_at IS NULL AND expires_at > NOW()`,
-    [normalPhone],
+     WHERE phone = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > NOW()`,
+    [normalPhone, purpose],
   );
 
   const token     = crypto.randomBytes(32).toString('hex'); // 64-char hex string
   const expiresAt = new Date(Date.now() + expiryMinutes * 60_000);
 
   await pool.query(
-    `INSERT INTO phone_otps (phone, otp_hash, expires_at) VALUES ($1, $2, $3)`,
-    [normalPhone, hashToken(token), expiresAt],
+    `INSERT INTO phone_otps (phone, otp_hash, expires_at, purpose) VALUES ($1, $2, $3, $4)`,
+    [normalPhone, hashToken(token), expiresAt, purpose],
   );
 
   return token;
@@ -60,12 +63,12 @@ async function createToken(phone: string, expiryMinutes: number): Promise<string
 
 /** Creates a 30-min phone verification token. */
 export async function createVerificationToken(phone: string): Promise<string> {
-  return createToken(phone, TOKEN_EXPIRY_MINUTES);
+  return createToken(phone, TOKEN_EXPIRY_MINUTES, 'verify');
 }
 
 /** Creates a 15-min login token. */
 export async function createLoginToken(phone: string): Promise<string> {
-  return createToken(phone, LOGIN_TOKEN_EXPIRY_MINUTES);
+  return createToken(phone, LOGIN_TOKEN_EXPIRY_MINUTES, 'login');
 }
 
 /**
@@ -73,7 +76,7 @@ export async function createLoginToken(phone: string): Promise<string> {
  * Returns the phone number on success (so the caller can mark the customer verified).
  * Throws: 'INVALID' | 'EXPIRED' | 'ALREADY_USED'
  */
-export async function verifyToken(token: string): Promise<string> {
+export async function verifyToken(token: string, purpose: TokenPurpose): Promise<string> {
   const hash = hashToken(token.trim());
 
   const { rows: [row] } = await pool.query<{
@@ -83,9 +86,9 @@ export async function verifyToken(token: string): Promise<string> {
     used_at:    Date | null;
   }>(
     `SELECT id, phone, expires_at, used_at FROM phone_otps
-     WHERE otp_hash = $1
+     WHERE otp_hash = $1 AND purpose = $2
      ORDER BY created_at DESC LIMIT 1`,
-    [hash],
+    [hash, purpose],
   );
 
   if (!row)        throw new Error('INVALID');

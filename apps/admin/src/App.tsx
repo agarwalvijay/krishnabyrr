@@ -13,6 +13,7 @@ import SettingsPage from './pages/Settings';
 import HomepagePage from './pages/Homepage';
 import CustomersPage from './pages/Customers';
 import DashboardPage from './pages/Dashboard';
+import BadgesPage from './pages/Badges';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -61,6 +62,7 @@ export default function App() {
       <Route path="/customers" element={<ProtectedRoute><CustomersPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       <Route path="/homepage" element={<ProtectedRoute><HomepagePage /></ProtectedRoute>} />
+      <Route path="/badges" element={<ProtectedRoute><BadgesPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/products" replace />} />
     </Routes>
   );

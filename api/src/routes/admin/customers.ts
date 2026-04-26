@@ -227,10 +227,10 @@ router.post('/:id/labels', requireAuth, async (req, res, next) => {
     }
     const { rows: [updated] } = await pool.query(
       `UPDATE customers
-       SET customer_labels = array_append(
-         CASE WHEN $2 = ANY(customer_labels) THEN customer_labels
-              ELSE customer_labels END, $2
-       ), updated_at = NOW()
+       SET customer_labels = CASE
+         WHEN $2 = ANY(customer_labels) THEN customer_labels
+         ELSE array_append(customer_labels, $2)
+       END, updated_at = NOW()
        WHERE id = $1 RETURNING customer_labels`,
       [id, label.trim()]
     );

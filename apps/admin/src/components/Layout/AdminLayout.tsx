@@ -88,6 +88,7 @@ const NAV_ITEMS = [
   { label: 'Products',    path: '/products',    icon: Icons.products },
   { label: 'Categories',  path: '/categories',  icon: Icons.categories },
   { label: 'Tags',        path: '/tags',        icon: Icons.tags },
+  { label: 'Badges',      path: '/badges',      icon: Icons.tags },
   { label: 'Collections', path: '/collections', icon: Icons.collections },
   { label: 'Homepage',    path: '/homepage',    icon: Icons.homepage },
   { label: 'Orders',      path: '/orders',      icon: Icons.orders },

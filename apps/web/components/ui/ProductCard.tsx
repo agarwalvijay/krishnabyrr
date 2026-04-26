@@ -203,11 +203,22 @@ export default function ProductCard({ product, showQuickView = true }: ProductCa
 
           {/* Top badges */}
           <div className="absolute top-2 left-2 flex flex-col gap-1">
-            {status === 'out_of_stock' ? null : hasSale ? (
+            {/* Custom admin badges (always shown, even on sale/out-of-stock) */}
+            {product.badges?.map((b) => (
+              <span
+                key={b.id}
+                className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: b.hex_color, color: b.text_color }}
+              >
+                {b.name}
+              </span>
+            ))}
+            {/* Automatic SALE / NEW badges (below custom ones) */}
+            {status !== 'out_of_stock' && !product.badges?.length && hasSale ? (
               <span className="badge-sale text-white text-xs font-semibold px-2 py-0.5 rounded-full">
                 SALE -{pct}%
               </span>
-            ) : isNew ? (
+            ) : status !== 'out_of_stock' && !product.badges?.length && isNew ? (
               <span className="badge-new text-white text-xs font-semibold px-2 py-0.5 rounded-full">
                 NEW
               </span>

@@ -30,6 +30,13 @@ export interface CategoryItem {
   product_count?: number;
 }
 
+export interface BadgeItem {
+  id: string;
+  name: string;
+  hex_color: string;
+  text_color: string;
+}
+
 export interface ProductListItem {
   id: string;
   name: string;
@@ -44,6 +51,7 @@ export interface ProductListItem {
   primary_image: ProductImage | null;
   second_image:  ProductImage | null;
   tags: TagItem[];
+  badges: BadgeItem[];
   created_at: string;
 }
 
@@ -68,6 +76,7 @@ export interface ProductDetail {
   status:      string;
   images:      ProductImage[];
   tags:        Record<string, TagItem[]>;
+  badges:      BadgeItem[];
   categories:  CategoryItem[];
   related_similar: ProductListItem[];
   related_look:    ProductListItem[];
@@ -152,6 +161,13 @@ const API_ORIGIN =
   process.env.API_ORIGIN ??
   DEFAULT_API_ORIGIN;
 
+// Server-side fetches (SSR/SSG) must use SERVER_API_ORIGIN, which defaults to
+// localhost so builds never reach the public hostname. API_ORIGIN is intentionally
+// NOT in the fallback chain — .env.production sets it to the public host.
+const SERVER_API_ORIGIN =
+  process.env.SERVER_API_ORIGIN ??
+  DEFAULT_API_ORIGIN;
+
 /** Convert a DB gcs_path to a displayable URL. */
 export function imageUrl(gcsPath: string | null | undefined): string {
   if (!gcsPath) return '';
@@ -189,7 +205,7 @@ export async function serverFetch<T>(
   path: string,
   options: { revalidate?: number; noStore?: boolean } = {}
 ): Promise<T> {
-  const url = `${API_ORIGIN}${path}`;
+  const url = `${SERVER_API_ORIGIN}${path}`;
   const nextOpts = options.noStore
     ? { cache: 'no-store' as const }
     : { next: { revalidate: options.revalidate ?? 3600 } };
@@ -207,7 +223,7 @@ export async function serverFetchList<T>(
   path: string,
   options: { revalidate?: number; noStore?: boolean } = {}
 ): Promise<{ data: T[]; meta: ApiMeta }> {
-  const url = `${API_ORIGIN}${path}`;
+  const url = `${SERVER_API_ORIGIN}${path}`;
   const nextOpts = options.noStore
     ? { cache: 'no-store' as const }
     : { next: { revalidate: options.revalidate ?? 3600 } };

@@ -30,10 +30,18 @@ interface TagGroupData {
   tags: Array<{ id: string; value: string; hex_color: string | null }>;
 }
 
+interface NavBadge {
+  id: string;
+  name: string;
+  hex_color: string;
+  text_color: string;
+}
+
 export interface HeaderNavData {
   collections: CollectionItem[];
   tagGroups: Record<string, TagGroupData>;
   categories: CategoryItem[];
+  navBadges: NavBadge[];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -369,7 +377,7 @@ function AccountMenu() {
 
 // ── Main Header ───────────────────────────────────────────────────────────────
 
-export default function HeaderClient({ collections, tagGroups, categories }: HeaderNavData) {
+export default function HeaderClient({ collections, tagGroups, categories, navBadges }: HeaderNavData) {
   const [openMenu, setOpenMenu]         = useState<string | null>(null);
   const [mobileOpen, setMobileOpen]     = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
@@ -506,6 +514,18 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
 
             <Link href="/shop?sort=newest" className={linkBase}>New Arrivals</Link>
             <Link href="/shop?on_sale=true" className={linkBase}>Sale</Link>
+
+            {/* Badge nav items */}
+            {navBadges.map((b) => (
+              <Link
+                key={b.id}
+                href={`/shop?badge=${encodeURIComponent(b.name)}`}
+                className="text-sm font-medium transition-colors duration-150"
+                style={{ color: b.hex_color }}
+              >
+                {b.name}
+              </Link>
+            ))}
           </nav>
 
           {/* Desktop search */}
@@ -639,6 +659,19 @@ export default function HeaderClient({ collections, tagGroups, categories }: Hea
               <Link href="/shop?on_sale=true" className={mobileLinkBase} onClick={closeMobile}>
                 Sale
               </Link>
+
+              {/* Badge nav items (mobile) */}
+              {navBadges.map((b) => (
+                <Link
+                  key={b.id}
+                  href={`/shop?badge=${encodeURIComponent(b.name)}`}
+                  className={`${mobileLinkBase} font-medium`}
+                  style={{ color: b.hex_color }}
+                  onClick={closeMobile}
+                >
+                  {b.name}
+                </Link>
+              ))}
 
               <MobileAccountSection onNav={closeMobile} />
             </nav>

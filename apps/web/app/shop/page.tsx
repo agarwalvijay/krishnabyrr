@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { serverFetchList, serverFetch, type ProductListItem, type CategoryItem } from '@/lib/api';
+import { serverFetchList, serverFetch, type ProductListItem, type CategoryItem, type BadgeItem } from '@/lib/api';
 import ShopClient from './ShopClient';
 
 interface CollectionSummary { name: string; slug: string; description?: string | null }
@@ -36,13 +36,14 @@ interface TagGroupData {
   tags: Array<{ id: string; group_name: string; value: string; hex_color: string | null }>;
 }
 
-const RESERVED_PARAMS = new Set(['q', 'category', 'collection', 'price_min', 'price_max', 'in_stock', 'on_sale', 'sort', 'page']);
+const RESERVED_PARAMS = new Set(['q', 'category', 'collection', 'badge', 'price_min', 'price_max', 'in_stock', 'on_sale', 'sort', 'page']);
 
 function buildQuery(sp: SearchParams, tagGroupNames: string[]): string {
   const params = new URLSearchParams();
   if (sp.q)          params.set('q', sp.q);
   if (sp.category)   params.set('category', sp.category);
   if (sp.collection) params.set('collection', sp.collection);
+  if (sp.badge)      params.set('badge', sp.badge);
   if (sp.price_min)  params.set('price_min', sp.price_min);
   if (sp.price_max)  params.set('price_max', sp.price_max);
   if (sp.in_stock)   params.set('in_stock', sp.in_stock);
@@ -63,6 +64,9 @@ export default async function ShopPage({ searchParams }: PageProps) {
   const tagGroupNames = Object.keys(tagsResult ?? {});
 
   const query = buildQuery(searchParams, tagGroupNames);
+
+  const badgesResult = await serverFetch<BadgeItem[]>('/api/badges', { revalidate: 3600 }).catch(() => []);
+  const filterBadges = (Array.isArray(badgesResult) ? badgesResult : []).filter(b => (b as BadgeItem & { is_filter: boolean }).is_filter);
 
   const [productsResult, categoriesResult, activeCollection] = await Promise.all([
     serverFetchList<ProductListItem>(`/api/products?${query}`, { noStore: true }),
@@ -86,6 +90,7 @@ export default async function ShopPage({ searchParams }: PageProps) {
         initialMeta={productsResult.meta}
         categories={flatCategories}
         tags={tagsResult as Record<string, TagGroupData>}
+        filterBadges={filterBadges as (BadgeItem & { is_filter: boolean })[]}
         currentFilters={currentFilters}
         lockedCollection={activeCollection ?? undefined}
       />

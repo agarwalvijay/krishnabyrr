@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ProductCard from '@/components/ui/ProductCard';
-import { apiClient, type ProductListItem, type CategoryItem, type TagItem, type ApiMeta } from '@/lib/api';
+import { apiClient, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem, type ApiMeta } from '@/lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +29,7 @@ interface Props {
   initialMeta: ApiMeta;
   categories: CategoryItem[];
   tags: Record<string, TagGroupData>;
+  filterBadges: BadgeItem[];
   currentFilters: Filters;
   /** When set, the category filter is locked to this slug (category page) */
   lockedCategory?: { name: string; slug: string };
@@ -72,6 +73,7 @@ export default function ShopClient({
   initialMeta,
   categories,
   tags,
+  filterBadges,
   currentFilters,
   lockedCategory,
   lockedCollection,
@@ -136,6 +138,7 @@ export default function ShopClient({
     currentFilters.q,
     !lockedCategory && currentFilters.category,
     currentFilters.collection,
+    currentFilters.badge,
     ...activeTagFilters,
     currentFilters.price_min,
     currentFilters.price_max,
@@ -279,6 +282,35 @@ export default function ShopClient({
           </FilterGroup>
         );
       })}
+
+      {/* Badge filters */}
+      {filterBadges.length > 0 && (
+        <FilterGroup title="Badges">
+          <div className="flex flex-wrap gap-2">
+            {filterBadges.map((badge) => {
+              const selected = currentFilters.badge?.split(',').filter(Boolean) ?? [];
+              const active = selected.includes(badge.name);
+              return (
+                <button
+                  key={badge.id}
+                  onClick={() => {
+                    const next = active
+                      ? selected.filter((v) => v !== badge.name)
+                      : [...selected, badge.name];
+                    updateFilter('badge', next.length > 0 ? next.join(',') : undefined);
+                  }}
+                  className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border transition-colors ${
+                    active ? 'border-transparent font-medium' : 'border-gray-200 hover:border-kb-teal text-kb-charcoal'
+                  }`}
+                  style={active ? { backgroundColor: badge.hex_color, color: badge.text_color, borderColor: badge.hex_color } : undefined}
+                >
+                  {badge.name}
+                </button>
+              );
+            })}
+          </div>
+        </FilterGroup>
+      )}
 
       {/* Price range */}
       <FilterGroup title="Price Range">

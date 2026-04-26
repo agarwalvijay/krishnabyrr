@@ -8,6 +8,7 @@ import productsRouter, {
   collectionsRouter,
   tagsRouter,
   searchRouter,
+  badgesRouter,
 } from './routes/products';
 import settingsRouter from './routes/settings';
 import homepageRouter from './routes/homepage';
@@ -42,6 +43,7 @@ app.use('/api/products', productsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/collections', collectionsRouter);
 app.use('/api/tags', tagsRouter);
+app.use('/api/badges', badgesRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/homepage', homepageRouter);
