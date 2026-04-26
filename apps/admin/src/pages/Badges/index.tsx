@@ -21,12 +21,27 @@ interface Badge {
   product_count: number;
 }
 
+// ── Colour palette ────────────────────────────────────────────────────────────
+
+const PALETTE: Array<{ label: string; hex_color: string; text_color: string }> = [
+  { label: 'Teal',        hex_color: '#1A6B6B', text_color: '#FFFFFF' },
+  { label: 'Gold',        hex_color: '#BF9B30', text_color: '#FFFFFF' },
+  { label: 'Crimson',     hex_color: '#B91C1C', text_color: '#FFFFFF' },
+  { label: 'Indigo',      hex_color: '#4338CA', text_color: '#FFFFFF' },
+  { label: 'Amber',       hex_color: '#D97706', text_color: '#FFFFFF' },
+  { label: 'Emerald',     hex_color: '#059669', text_color: '#FFFFFF' },
+  { label: 'Rose',        hex_color: '#E11D48', text_color: '#FFFFFF' },
+  { label: 'Charcoal',    hex_color: '#1F2937', text_color: '#FFFFFF' },
+];
+
 // ── Schema ────────────────────────────────────────────────────────────────────
+
+const VALID_HEX = PALETTE.map(p => p.hex_color) as [string, ...string[]];
 
 const badgeSchema = z.object({
   name:          z.string().min(1, 'Name is required').max(100),
-  hex_color:     z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Use format #RRGGBB').default('#1A6B6B'),
-  text_color:    z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Use format #RRGGBB').default('#FFFFFF'),
+  hex_color:     z.enum(VALID_HEX, { errorMap: () => ({ message: 'Select a colour' }) }).default('#1A6B6B'),
+  text_color:    z.string().default('#FFFFFF'),
   is_active:     z.boolean().default(true),
   is_filter:     z.boolean().default(false),
   is_nav:        z.boolean().default(false),
@@ -40,7 +55,7 @@ function BadgeSlideOver({ badge, onClose }: { badge: Badge | null; onClose: () =
   const queryClient = useQueryClient();
   const isNew = badge === null;
 
-  const { register, handleSubmit, watch, formState: { errors, isDirty } } = useForm<BadgeFormData>({
+  const { register, handleSubmit, watch, setValue, formState: { errors, isDirty } } = useForm<BadgeFormData>({
     resolver: zodResolver(badgeSchema),
     defaultValues: {
       name:          badge?.name          ?? '',
@@ -56,6 +71,11 @@ function BadgeSlideOver({ badge, onClose }: { badge: Badge | null; onClose: () =
   const hexColor  = watch('hex_color');
   const textColor = watch('text_color');
   const name      = watch('name');
+
+  const selectColour = (entry: typeof PALETTE[number]) => {
+    setValue('hex_color',  entry.hex_color,  { shouldDirty: true });
+    setValue('text_color', entry.text_color, { shouldDirty: true });
+  };
 
   const saveMutation = useMutation({
     mutationFn: (data: BadgeFormData) =>
@@ -88,8 +108,6 @@ function BadgeSlideOver({ badge, onClose }: { badge: Badge | null; onClose: () =
     },
   });
 
-  const isValidHex = (v: string) => /^#[0-9A-Fa-f]{6}$/.test(v);
-
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
@@ -107,7 +125,7 @@ function BadgeSlideOver({ badge, onClose }: { badge: Badge | null; onClose: () =
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
             {/* Preview */}
-            {name && isValidHex(hexColor) && isValidHex(textColor) && (
+            {name && PALETTE.some(p => p.hex_color === hexColor) && (
               <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                 <span className="text-xs text-kb-muted">Preview:</span>
                 <span
@@ -127,31 +145,35 @@ function BadgeSlideOver({ badge, onClose }: { badge: Badge | null; onClose: () =
               {errors.name && <p className="mt-1 text-xs text-kb-error">{errors.name.message}</p>}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-kb-charcoal mb-1">
-                  Background Color <span className="text-kb-error">*</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  {isValidHex(hexColor) && (
-                    <span className="w-6 h-6 rounded-full border border-black/10 flex-shrink-0" style={{ backgroundColor: hexColor }} />
-                  )}
-                  <input {...register('hex_color')} placeholder="#1A6B6B" />
-                </div>
-                {errors.hex_color && <p className="mt-1 text-xs text-kb-error">{errors.hex_color.message}</p>}
+            <div>
+              <label className="block text-sm font-medium text-kb-charcoal mb-2">
+                Colour <span className="text-kb-error">*</span>
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {PALETTE.map((entry) => {
+                  const active = hexColor === entry.hex_color;
+                  return (
+                    <button
+                      key={entry.hex_color}
+                      type="button"
+                      onClick={() => selectColour(entry)}
+                      className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-all ${
+                        active ? 'border-kb-teal shadow-sm' : 'border-transparent hover:border-gray-200'
+                      }`}
+                    >
+                      <span
+                        className="w-8 h-8 rounded-full border border-black/10"
+                        style={{ backgroundColor: entry.hex_color }}
+                      />
+                      <span className="text-[10px] text-kb-muted leading-none">{entry.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-kb-charcoal mb-1">
-                  Text Color <span className="text-kb-error">*</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  {isValidHex(textColor) && (
-                    <span className="w-6 h-6 rounded-full border border-black/10 flex-shrink-0" style={{ backgroundColor: textColor }} />
-                  )}
-                  <input {...register('text_color')} placeholder="#FFFFFF" />
-                </div>
-                {errors.text_color && <p className="mt-1 text-xs text-kb-error">{errors.text_color.message}</p>}
-              </div>
+              {/* Hidden inputs so react-hook-form registers the values */}
+              <input type="hidden" {...register('hex_color')} />
+              <input type="hidden" {...register('text_color')} />
+              {errors.hex_color && <p className="mt-1 text-xs text-kb-error">{errors.hex_color.message}</p>}
             </div>
 
             <div>
