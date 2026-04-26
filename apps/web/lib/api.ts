@@ -210,7 +210,12 @@ export async function serverFetch<T>(
     ? { cache: 'no-store' as const }
     : { next: { revalidate: options.revalidate ?? 3600 } };
 
-  const res = await fetch(url, nextOpts);
+  let res: Response;
+  try {
+    res = await fetch(url, nextOpts);
+  } catch (err) {
+    throw new Error(`API unreachable (${path}): ${(err as Error).message}`);
+  }
   if (!res.ok) {
     throw new Error(`API ${res.status}: ${path}`);
   }
@@ -218,21 +223,24 @@ export async function serverFetch<T>(
   return json.data ?? json;
 }
 
-/** Fetch a list (returns { data, meta }) */
+/** Fetch a list (returns { data, meta }). Never throws — returns empty data on any error. */
 export async function serverFetchList<T>(
   path: string,
   options: { revalidate?: number; noStore?: boolean } = {}
 ): Promise<{ data: T[]; meta: ApiMeta }> {
+  const EMPTY = { data: [] as T[], meta: { total: 0, page: 1, limit: 24, pages: 0 } };
   const url = `${SERVER_API_ORIGIN}${path}`;
   const nextOpts = options.noStore
     ? { cache: 'no-store' as const }
     : { next: { revalidate: options.revalidate ?? 3600 } };
 
-  const res = await fetch(url, nextOpts);
-  if (!res.ok) {
-    return { data: [], meta: { total: 0, page: 1, limit: 24, pages: 0 } };
+  try {
+    const res = await fetch(url, nextOpts);
+    if (!res.ok) return EMPTY;
+    return res.json();
+  } catch {
+    return EMPTY;
   }
-  return res.json();
 }
 
 // ── Client-side axios instance ─────────────────────────────────────────────────

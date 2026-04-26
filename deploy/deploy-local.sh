@@ -73,8 +73,11 @@ echo "      admin..."
 npm run build -w apps/admin --silent
 
 # Web (Next.js → apps/web/.next/ with standalone output)
+# Point SERVER_API_ORIGIN at the live production API so static-generation
+# fetch calls succeed. NEXT_PUBLIC_API_ORIGIN is already set in
+# apps/web/.env.production and is used for client-side requests.
 echo "      web (this takes ~60s)..."
-npm run build -w apps/web --silent
+SERVER_API_ORIGIN=https://krishnasbliss.com npm run build -w apps/web --silent
 
 # Standalone doesn't auto-copy static assets — do it now so the bundle is self-contained.
 echo "      copying static assets into standalone..."
@@ -176,4 +179,4 @@ $SSH "$GCP_HOST" "
 "
 
 echo ""
-echo "✓ Deploy complete."
+echo "✓ Deploy complete at " $( date )
