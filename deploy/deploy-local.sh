@@ -178,10 +178,9 @@ $SSH "$GCP_HOST" "
 "
 
 # ── 7. Warm the ISR cache ──────────────────────────────────────────────────────
-# Hit key pages so Next.js renders and caches them before real users arrive.
-# Curl with a short timeout — if a page is slow on first hit that's fine,
-# the important thing is the render is triggered.
-echo "==> [7/7] Warming ISR cache..."
+# Give pm2 a moment to finish reloading before hitting the site.
+echo "==> [7/7] Warming pages..."
+sleep 5
 SITE="https://krishnasbliss.com"
 WARM_PAGES=(
   "/"
