@@ -24,7 +24,7 @@ interface Badge {
 // ── Colour palettes ───────────────────────────────────────────────────────────
 
 const BADGE_PALETTE = ['#1A6B6B', '#BF9B30', '#B91C1C', '#4338CA', '#D97706', '#059669', '#E11D48', '#1F2937'];
-const TEXT_PALETTE  = ['#FFFFFF', '#1F2937', '#1A6B6B', '#BF9B30', '#B91C1C', '#4338CA', '#D97706', '#059669'];
+const TEXT_PALETTE  = ['#FFFFFF', '#F9FAFB', '#FEF3C7', '#CCEBE9', '#FECDD3', '#DDD6FE', '#FDE68A', '#1F2937'];
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -139,21 +139,17 @@ function BadgeSlideOver({ badge, onClose }: { badge: Badge | null; onClose: () =
                 <label className="block text-sm font-medium text-kb-charcoal mb-1.5">
                   Badge Color <span className="text-kb-error">*</span>
                 </label>
-                <div className="grid grid-cols-4 gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {BADGE_PALETTE.map((hex) => (
                     <button
                       key={hex}
                       type="button"
                       onClick={() => pickBadgeColor(hex)}
-                      className={`flex items-center justify-center w-full aspect-square rounded-full border-2 transition-all ${
+                      className={`w-6 h-6 rounded-full border-2 transition-all flex-shrink-0 ${
                         hexColor === hex ? 'border-kb-charcoal scale-110' : 'border-transparent hover:scale-105'
                       }`}
-                    >
-                      <span
-                        className="w-5 h-5 rounded-full border border-black/10"
-                        style={{ backgroundColor: hex }}
-                      />
-                    </button>
+                      style={{ backgroundColor: hex, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.12)' }}
+                    />
                   ))}
                 </div>
               </div>
@@ -163,21 +159,17 @@ function BadgeSlideOver({ badge, onClose }: { badge: Badge | null; onClose: () =
                 <label className="block text-sm font-medium text-kb-charcoal mb-1.5">
                   Text Color <span className="text-kb-error">*</span>
                 </label>
-                <div className="grid grid-cols-4 gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {TEXT_PALETTE.map((hex) => (
                     <button
                       key={hex}
                       type="button"
                       onClick={() => pickTextColor(hex)}
-                      className={`flex items-center justify-center w-full aspect-square rounded-full border-2 transition-all ${
+                      className={`w-6 h-6 rounded-full border-2 transition-all flex-shrink-0 ${
                         textColor === hex ? 'border-kb-charcoal scale-110' : 'border-transparent hover:scale-105'
                       }`}
-                    >
-                      <span
-                        className="w-5 h-5 rounded-full border border-black/10"
-                        style={{ backgroundColor: hex }}
-                      />
-                    </button>
+                      style={{ backgroundColor: hex, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.12)' }}
+                    />
                   ))}
                 </div>
               </div>
