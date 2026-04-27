@@ -21,65 +21,63 @@
  *   kb_refund_initiated  (UTILITY)          — refund in progress
  *   kb_password_changed  (UTILITY)          — security alert
  *
- * Template body copy (submit exactly as below during Meta approval):
- * Note: Meta only accepts positional variables {{1}}, {{2}}, … — descriptive
- * names below are for readability only. Bodies must NOT start with a variable.
+ * Template body copy (paste exactly as shown into the Meta template editor).
+ * All variables are type "text". Bodies must NOT start with a variable.
  *
  *   kb_verify_phone (UTILITY):
  *     Header: none
- *     Body: "Hi {{customer_name}}! Tap the button below to verify your phone number
+ *     Body: "Hi {{1}}! Tap the button below to verify your phone number
  *            for your Krishna's Bliss account. This link expires in 30 minutes."
  *     Button: [Visit Website] label="Verify Phone"
  *             URL base (fixed in Meta): https://krishnasbliss.com/verify-phone?t=
- *             URL suffix (dynamic):     {{token}}
- *     Variables: {{1}} = customer_name, button suffix = token
- *     Sample message:
+ *             URL suffix (dynamic):     {{1}}
+ *     Variables: body {{1}} = customer name, button suffix {{1}} = token
+ *     Sample:
  *       "Hi Priya! Tap the button below to verify your phone number for your
  *        Krishna's Bliss account. This link expires in 30 minutes."
  *       Button → https://krishnasbliss.com/verify-phone?t=a3f8c2d1e9b4567f…
  *
  *   kb_login_link (UTILITY):
  *     Header: none
- *     Body: "Hi {{customer_name}}! Tap the button below to sign in to your
- *            Krishna's Bliss account. This link expires in 15 minutes.
- *            If you didn't request this, ignore this message."
+ *     Body: "Hi {{1}}! Tap the button below to sign in to your Krishna's Bliss
+ *            account. This link expires in 15 minutes. If you didn't request
+ *            this, ignore this message."
  *     Button: [Visit Website] label="Sign In"
  *             URL base (fixed in Meta): https://krishnasbliss.com/login-link?t=
- *             URL suffix (dynamic):     {{token}}
- *     Variables: {{1}} = customer_name, button suffix = token
- *     Sample message:
+ *             URL suffix (dynamic):     {{1}}
+ *     Variables: body {{1}} = customer name, button suffix {{1}} = token
+ *     Sample:
  *       "Hi Priya! Tap the button below to sign in to your Krishna's Bliss
- *        account. This link expires in 15 minutes. If you didn't request this,
- *        ignore this message."
- *       Button → https://krishnasbliss.com/login-link?t=b7e1d3f092c8…
+ *        account. This link expires in 15 minutes. If you didn't request
+ *        this, ignore this message."
+ *       Button → https://krishnasbliss.com/login-link?t=b7e1d3f092c8a1e5…
  *
  *   kb_order_confirmed (UTILITY):
- *     Body: "Hi {{customer_name}}! Your order *{{order_number}}* for ₹{{total}}
- *            is confirmed. We'll notify you when it ships."
- *     Variables: {{1}} = customer_name, {{2}} = order_number, {{3}} = total
+ *     Body: "Hi {{1}}! Your order *{{2}}* for ₹{{3}} is confirmed.
+ *            We'll notify you when it ships."
+ *     Variables: {{1}} = customer name, {{2}} = order number, {{3}} = total (e.g. 2,450)
  *     Sample: "Hi Priya! Your order *KB-00123* for ₹2,450 is confirmed.
  *              We'll notify you when it ships."
  *
  *   kb_payment_failed (UTILITY):
- *     Body: "Hi {{customer_name}}, your payment for order {{order_number}} didn't
- *            go through. Please try again or contact us on WhatsApp."
- *     Variables: {{1}} = customer_name, {{2}} = order_number
+ *     Body: "Hi {{1}}, your payment for order {{2}} didn't go through.
+ *            Please try again or contact us on WhatsApp."
+ *     Variables: {{1}} = customer name, {{2}} = order number
  *     Sample: "Hi Priya, your payment for order KB-00123 didn't go through.
  *              Please try again or contact us on WhatsApp."
  *
  *   kb_order_shipped (UTILITY):
- *     Body: "Hi {{customer_name}}! Your order {{order_number}} has been shipped
- *            via {{courier}}. Tracking: {{tracking_number}}"
- *     Variables: {{1}} = customer_name, {{2}} = order_number,
- *                {{3}} = courier, {{4}} = tracking_number
+ *     Body: "Hi {{1}}! Your order {{2}} has been shipped via {{3}}.
+ *            Tracking: {{4}}"
+ *     Variables: {{1}} = customer name, {{2}} = order number,
+ *                {{3}} = courier name, {{4}} = tracking number
  *     Sample: "Hi Priya! Your order KB-00123 has been shipped via Delhivery.
  *              Tracking: 1234567890"
  *
  *   kb_order_cancelled (UTILITY):
- *     Body: "Hi {{customer_name}}, your order {{order_number}} has been
- *            cancelled.{{refund_note}}"
- *     Variables: {{1}} = customer_name, {{2}} = order_number,
- *                {{3}} = refund_note (" A refund of ₹X is on its way." or "")
+ *     Body: "Hi {{1}}, your order {{2}} has been cancelled.{{3}}"
+ *     Variables: {{1}} = customer name, {{2}} = order number,
+ *                {{3}} = refund note (" A refund of ₹2,450 is on its way." or "")
  *     Sample (with refund):
  *       "Hi Priya, your order KB-00123 has been cancelled. A refund of ₹2,450
  *        is on its way."
@@ -87,16 +85,16 @@
  *       "Hi Priya, your order KB-00123 has been cancelled."
  *
  *   kb_refund_initiated (UTILITY):
- *     Body: "Hi {{customer_name}}, your refund of ₹{{amount}} for order
- *            {{order_number}} has been initiated. It will reflect in 5–7 business days."
- *     Variables: {{1}} = customer_name, {{2}} = amount, {{3}} = order_number
+ *     Body: "Hi {{1}}, your refund of ₹{{2}} for order {{3}} has been initiated.
+ *            It will reflect in 5–7 business days."
+ *     Variables: {{1}} = customer name, {{2}} = amount (e.g. 2,450), {{3}} = order number
  *     Sample: "Hi Priya, your refund of ₹2,450 for order KB-00123 has been
  *              initiated. It will reflect in 5–7 business days."
  *
  *   kb_password_changed (UTILITY):
- *     Body: "Hi {{customer_name}}, your Krishna's Bliss account password was
- *            recently changed. If this wasn't you, contact us immediately on WhatsApp."
- *     Variables: {{1}} = customer_name
+ *     Body: "Hi {{1}}, your Krishna's Bliss account password was recently changed.
+ *            If this wasn't you, contact us immediately on WhatsApp."
+ *     Variables: {{1}} = customer name
  *     Sample: "Hi Priya, your Krishna's Bliss account password was recently
  *              changed. If this wasn't you, contact us immediately on WhatsApp."
  *
