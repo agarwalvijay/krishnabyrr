@@ -14,8 +14,8 @@
  * Template names to register with Meta (category in parentheses):
  *   kb_verify_phone      (UTILITY)          — magic link phone verification
  *   kb_login_link        (UTILITY)          — passwordless WhatsApp login
- *   kb_order_confirmed   (UTILITY)          — payment succeeded
- *   kb_payment_failed    (UTILITY)          — payment failed
+ *   kb_order_conf        (UTILITY)          — payment succeeded
+ *   kb_payment_fail      (UTILITY)          — payment failed
  *   kb_order_shipped     (UTILITY)          — order fulfilled/shipped
  *   kb_order_cancelled   (UTILITY)          — order cancelled
  *   kb_refund_initiated  (UTILITY)          — refund in progress
@@ -52,14 +52,14 @@
  *        this, ignore this message."
  *       Button → https://krishnasbliss.com/login-link?t=b7e1d3f092c8a1e5…
  *
- *   kb_order_confirmed (UTILITY):
+ *   kb_order_conf (UTILITY):
  *     Body: "Hi {{1}}! Your order *{{2}}* for ₹{{3}} is confirmed.
  *            We'll notify you when it ships."
  *     Variables: {{1}} = customer name, {{2}} = order number, {{3}} = total (e.g. 2,450)
  *     Sample: "Hi Priya! Your order *KB-00123* for ₹2,450 is confirmed.
  *              We'll notify you when it ships."
  *
- *   kb_payment_failed (UTILITY):
+ *   kb_payment_fail (UTILITY):
  *     Body: "Hi {{1}}, your payment for order {{2}} didn't go through.
  *            Please try again or contact us on WhatsApp."
  *     Variables: {{1}} = customer name, {{2}} = order number
@@ -262,7 +262,7 @@ export function sendOrderConfirmed(params: {
 }): void {
   send(
     params.phone,
-    'kb_order_confirmed',
+    'kb_order_conf',
     [{ type: 'body', parameters: [txt(params.name), txt(params.orderNumber), txt(params.total.toLocaleString('en-IN'))] }],
     { order_number: params.orderNumber },
   );
@@ -275,7 +275,7 @@ export function sendPaymentFailed(params: {
 }): void {
   send(
     params.phone,
-    'kb_payment_failed',
+    'kb_payment_fail',
     [{ type: 'body', parameters: [txt(params.name), txt(params.orderNumber)] }],
     { order_number: params.orderNumber },
   );
