@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
@@ -17,14 +18,8 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 }
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: UPLOAD_DIR,
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-      cb(null, `${randomUUID()}${ext}`);
-    },
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB raw; sharp compresses on write
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Only image files are allowed'));
@@ -140,7 +135,16 @@ router.post('/blocks/:id/image', requireAuth, upload.single('image'), async (req
       return;
     }
 
-    const gcsPath = `${UPLOAD_DIR}/${file.filename}`;
+    // Banners are wide — cap at 1920px wide, 85% JPEG quality.
+    const outputFilename = `${randomUUID()}.jpg`;
+    const outputPath = path.join(UPLOAD_DIR, outputFilename);
+    await sharp(file.buffer)
+      .rotate()
+      .resize({ width: 1920, withoutEnlargement: true })
+      .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+      .toFile(outputPath);
+
+    const gcsPath = outputPath;
     const newPayload = { ...(block.payload as Record<string, unknown> ?? {}), [field]: gcsPath };
 
     const { rows: [updated] } = await pool.query(
