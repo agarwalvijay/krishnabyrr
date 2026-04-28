@@ -361,7 +361,7 @@ function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
             <button
               type="submit"
               className="btn-primary"
-              disabled={saveMutation.isPending || (!isNew && !isDirty)}
+              disabled={saveMutation.isPending || (!isNew && !isDirty && !bannerFile && bannerHeight === (category?.banner_height ?? 'md'))}
             >
               {saveMutation.isPending ? (
                 <>

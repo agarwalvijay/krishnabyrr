@@ -306,7 +306,7 @@ function CollectionSlideOver({ collection, onClose }: SlideOverProps) {
             <button
               type="submit"
               className="btn-primary"
-              disabled={saveMutation.isPending || (!isNew && !isDirty)}
+              disabled={saveMutation.isPending || (!isNew && !isDirty && !bannerFile && bannerHeight === (collection?.banner_height ?? 'md'))}
             >
               {saveMutation.isPending ? (
                 <>
