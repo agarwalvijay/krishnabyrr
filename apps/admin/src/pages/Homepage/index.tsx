@@ -121,14 +121,16 @@ interface ImageDropzoneProps {
   field: 'image_desktop' | 'image_mobile';
   onFileReady: (file: File) => void;
   onUploaded?: (path: string) => void;
+  onRemoved?: () => void;
 }
 
-function ImageDropzone({ label, currentPath, blockId, field, onFileReady, onUploaded }: ImageDropzoneProps) {
+function ImageDropzone({ label, currentPath, blockId, field, onFileReady, onUploaded, onRemoved }: ImageDropzoneProps) {
   const queryClient = useQueryClient();
   const [preview, setPreview] = useState<string | null>(() =>
     currentPath ? imageUrl(currentPath) : null
   );
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const originalPreview = currentPath ? imageUrl(currentPath) : null;
 
   const onDrop = useCallback(
@@ -144,8 +146,7 @@ function ImageDropzone({ label, currentPath, blockId, field, onFileReady, onUplo
           fd.append('image', file);
           const res = await api.post<{ path: string }>(
             `/admin/homepage/blocks/${blockId}/image?field=${field}`,
-            fd,
-            { headers: { 'Content-Type': 'multipart/form-data' } }
+            fd
           );
           toast.success('Image uploaded');
           queryClient.invalidateQueries({ queryKey: ['admin-homepage-blocks'] });
@@ -164,6 +165,26 @@ function ImageDropzone({ label, currentPath, blockId, field, onFileReady, onUplo
     [blockId, field, originalPreview, queryClient, onFileReady]
   );
 
+  const handleRemove = useCallback(async () => {
+    if (!blockId) {
+      setPreview(null);
+      onRemoved?.();
+      return;
+    }
+    setRemoving(true);
+    try {
+      await api.delete(`/admin/homepage/blocks/${blockId}/image?field=${field}`);
+      setPreview(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-homepage-blocks'] });
+      onRemoved?.();
+      toast.success('Image removed');
+    } catch {
+      toast.error('Failed to remove image');
+    } finally {
+      setRemoving(false);
+    }
+  }, [blockId, field, queryClient, onRemoved]);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'image/jpeg': [], 'image/png': [], 'image/webp': [] },
@@ -176,23 +197,33 @@ function ImageDropzone({ label, currentPath, blockId, field, onFileReady, onUplo
     <div>
       <label className="block text-xs text-kb-muted mb-1">{label}</label>
       {preview ? (
-        <div className="relative group">
-          <img
-            src={preview}
-            alt=""
-            className="w-full h-28 object-cover rounded-md border border-gray-200"
-          />
-          <div
-            {...getRootProps()}
-            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-md cursor-pointer"
-          >
-            <input {...getInputProps()} />
-            {uploading ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <span className="text-white text-xs font-medium">Replace image</span>
-            )}
+        <div className="space-y-1">
+          <div className="relative group">
+            <img
+              src={preview}
+              alt=""
+              className="w-full h-28 object-cover rounded-md border border-gray-200"
+            />
+            <div
+              {...getRootProps()}
+              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-md cursor-pointer"
+            >
+              <input {...getInputProps()} />
+              {uploading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <span className="text-white text-xs font-medium">Replace image</span>
+              )}
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={handleRemove}
+            disabled={removing}
+            className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+          >
+            {removing ? 'Removing…' : 'Remove image'}
+          </button>
         </div>
       ) : (
         <div

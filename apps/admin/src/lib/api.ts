@@ -9,11 +9,16 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ── Request interceptor — attach token ───────────────────────────────────────
+// ── Request interceptor — attach token, fix FormData content-type ────────────
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Remove default Content-Type for FormData so the browser sets it with the
+  // correct multipart/form-data boundary automatically.
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
   }
   return config;
 });

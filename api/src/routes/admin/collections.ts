@@ -143,6 +143,22 @@ router.post('/:id/banner', requireAuth, upload.single('image'), async (req, res,
   } catch (err) { next(err); }
 });
 
+// DELETE /api/admin/collections/:id/banner
+router.delete('/:id/banner', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rows: [updated] } = await pool.query(
+      `UPDATE collections SET banner_img = NULL WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    if (!updated) {
+      res.status(404).json({ error: { message: 'Collection not found', code: 'NOT_FOUND' } });
+      return;
+    }
+    res.json({ data: updated });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/collections/:id/products
 router.post('/:id/products', requireAuth, async (req, res, next) => {
   try {

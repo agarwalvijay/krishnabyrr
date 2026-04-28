@@ -118,6 +118,17 @@ function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
     await api.post(`/admin/categories/${categoryId}/banner`, fd);
   };
 
+  const removeBannerMutation = useMutation({
+    mutationFn: () => api.delete(`/admin/categories/${category!.id}/banner`),
+    onSuccess: () => {
+      setBannerPreview(null);
+      setBannerFile(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-categories'] });
+      toast.success('Banner removed');
+    },
+    onError: () => toast.error('Failed to remove banner'),
+  });
+
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
       const payload = { ...data, slug: data.slug || undefined, parent_id: data.parent_id || null, banner_height: bannerHeight };
@@ -264,13 +275,32 @@ function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
                 </div>
               )}
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="btn-secondary text-xs"
-              >
-                {bannerPreview ? 'Replace image' : 'Upload image'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="btn-secondary text-xs"
+                >
+                  {bannerPreview ? 'Replace image' : 'Upload image'}
+                </button>
+                {bannerPreview && !isNew && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (bannerFile) {
+                        setBannerFile(null);
+                        setBannerPreview(category?.banner_img ? imageUrl(category.banner_img) : null);
+                      } else {
+                        removeBannerMutation.mutate();
+                      }
+                    }}
+                    className="text-xs text-red-500 hover:text-red-700"
+                    disabled={removeBannerMutation.isPending}
+                  >
+                    {removeBannerMutation.isPending ? 'Removing…' : 'Remove banner'}
+                  </button>
+                )}
+              </div>
               <p className="mt-1 text-xs text-kb-muted">Compressed to JPEG 85% on upload. Recommended: 1920×500px.</p>
             </div>
 

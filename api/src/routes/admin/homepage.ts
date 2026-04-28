@@ -157,6 +157,33 @@ router.post('/blocks/:id/image', requireAuth, upload.single('image'), async (req
   } catch (err) { next(err); }
 });
 
+// DELETE /api/admin/homepage/blocks/:id/image
+// ?field=image_desktop (default) | image_mobile
+router.delete('/blocks/:id/image', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const field = req.query.field === 'image_mobile' ? 'image_mobile' : 'image_desktop';
+
+    const { rows: [block] } = await pool.query(
+      'SELECT id, payload FROM homepage_blocks WHERE id = $1',
+      [id]
+    );
+    if (!block) {
+      res.status(404).json({ error: { message: 'Block not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const newPayload = { ...(block.payload as Record<string, unknown> ?? {}), [field]: null };
+    const { rows: [updated] } = await pool.query(
+      'UPDATE homepage_blocks SET payload = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [JSON.stringify(newPayload), id]
+    );
+
+    await bustCache();
+    res.json({ data: updated });
+  } catch (err) { next(err); }
+});
+
 // PUT /api/admin/homepage/blocks/reorder
 // IMPORTANT: declared BEFORE /blocks/:id so Express doesn't swallow 'reorder' as :id
 router.put('/blocks/reorder', requireAuth, async (req, res, next) => {
