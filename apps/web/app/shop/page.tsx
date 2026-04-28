@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { serverFetchList, serverFetch, type ProductListItem, type CategoryItem, type BadgeItem } from '@/lib/api';
 import ShopClient from './ShopClient';
 
-interface CollectionSummary { name: string; slug: string; description?: string | null }
+interface CollectionSummary { name: string; slug: string; description?: string | null; banner_img?: string | null; banner_height?: string }
 
 export const dynamic = 'force-dynamic';
 
@@ -73,7 +73,7 @@ export default async function ShopPage({ searchParams }: PageProps) {
     serverFetch<CategoryItem[]>('/api/categories', { revalidate: 3600 }).catch(() => []),
     searchParams.collection
       ? serverFetch<CollectionSummary>(`/api/collections/${searchParams.collection}`, { revalidate: 3600 })
-          .then((c) => ({ name: c.name, slug: c.slug, description: c.description }))
+          .then((c) => ({ name: c.name, slug: c.slug, description: c.description, banner_img: c.banner_img, banner_height: c.banner_height }))
           .catch(() => null)
       : Promise.resolve(null),
   ]);

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ProductCard from '@/components/ui/ProductCard';
-import { apiClient, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem, type ApiMeta } from '@/lib/api';
+import { apiClient, imageUrl, BANNER_HEIGHT_PX, type BannerHeight, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem, type ApiMeta } from '@/lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ interface Props {
   /** When set, the category filter is locked to this slug (category page) */
   lockedCategory?: { name: string; slug: string };
   /** When set, show a collection heading and treat collection as a removable filter */
-  lockedCollection?: { name: string; slug: string; description?: string | null };
+  lockedCollection?: { name: string; slug: string; description?: string | null; banner_img?: string | null; banner_height?: string };
 }
 
 // ── Filter sidebar ────────────────────────────────────────────────────────────
@@ -386,30 +386,50 @@ export default function ShopClient({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      {/* Collection banner */}
-      {lockedCollection && (
-        <div className="mb-6 pb-5 border-b border-gray-100">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="font-display text-3xl font-semibold" style={{ color: 'var(--kb-charcoal)' }}>
-                {lockedCollection.name}
-              </h1>
-              {lockedCollection.description && (
-                <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>
-                  {lockedCollection.description}
-                </p>
-              )}
-            </div>
+      {/* Collection header — full banner if image set, text-only otherwise */}
+      {lockedCollection && (() => {
+        const bannerUrl   = lockedCollection.banner_img ? imageUrl(lockedCollection.banner_img) : null;
+        const minHeight   = BANNER_HEIGHT_PX[(lockedCollection.banner_height as BannerHeight) ?? 'md'];
+        return bannerUrl ? (
+          <div
+            className="relative flex flex-col items-center justify-center text-center px-4 mb-6 rounded-xl overflow-hidden"
+            style={{ minHeight, background: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)), url('${bannerUrl}') center/cover no-repeat` }}
+          >
+            <h1 className="font-display text-3xl sm:text-4xl font-semibold text-white mb-2">{lockedCollection.name}</h1>
+            {lockedCollection.description && (
+              <p className="text-white/80 text-sm max-w-xl">{lockedCollection.description}</p>
+            )}
             <button
               onClick={() => updateFilter('collection', undefined)}
-              className="flex-shrink-0 text-xs underline mt-1"
-              style={{ color: 'var(--kb-muted)' }}
+              className="mt-3 text-xs text-white/60 hover:text-white underline transition-colors"
             >
               View all products
             </button>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="mb-6 pb-5 border-b border-gray-100">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="font-display text-3xl font-semibold" style={{ color: 'var(--kb-charcoal)' }}>
+                  {lockedCollection.name}
+                </h1>
+                {lockedCollection.description && (
+                  <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>
+                    {lockedCollection.description}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => updateFilter('collection', undefined)}
+                className="flex-shrink-0 text-xs underline mt-1"
+                style={{ color: 'var(--kb-muted)' }}
+              >
+                View all products
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Mobile filter button */}
       <div className="flex items-center justify-between mb-4 md:hidden">

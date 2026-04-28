@@ -83,6 +83,14 @@ echo "      copying static assets into standalone..."
 cp -r apps/web/.next/static   apps/web/.next/standalone/apps/web/.next/static
 cp -r apps/web/public         apps/web/.next/standalone/apps/web/public
 
+# Remove only the pre-rendered HTML/RSC for the homepage (root route).
+# These were built with IS_BUILD_PHASE=true so they contain empty data.
+# Compiled .js route handlers in the same directory are intentionally kept.
+# The warming step (step 7) triggers a fresh render with live API data.
+find apps/web/.next/standalone/apps/web/.next/server/app \
+  -maxdepth 1 \( -name "*.html" -o -name "*.rsc" -o -name "*.body" -o -name "*.meta" \) \
+  -delete 2>/dev/null || true
+
 echo "      done."
 
 # ── 3. Ensure remote dir structure exists ──────────────────────────────────────

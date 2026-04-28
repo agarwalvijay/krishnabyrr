@@ -3,7 +3,11 @@ import HomepageBanner, { type BannerPayload } from './components/HomepageBanner'
 import HomepageProductSection, { type ProductSectionPayload } from './components/HomepageProductSection';
 
 // Cache homepage for 5 minutes (matches Redis TTL on API side)
-export const dynamic = 'force-dynamic';
+// ISR: render once, cache for 5 minutes. Redis caches the underlying API
+// calls so revalidation is fast. The deploy script removes the build-time
+// pre-render (which has no data) before pushing so the first real render
+// is triggered by the warming step with live API data.
+export const revalidate = 300;
 
 export const metadata = {
   title: "Krishna's Bliss — Handcrafted Indian Ethnic Wear",

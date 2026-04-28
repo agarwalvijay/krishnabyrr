@@ -21,26 +21,29 @@ interface Props {
 }
 
 export default function HomepageBanner({ payload, priority = false }: Props) {
-  const { heading, subheading, cta_label, cta_href, image_desktop, image_url, bg_color, height = 'lg' } = payload;
-  const imgSrc = (image_desktop || image_url) ? imageUrl(image_desktop ?? image_url) : null;
-  const minHeight = BANNER_HEIGHT_PX[height];
+  const { heading, subheading, cta_label, cta_href, image_desktop, image_mobile, image_url, bg_color, height = 'lg' } = payload;
+  const desktopSrc = (image_desktop || image_url) ? imageUrl(image_desktop ?? image_url) : null;
+  const mobileSrc  = image_mobile ? imageUrl(image_mobile) : desktopSrc;
+  const minHeight  = BANNER_HEIGHT_PX[height];
 
   return (
     <section
       className="relative flex flex-col items-center justify-center text-center px-4"
       style={{ minHeight, backgroundColor: bg_color ?? 'var(--kb-charcoal)' }}
     >
-      {/* Background image */}
-      {imgSrc && (
+      {/* Background image — desktop and mobile served separately */}
+      {desktopSrc && (
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <Image
-            src={imgSrc}
-            alt={heading}
-            fill
-            priority={priority}
-            className="object-cover"
-            sizes="100vw"
-          />
+          {/* Desktop */}
+          <div className="hidden sm:block absolute inset-0">
+            <Image src={desktopSrc} alt={heading} fill priority={priority} className="object-cover" sizes="100vw" />
+          </div>
+          {/* Mobile — falls back to desktop if no mobile image uploaded */}
+          {mobileSrc && (
+            <div className="sm:hidden absolute inset-0">
+              <Image src={mobileSrc} alt={heading} fill priority={priority} className="object-cover" sizes="100vw" />
+            </div>
+          )}
           <div className="absolute inset-0 bg-kb-charcoal/45" />
         </div>
       )}
