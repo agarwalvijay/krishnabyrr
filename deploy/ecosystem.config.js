@@ -11,7 +11,7 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: '400M',
+      max_memory_restart: '200M',
       env: {
         NODE_ENV: 'production',
         PORT: 3001,
@@ -25,7 +25,7 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: '900M', // needs headroom for image optimisation cache
+      max_memory_restart: '400M', // 1 GB total: OS ~200M + api ~200M + web ~400M
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
