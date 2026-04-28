@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/components/cart/CartContext';
 import CartDrawer from '@/components/cart/CartDrawer';
 import { useCustomerAuth } from '@/contexts/AuthContext';
+import { getFabricGuideByValue } from '@/lib/fabric-guides';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ const mobileLinkBase =
 
 // ── Flyout dropdown ───────────────────────────────────────────────────────────
 
-interface FlyoutItem { label: string; href: string; color?: string | null }
+interface FlyoutItem { label: string; href: string; color?: string | null; infoHref?: string }
 
 interface FlyoutProps {
   id: string;
@@ -65,18 +66,29 @@ interface FlyoutProps {
   browseLabel: string;
   isOpen: boolean;
   onOpen: (id: string) => void;
-  onClose: () => void;
+  onCloseNow: () => void;
+  onScheduleClose: () => void;
+  onCancelClose: () => void;
 }
 
-function FlyoutMenu({ id, label, items, browseHref, browseLabel, isOpen, onOpen, onClose }: FlyoutProps) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+function FlyoutMenu({
+  id,
+  label,
+  items,
+  browseHref,
+  browseLabel,
+  isOpen,
+  onOpen,
+  onCloseNow,
+  onScheduleClose,
+  onCancelClose,
+}: FlyoutProps) {
   const handleMouseEnter = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
+    onCancelClose();
     onOpen(id);
   };
   const handleMouseLeave = () => {
-    timerRef.current = setTimeout(onClose, 120);
+    onScheduleClose();
   };
 
   return (
@@ -89,7 +101,7 @@ function FlyoutMenu({ id, label, items, browseHref, browseLabel, isOpen, onOpen,
         className={`${linkBase} flex items-center gap-0.5 py-1`}
         aria-expanded={isOpen}
         aria-haspopup="true"
-        onClick={() => (isOpen ? onClose() : onOpen(id))}
+        onClick={() => (isOpen ? onCloseNow() : onOpen(id))}
       >
         {label}
         <svg
@@ -110,26 +122,44 @@ function FlyoutMenu({ id, label, items, browseHref, browseLabel, isOpen, onOpen,
       >
       <div className="bg-white rounded-xl shadow-lg ring-1 ring-black/5 py-2">
         {items.map((item) => (
-          <Link
+          <div
             key={item.href}
-            href={item.href}
-            onClick={onClose}
-            className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-500 hover:text-kb-charcoal hover:bg-gray-50 transition-colors"
+            className="flex items-center justify-between gap-3 px-2 py-1"
           >
-            {item.color && (
-              <span
-                className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-black/10"
-                style={{ backgroundColor: item.color }}
-              />
+            <Link
+              href={item.href}
+              onClick={onCloseNow}
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1 text-sm text-gray-500 hover:text-kb-charcoal hover:bg-gray-50 transition-colors"
+            >
+              {item.color && (
+                <span
+                  className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-black/10"
+                  style={{ backgroundColor: item.color }}
+                />
+              )}
+              <span className="truncate">{item.label}</span>
+            </Link>
+            {item.infoHref ? (
+              <Link
+                href={item.infoHref}
+                onClick={onCloseNow}
+                aria-label={`Learn more about ${item.label}`}
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-kb-teal hover:border-kb-teal/30 hover:bg-white flex-shrink-0"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </Link>
+            ) : (
+              <span className="w-6 h-6 flex-shrink-0" aria-hidden="true" />
             )}
-            {item.label}
-          </Link>
+          </div>
         ))}
         {items.length >= MAX_FLYOUT_ITEMS && (
           <div className="border-t border-gray-100 mt-1 pt-1">
             <Link
               href={browseHref}
-              onClick={onClose}
+              onClick={onCloseNow}
               className="flex items-center gap-1 px-4 py-2 text-xs font-medium text-kb-teal hover:text-kb-teal/80 transition-colors"
             >
               {browseLabel}
@@ -151,12 +181,13 @@ interface MobileAccordionProps {
   label: string;
   items: FlyoutItem[];
   browseHref: string;
+  browseLabel?: string;
   isExpanded: boolean;
   onToggle: () => void;
   onNav: () => void;
 }
 
-function MobileAccordion({ label, items, browseHref, isExpanded, onToggle, onNav }: MobileAccordionProps) {
+function MobileAccordion({ label, items, browseHref, browseLabel = 'Browse all', isExpanded, onToggle, onNav }: MobileAccordionProps) {
   return (
     <div>
       <button
@@ -174,27 +205,40 @@ function MobileAccordion({ label, items, browseHref, isExpanded, onToggle, onNav
       {isExpanded && (
         <div className="ml-3 mt-0.5 border-l border-gray-100 pl-3 space-y-0.5">
           {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNav}
-              className="flex items-center gap-2 px-2 py-2 text-sm text-gray-400 hover:text-kb-charcoal transition-colors rounded-lg"
-            >
-              {item.color && (
-                <span
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-black/10"
-                  style={{ backgroundColor: item.color }}
-                />
+            <div key={item.href} className="flex items-center justify-between gap-2">
+              <Link
+                href={item.href}
+                onClick={onNav}
+                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-gray-400 hover:text-kb-charcoal transition-colors rounded-lg"
+              >
+                {item.color && (
+                  <span
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-black/10"
+                    style={{ backgroundColor: item.color }}
+                  />
+                )}
+                <span className="truncate">{item.label}</span>
+              </Link>
+              {item.infoHref && (
+                <Link
+                  href={item.infoHref}
+                  onClick={onNav}
+                  aria-label={`Learn more about ${item.label}`}
+                  className="mr-1 flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-kb-teal hover:border-kb-teal/30 flex-shrink-0"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </Link>
               )}
-              {item.label}
-            </Link>
+            </div>
           ))}
           <Link
             href={browseHref}
             onClick={onNav}
             className="flex items-center gap-1 px-2 py-2 text-xs font-medium text-kb-teal"
           >
-            Browse all
+            {browseLabel}
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
@@ -382,6 +426,7 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
   const [mobileOpen, setMobileOpen]     = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
   const { cart, openCart } = useCart();
+  const navCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const router    = useRouter();
   const itemCount = cart?.items.reduce((s, i) => s + i.quantity, 0) ?? 0;
@@ -398,6 +443,16 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
   const closeMobile   = useCallback(() => { setMobileOpen(false); setMobileExpanded(null); }, []);
   const toggleMobileSection = (key: string) =>
     setMobileExpanded(e => (e === key ? null : key));
+  const cancelScheduledClose = useCallback(() => {
+    if (navCloseTimerRef.current) {
+      clearTimeout(navCloseTimerRef.current);
+      navCloseTimerRef.current = null;
+    }
+  }, []);
+  const scheduleMenuClose = useCallback(() => {
+    cancelScheduledClose();
+    navCloseTimerRef.current = setTimeout(() => setOpenMenu(null), 140);
+  }, [cancelScheduledClose]);
 
   // Build flyout data from tag groups flagged for nav, non-empty
   const filterGroups = Object.entries(tagGroups).filter(
@@ -457,7 +512,11 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
           </Link>
 
           {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-6 flex-1" onMouseLeave={closeMenu}>
+          <nav
+            className="hidden md:flex items-center gap-6 flex-1"
+            onMouseEnter={cancelScheduledClose}
+            onMouseLeave={scheduleMenuClose}
+          >
 
             <Link href="/shop" className={linkBase}>Shop</Link>
 
@@ -470,7 +529,9 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                 browseLabel="Browse all collections"
                 isOpen={openMenu === 'collections'}
                 onOpen={setOpenMenu}
-                onClose={closeMenu}
+                onCloseNow={closeMenu}
+                onScheduleClose={scheduleMenuClose}
+                onCancelClose={cancelScheduledClose}
               />
             ) : (
               <Link href="/shop" className={linkBase}>Collections</Link>
@@ -485,7 +546,9 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                 browseLabel="Browse all categories"
                 isOpen={openMenu === 'categories'}
                 onOpen={setOpenMenu}
-                onClose={closeMenu}
+                onCloseNow={closeMenu}
+                onScheduleClose={scheduleMenuClose}
+                onCancelClose={cancelScheduledClose}
               />
             )}
 
@@ -496,18 +559,25 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                   label: t.value,
                   href:  `/shop?${key}=${encodeURIComponent(t.value)}`,
                   color: t.hex_color,
+                  infoHref: key === 'fabric' && getFabricGuideByValue(t.value)
+                    ? `/fabrics/${getFabricGuideByValue(t.value)!.slug}`
+                    : undefined,
                 }));
+              const browseHref = key === 'fabric' ? '/fabrics/maheshwari-silk' : `/shop`;
+              const browseLabel = key === 'fabric' ? 'Explore fabric guides' : `Browse all ${group.label.toLowerCase()}`;
               return (
                 <FlyoutMenu
                   key={key}
                   id={key}
                   label={group.label}
                   items={items}
-                  browseHref={`/shop?${key}=${encodeURIComponent(group.tags[0]?.value ?? '')}`}
-                  browseLabel={`Browse all ${group.label.toLowerCase()}`}
+                  browseHref={browseHref}
+                  browseLabel={browseLabel}
                   isOpen={openMenu === key}
                   onOpen={setOpenMenu}
-                  onClose={closeMenu}
+                  onCloseNow={closeMenu}
+                  onScheduleClose={scheduleMenuClose}
+                  onCancelClose={cancelScheduledClose}
                 />
               );
             })}
@@ -618,6 +688,7 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                   label="Collections"
                   items={collectionItems}
                   browseHref="/shop"
+                  browseLabel="Browse all collections"
                   isExpanded={mobileExpanded === 'collections'}
                   onToggle={() => toggleMobileSection('collections')}
                   onNav={closeMobile}
@@ -631,6 +702,7 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                   label="Categories"
                   items={categoryItems}
                   browseHref="/shop"
+                  browseLabel="Browse all categories"
                   isExpanded={mobileExpanded === 'categories'}
                   onToggle={() => toggleMobileSection('categories')}
                   onNav={closeMobile}
@@ -645,8 +717,12 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                     label: t.value,
                     href:  `/shop?${key}=${encodeURIComponent(t.value)}`,
                     color: t.hex_color,
+                    infoHref: key === 'fabric' && getFabricGuideByValue(t.value)
+                      ? `/fabrics/${getFabricGuideByValue(t.value)!.slug}`
+                      : undefined,
                   }))}
-                  browseHref={`/shop`}
+                  browseHref={key === 'fabric' ? '/fabrics/maheshwari-silk' : '/shop'}
+                  browseLabel={key === 'fabric' ? 'Explore fabric guides' : `Browse all ${group.label.toLowerCase()}`}
                   isExpanded={mobileExpanded === key}
                   onToggle={() => toggleMobileSection(key)}
                   onNav={closeMobile}

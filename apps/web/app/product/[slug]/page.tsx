@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { serverFetch, serverFetchList, imageUrl, getStockStatus, formatINR, discountPct, type ProductDetail, type ProductListItem, type PublicSettings } from '@/lib/api';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 import ProductCard from '@/components/ui/ProductCard';
@@ -7,6 +8,7 @@ import ProductGallery from './ProductGallery';
 import ProductActions from './ProductActions';
 import PincodeChecker from './PincodeChecker';
 import RecentlyViewed from './RecentlyViewed';
+import { getFabricGuideByValue } from '@/lib/fabric-guides';
 
 export const revalidate = 3600;
 
@@ -67,6 +69,9 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
   const occasionTags = product.tags?.occasion ?? [];
   const includesTags = product.tags?.includes ?? [];
   const careTags     = product.care_instr;
+  const fabricGuides = fabricTags
+    .map((tag) => getFabricGuideByValue(tag.value))
+    .filter((guide, index, arr): guide is NonNullable<typeof guide> => Boolean(guide) && arr.findIndex((g) => g?.slug === guide?.slug) === index);
 
   // First category for breadcrumb
   const firstCategory = product.categories?.[0];
@@ -153,7 +158,20 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
             {fabricTags.length > 0 && (
               <li className="flex gap-2">
                 <span className="text-kb-muted min-w-[80px]">Fabric</span>
-                <span>{fabricTags.map(t => t.value).join(', ')}</span>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>{fabricTags.map(t => t.value).join(', ')}</span>
+                  {fabricGuides[0] && (
+                    <Link
+                      href={`/fabrics/${fabricGuides[0].slug}`}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-kb-teal hover:underline"
+                    >
+                      Know your fabric
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </Link>
+                  )}
+                </span>
               </li>
             )}
             {weaveTags.length > 0 && (
@@ -235,6 +253,48 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
 
           {/* Accordion sections */}
           <div className="mt-6 space-y-0 divide-y divide-gray-100 border-t border-gray-100">
+            {fabricGuides.length > 0 && (
+              <section className="py-6">
+                <div className="rounded-3xl bg-[#f7f2ea] border border-[#eadfcf] p-5 sm:p-6">
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="max-w-2xl">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-kb-teal">Know Your Fabric</p>
+                      <h2 className="mt-2 font-display text-2xl sm:text-3xl font-semibold text-kb-charcoal">
+                        {fabricGuides[0].name}
+                      </h2>
+                      <p className="mt-3 text-sm sm:text-base leading-7 text-kb-muted">
+                        {fabricGuides[0].whyItStandsOut}
+                      </p>
+                    </div>
+                    <Link
+                      href={`/fabrics/${fabricGuides[0].slug}`}
+                      className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-kb-teal shadow-sm border border-white/80"
+                    >
+                      Read Full Guide
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </Link>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                    <GuideFact
+                      label="Feel"
+                      value={fabricGuides[0].feel}
+                    />
+                    <GuideFact
+                      label="Drape"
+                      value={fabricGuides[0].drape}
+                    />
+                    <GuideFact
+                      label="Best For"
+                      value={fabricGuides[0].bestFor.join(' · ')}
+                    />
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* Description */}
             {product.description && (
               <details className="group">
@@ -330,6 +390,15 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
 
       {/* Recently Viewed (client) */}
       <RecentlyViewed currentProductId={product.id} />
+    </div>
+  );
+}
+
+function GuideFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-white/70 border border-white p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kb-muted">{label}</p>
+      <p className="mt-2 text-sm leading-6 text-kb-charcoal">{value}</p>
     </div>
   );
 }

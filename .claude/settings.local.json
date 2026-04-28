@@ -22,7 +22,29 @@
       "Bash(DB_NAME=krishnabyrr_test npx ts-node /Users/vijayagarwal/vijay/vijay/krishnabyrr/api/src/db/migrate.ts)",
       "Bash(npm test:*)",
       "Bash(PGPASSWORD= psql:*)",
-      "Bash(grep -E \"\\\\.\\(ts|tsx|js|json\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|tsx|js|json\\)$\")",
+      "Bash(DB_NAME=krishnabyrr_test npx ts-node src/db/seed.ts)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in {**d.get\\('dependencies',{}\\),**d.get\\('devDependencies',{}\\)}.items\\(\\) if any\\(x in k for x in ['dropzone','react-hook-form','tanstack','zod']\\)}, indent=2\\)\\)\")",
+      "Bash(node:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(chmod +x:*)",
+      "Bash(ls:*)",
+      "Bash(ssh-add:*)",
+      "Bash(git push:*)",
+      "Bash(./deploy/deploy-local.sh vijay@krishnasbliss.com)",
+      "Bash(cat /Users/vijayagarwal/vijay/vijay/krishnabyrr/apps/web/next.config.*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d['project_info']['project_id']\\); print\\(d['client'][0]['client_info']['android_client_info']['package_name']\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('project_id:', d['project_id']\\); print\\('client_email:', d['client_email']\\); print\\('private_key starts with:', d['private_key'][:60]\\)\")",
+      "Bash(python3 -c ':*)",
+      "Bash(identify /Users/vijayagarwal/vijay/vijay/krishnabyrr/apps/web/public/logo-krishnas-bliss.png)",
+      "Bash(npm view:*)",
+      "Bash(python3 -c \"import sys,json; vs=[v for v in json.load\\(sys.stdin\\) if v.startswith\\('18.'\\)]; print\\(vs[-5:]\\)\")",
+      "Bash(curl -sL \"https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png\" -o badge-google-play.png)",
+      "Bash(curl -sL \"https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83\" -o badge-app-store.svg)",
+      "Bash(git *)",
+      "Bash(bash -n /Users/vijayagarwal/vijay/vijay/krishnabyrr/deploy/deploy-local.sh)",
+      "Bash(curl *)"
     ]
   }
 }
