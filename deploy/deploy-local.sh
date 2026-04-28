@@ -83,12 +83,6 @@ echo "      copying static assets into standalone..."
 cp -r apps/web/.next/static   apps/web/.next/standalone/apps/web/.next/static
 cp -r apps/web/public         apps/web/.next/standalone/apps/web/public
 
-# Remove pre-rendered pages from the local standalone before pushing.
-# They were built with IS_BUILD_PHASE=true (no API access), so every page
-# contains empty data. Deleting them forces Next.js to render each page
-# fresh on first request — the warming step (step 7) triggers this.
-rm -rf apps/web/.next/standalone/apps/web/.next/server/app
-
 echo "      done."
 
 # ── 3. Ensure remote dir structure exists ──────────────────────────────────────

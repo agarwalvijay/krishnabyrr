@@ -3,7 +3,7 @@ import HomepageBanner, { type BannerPayload } from './components/HomepageBanner'
 import HomepageProductSection, { type ProductSectionPayload } from './components/HomepageProductSection';
 
 // Cache homepage for 5 minutes (matches Redis TTL on API side)
-export const revalidate = 300; // 5 minutes — warmed by deploy script after each deploy
+export const dynamic = 'force-dynamic';
 
 export const metadata = {
   title: "Krishna's Bliss — Handcrafted Indian Ethnic Wear",
