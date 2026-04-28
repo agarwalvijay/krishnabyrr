@@ -11,6 +11,15 @@ import { api, imageUrl } from '../../lib/api';
 type BlockType = 'banner' | 'product_section';
 type CtaType = 'shop_all' | 'category' | 'collection' | 'sale' | 'custom';
 
+type BannerHeight = 'sm' | 'md' | 'lg' | 'xl';
+
+const HEIGHT_OPTIONS: Array<{ value: BannerHeight; label: string; hint: string }> = [
+  { value: 'sm', label: 'Small',  hint: '180px — compact strip' },
+  { value: 'md', label: 'Medium', hint: '360px — standard' },
+  { value: 'lg', label: 'Large',  hint: '500px — hero' },
+  { value: 'xl', label: 'XL',     hint: '650px — full hero' },
+];
+
 interface BannerPayload {
   heading: string;
   subheading?: string;
@@ -19,6 +28,7 @@ interface BannerPayload {
   image_desktop?: string;
   image_mobile?: string;
   bg_color?: string;
+  height?: BannerHeight;
 }
 
 interface ProductSectionPayload {
@@ -256,6 +266,9 @@ function BannerForm({
     existingCtaType === 'custom' ? (defaultValues.cta_href ?? '') : ''
   );
 
+  // Height state
+  const [height, setHeight] = useState<BannerHeight>(defaultValues.height ?? 'lg');
+
   // FIX 3: Color state
   const isPreset = COLOR_PRESETS.some(p => p.hex === defaultValues.bg_color);
   const [bgColor, setBgColor]             = useState<string>(defaultValues.bg_color ?? COLOR_PRESETS[0].hex);
@@ -289,6 +302,7 @@ function BannerForm({
       bg_color:       bgColor           || undefined,
       image_desktop:  desktopPath,
       image_mobile:   mobilePath,
+      height,
     };
     onSave(payload, pendingDesktop);
   };
@@ -404,6 +418,29 @@ function BannerForm({
             />
           </div>
         )}
+      </div>
+
+      {/* Banner height */}
+      <div>
+        <label className="block text-xs text-kb-muted mb-2">Banner Height</label>
+        <div className="flex gap-2">
+          {HEIGHT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              title={opt.hint}
+              onClick={() => setHeight(opt.value)}
+              className={[
+                'flex-1 py-1.5 text-xs rounded-md border transition-colors',
+                height === opt.value
+                  ? 'border-kb-teal bg-teal-50 text-kb-teal font-semibold'
+                  : 'border-gray-200 text-kb-muted hover:border-gray-300',
+              ].join(' ')}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* FIX 3: Background color swatches */}

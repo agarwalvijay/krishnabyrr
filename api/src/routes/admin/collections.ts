@@ -1,7 +1,24 @@
 import { Router } from 'express';
+import multer from 'multer';
+import sharp from 'sharp';
+import path from 'path';
+import fs from 'fs';
+import { randomUUID } from 'crypto';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { toSlug, uniqueCollectionSlug } from '../../utils/slug';
+
+const UPLOAD_DIR = path.resolve(__dirname, '../../../uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
 
 const router = Router();
 
@@ -21,7 +38,7 @@ router.get('/', requireAuth, async (_req, res, next) => {
 // POST /api/admin/collections
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name, description, banner_img, tagline, is_homepage = false, homepage_order = 0, is_active = true } =
+    const { name, description, banner_img, banner_height = 'md', tagline, is_homepage = false, homepage_order = 0, is_active = true } =
       req.body as Record<string, unknown>;
 
     if (!name || typeof name !== 'string') {
@@ -31,9 +48,9 @@ router.post('/', requireAuth, async (req, res, next) => {
     const slug = await uniqueCollectionSlug(toSlug(name as string));
 
     const { rows: [col] } = await pool.query(
-      `INSERT INTO collections (name, slug, description, banner_img, tagline, is_homepage, homepage_order, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [name, slug, description ?? null, banner_img ?? null, tagline ?? null,
+      `INSERT INTO collections (name, slug, description, banner_img, banner_height, tagline, is_homepage, homepage_order, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [name, slug, description ?? null, banner_img ?? null, banner_height, tagline ?? null,
        is_homepage, homepage_order, is_active]
     );
     res.status(201).json({ data: col });
@@ -55,7 +72,7 @@ router.put('/:id', requireAuth, async (req, res, next) => {
       body.slug = await uniqueCollectionSlug(toSlug(body.name as string), id);
     }
 
-    const ALLOWED = ['name', 'slug', 'description', 'banner_img', 'tagline', 'is_homepage', 'homepage_order', 'is_active'] as const;
+    const ALLOWED = ['name', 'slug', 'description', 'banner_img', 'banner_height', 'tagline', 'is_homepage', 'homepage_order', 'is_active'] as const;
     const setClauses: string[] = [];
     const params: unknown[] = [];
     let i = 1;
@@ -92,6 +109,37 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
       return;
     }
     res.json({ data: col });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/collections/:id/banner
+router.post('/:id/banner', requireAuth, upload.single('image'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: { message: 'No image file provided', code: 'NO_FILE' } });
+      return;
+    }
+    const { rows: [col] } = await pool.query('SELECT id FROM collections WHERE id = $1', [id]);
+    if (!col) {
+      res.status(404).json({ error: { message: 'Collection not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const outputFilename = `${randomUUID()}.jpg`;
+    const outputPath = path.join(UPLOAD_DIR, outputFilename);
+    await sharp(file.buffer)
+      .rotate()
+      .resize({ width: 1920, withoutEnlargement: true })
+      .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+      .toFile(outputPath);
+
+    const { rows: [updated] } = await pool.query(
+      `UPDATE collections SET banner_img = $1 WHERE id = $2 RETURNING *`,
+      [outputPath, id]
+    );
+    res.json({ data: updated, path: outputPath });
   } catch (err) { next(err); }
 });
 

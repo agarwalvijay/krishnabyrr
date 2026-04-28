@@ -375,7 +375,7 @@ router.get('/:slug', async (req, res, next) => {
 router.get('/categories/tree', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, slug, parent_id, description, banner_img,
+      `SELECT id, name, slug, parent_id, description, banner_img, banner_height,
               meta_title, meta_desc, nav_order, is_active
        FROM categories
        WHERE is_active = true
@@ -406,7 +406,7 @@ export const categoriesRouter = Router();
 categoriesRouter.get('/', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, slug, parent_id, description, banner_img,
+      `SELECT id, name, slug, parent_id, description, banner_img, banner_height,
               meta_title, meta_desc, nav_order, is_active
        FROM categories WHERE is_active = true ORDER BY nav_order`
     );
@@ -426,7 +426,7 @@ categoriesRouter.get('/:slug', async (req, res, next) => {
   try {
     const { slug } = req.params;
     const { rows: [cat] } = await pool.query(
-      `SELECT id, name, slug, parent_id, description, banner_img,
+      `SELECT id, name, slug, parent_id, description, banner_img, banner_height,
               meta_title, meta_desc, nav_order, is_active
        FROM categories WHERE slug = $1 AND is_active = true`,
       [slug]
@@ -454,7 +454,7 @@ export const collectionsRouter = Router();
 collectionsRouter.get('/', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, slug, description, banner_img, tagline, is_homepage, homepage_order
+      `SELECT id, name, slug, description, banner_img, banner_height, tagline, is_homepage, homepage_order
        FROM collections WHERE is_active = true ORDER BY homepage_order, name`
     );
     res.json({ data: rows });
@@ -467,7 +467,7 @@ collectionsRouter.get('/:slug', async (req, res, next) => {
   try {
     const { slug } = req.params;
     const { rows: [col] } = await pool.query(
-      `SELECT id, name, slug, description, banner_img, tagline, is_homepage, homepage_order
+      `SELECT id, name, slug, description, banner_img, banner_height, tagline, is_homepage, homepage_order
        FROM collections WHERE slug = $1 AND is_active = true`,
       [slug]
     );

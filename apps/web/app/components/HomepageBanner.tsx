@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { imageUrl } from '@/lib/api';
+import { imageUrl, BANNER_HEIGHT_PX, type BannerHeight } from '@/lib/api';
 
 export interface BannerPayload {
   heading: string;
@@ -12,6 +12,7 @@ export interface BannerPayload {
   /** @deprecated use image_desktop */
   image_url?: string;
   bg_color?: string;
+  height?: BannerHeight;
 }
 
 interface Props {
@@ -20,13 +21,14 @@ interface Props {
 }
 
 export default function HomepageBanner({ payload, priority = false }: Props) {
-  const { heading, subheading, cta_label, cta_href, image_desktop, image_url, bg_color } = payload;
+  const { heading, subheading, cta_label, cta_href, image_desktop, image_url, bg_color, height = 'lg' } = payload;
   const imgSrc = (image_desktop || image_url) ? imageUrl(image_desktop ?? image_url) : null;
+  const minHeight = BANNER_HEIGHT_PX[height];
 
   return (
     <section
       className="relative flex flex-col items-center justify-center text-center px-4"
-      style={{ minHeight: 420, backgroundColor: bg_color ?? 'var(--kb-charcoal)' }}
+      style={{ minHeight, backgroundColor: bg_color ?? 'var(--kb-charcoal)' }}
     >
       {/* Background image */}
       {imgSrc && (

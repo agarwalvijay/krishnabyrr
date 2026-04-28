@@ -1,9 +1,26 @@
 import { Router } from 'express';
+import multer from 'multer';
+import sharp from 'sharp';
+import path from 'path';
+import fs from 'fs';
+import { randomUUID } from 'crypto';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { toSlug, uniqueCategorySlug } from '../../utils/slug';
 
 const router = Router();
+
+const UPLOAD_DIR = path.resolve(__dirname, '../../../uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
 
 // GET /api/admin/categories
 router.get('/', requireAuth, async (_req, res, next) => {
@@ -21,7 +38,7 @@ router.get('/', requireAuth, async (_req, res, next) => {
 // POST /api/admin/categories
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name, parent_id, description, banner_img, meta_title, meta_desc, nav_order = 0, is_active = true } =
+    const { name, parent_id, description, banner_img, banner_height = 'md', meta_title, meta_desc, nav_order = 0, is_active = true } =
       req.body as Record<string, unknown>;
 
     if (!name || typeof name !== 'string') {
@@ -32,9 +49,9 @@ router.post('/', requireAuth, async (req, res, next) => {
     const slug = await uniqueCategorySlug(toSlug(name as string));
 
     const { rows: [cat] } = await pool.query(
-      `INSERT INTO categories (name, slug, parent_id, description, banner_img, meta_title, meta_desc, nav_order, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [name, slug, parent_id ?? null, description ?? null, banner_img ?? null,
+      `INSERT INTO categories (name, slug, parent_id, description, banner_img, banner_height, meta_title, meta_desc, nav_order, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [name, slug, parent_id ?? null, description ?? null, banner_img ?? null, banner_height,
        meta_title ?? null, meta_desc ?? null, nav_order, is_active]
     );
     res.status(201).json({ data: cat });
@@ -52,7 +69,7 @@ router.put('/:id', requireAuth, async (req, res, next) => {
     }
 
     const body = req.body as Record<string, unknown>;
-    const ALLOWED = ['name', 'slug', 'parent_id', 'description', 'banner_img', 'meta_title', 'meta_desc', 'nav_order', 'is_active'] as const;
+    const ALLOWED = ['name', 'slug', 'parent_id', 'description', 'banner_img', 'banner_height', 'meta_title', 'meta_desc', 'nav_order', 'is_active'] as const;
     const setClauses: string[] = [];
     const params: unknown[] = [];
     let i = 1;
@@ -80,6 +97,37 @@ router.put('/:id', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/categories/:id/banner
+router.post('/:id/banner', requireAuth, upload.single('image'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: { message: 'No image file provided', code: 'NO_FILE' } });
+      return;
+    }
+    const { rows: [cat] } = await pool.query('SELECT id FROM categories WHERE id = $1', [id]);
+    if (!cat) {
+      res.status(404).json({ error: { message: 'Category not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const outputFilename = `${randomUUID()}.jpg`;
+    const outputPath = path.join(UPLOAD_DIR, outputFilename);
+    await sharp(file.buffer)
+      .rotate()
+      .resize({ width: 1920, withoutEnlargement: true })
+      .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+      .toFile(outputPath);
+
+    const { rows: [updated] } = await pool.query(
+      `UPDATE categories SET banner_img = $1 WHERE id = $2 RETURNING *`,
+      [outputPath, id]
+    );
+    res.json({ data: updated, path: outputPath });
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/admin/categories/:id
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
@@ -88,25 +136,21 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
       'SELECT COUNT(*) AS count FROM product_categories WHERE category_id = $1',
       [id]
     );
-    const productCount = parseInt(count, 10);
-    if (productCount > 0) {
+    if (parseInt(count, 10) > 0) {
       res.status(409).json({
-        error: {
-          message: `Cannot delete: ${productCount} product(s) are assigned to this category`,
-          code: 'CATEGORY_HAS_PRODUCTS',
-        },
+        error: { message: `Cannot delete: ${count} product(s) are assigned to this category`, code: 'CATEGORY_HAS_PRODUCTS' },
       });
       return;
     }
-    const { rows: [cat] } = await pool.query(
+    const { rows: [deleted] } = await pool.query(
       'DELETE FROM categories WHERE id = $1 RETURNING id, name, slug',
       [id]
     );
-    if (!cat) {
+    if (!deleted) {
       res.status(404).json({ error: { message: 'Category not found', code: 'NOT_FOUND' } });
       return;
     }
-    res.json({ data: cat });
+    res.json({ data: deleted });
   } catch (err) { next(err); }
 });
 

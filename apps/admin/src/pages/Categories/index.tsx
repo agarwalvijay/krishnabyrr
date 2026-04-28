@@ -1,13 +1,22 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
-import { api } from '../../lib/api';
+import { api, imageUrl } from '../../lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type BannerHeight = 'sm' | 'md' | 'lg' | 'xl';
+
+const HEIGHT_OPTIONS: Array<{ value: BannerHeight; label: string; hint: string }> = [
+  { value: 'sm', label: 'Small',  hint: '180px' },
+  { value: 'md', label: 'Medium', hint: '360px' },
+  { value: 'lg', label: 'Large',  hint: '500px' },
+  { value: 'xl', label: 'XL',     hint: '650px' },
+];
 
 interface Category {
   id: string;
@@ -15,6 +24,8 @@ interface Category {
   slug: string;
   parent_id: string | null;
   description: string | null;
+  banner_img: string | null;
+  banner_height: BannerHeight;
   is_active: boolean;
   sort_order: number;
   product_count: number;
@@ -76,6 +87,13 @@ interface SlideOverProps {
 function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
   const queryClient = useQueryClient();
   const isNew = category === null;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [bannerFile,   setBannerFile]   = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(
+    category?.banner_img ? imageUrl(category.banner_img) : null
+  );
+  const [bannerHeight, setBannerHeight] = useState<BannerHeight>(category?.banner_height ?? 'md');
 
   const {
     register,
@@ -94,11 +112,26 @@ function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
     },
   });
 
+  const uploadBanner = async (categoryId: string, file: File) => {
+    const fd = new FormData();
+    fd.append('image', file);
+    await api.post(`/admin/categories/${categoryId}/banner`, fd);
+  };
+
   const saveMutation = useMutation({
-    mutationFn: (data: FormData) =>
-      isNew
-        ? api.post('/admin/categories', data)
-        : api.put(`/admin/categories/${category!.id}`, data),
+    mutationFn: async (data: FormData) => {
+      const payload = { ...data, slug: data.slug || undefined, parent_id: data.parent_id || null, banner_height: bannerHeight };
+      if (isNew) {
+        const res = await api.post('/admin/categories', payload);
+        const newId = res.data.data.id as string;
+        if (bannerFile) await uploadBanner(newId, bannerFile);
+        return res;
+      } else {
+        const res = await api.put(`/admin/categories/${category!.id}`, payload);
+        if (bannerFile) await uploadBanner(category!.id, bannerFile);
+        return res;
+      }
+    },
     onSuccess: () => {
       toast.success(isNew ? 'Category created' : 'Category updated');
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] });
@@ -125,13 +158,13 @@ function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
     },
   });
 
-  const onSubmit = (data: FormData) => {
-    const payload = {
-      ...data,
-      slug:      data.slug      || undefined,
-      parent_id: data.parent_id || null,
-    };
-    saveMutation.mutate(payload);
+  const onSubmit = (data: FormData) => saveMutation.mutate(data);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBannerFile(file);
+    setBannerPreview(URL.createObjectURL(file));
   };
 
   const parentOptions = allFlat.filter(c => c.id !== category?.id && c.parent_id !== category?.id);
@@ -220,6 +253,51 @@ function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
                 <input type="checkbox" {...register('is_active')} className="sr-only peer" />
                 <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-kb-teal" />
               </label>
+            </div>
+
+            {/* Banner image */}
+            <div>
+              <label className="block text-sm font-medium text-kb-charcoal mb-2">Banner Image</label>
+              {bannerPreview && (
+                <div className="mb-2 relative rounded-lg overflow-hidden bg-gray-100" style={{ height: 120 }}>
+                  <img src={bannerPreview} alt="Banner preview" className="w-full h-full object-cover" />
+                </div>
+              )}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-secondary text-xs"
+              >
+                {bannerPreview ? 'Replace image' : 'Upload image'}
+              </button>
+              <p className="mt-1 text-xs text-kb-muted">Compressed to JPEG 85% on upload. Recommended: 1920×500px.</p>
+            </div>
+
+            {/* Banner height */}
+            <div>
+              <label className="block text-sm font-medium text-kb-charcoal mb-2">Banner Height</label>
+              <div className="flex gap-2">
+                {HEIGHT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    title={opt.hint}
+                    onClick={() => setBannerHeight(opt.value)}
+                    className={[
+                      'flex-1 py-1.5 text-xs rounded-md border transition-colors',
+                      bannerHeight === opt.value
+                        ? 'border-kb-teal bg-teal-50 text-kb-teal font-semibold'
+                        : 'border-gray-200 text-kb-muted hover:border-gray-300',
+                    ].join(' ')}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-kb-muted">
+                {HEIGHT_OPTIONS.find(o => o.value === bannerHeight)?.hint}
+              </p>
             </div>
 
             {/* Delete zone */}

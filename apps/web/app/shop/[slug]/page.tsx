@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { serverFetch, serverFetchList, imageUrl, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem } from '@/lib/api';
+import { serverFetch, serverFetchList, imageUrl, BANNER_HEIGHT_PX, type BannerHeight, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem } from '@/lib/api';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 import ShopClient from '../ShopClient';
 
@@ -96,17 +96,18 @@ export default async function CategoryPage({
 
   if (!category) notFound();
 
-  const bannerUrl = category.banner_img ? imageUrl(category.banner_img) : null;
+  const bannerUrl   = category.banner_img ? imageUrl(category.banner_img) : null;
+  const minHeight   = BANNER_HEIGHT_PX[(category.banner_height as BannerHeight) ?? 'md'];
 
   return (
     <>
       {/* Category header */}
       <div
-        className="relative flex flex-col items-center justify-center text-center px-4 py-16 min-h-[200px]"
+        className="relative flex flex-col items-center justify-center text-center px-4 py-16"
         style={
           bannerUrl
-            ? { background: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)), url('${bannerUrl}') center/cover no-repeat` }
-            : { backgroundColor: 'var(--kb-teal)' }
+            ? { minHeight, background: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)), url('${bannerUrl}') center/cover no-repeat` }
+            : { minHeight, backgroundColor: 'var(--kb-teal)' }
         }
       >
         <h1 className="font-display text-3xl sm:text-4xl font-semibold text-white mb-2">

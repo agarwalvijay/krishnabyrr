@@ -17,13 +17,23 @@ export interface TagItem {
   hex_color: string | null;
 }
 
+export type BannerHeight = 'sm' | 'md' | 'lg' | 'xl';
+
+export const BANNER_HEIGHT_PX: Record<BannerHeight, number> = {
+  sm: 180,
+  md: 360,
+  lg: 500,
+  xl: 650,
+};
+
 export interface CategoryItem {
   id: string;
   name: string;
   slug: string;
   parent_id: string | null;
   description?: string | null;
-  banner_img?: string | null;
+  banner_img?:    string | null;
+  banner_height?: BannerHeight;
   nav_order?: number;
   is_active?: boolean;
   children?: CategoryItem[];
