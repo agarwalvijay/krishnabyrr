@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Dimensions,
   Easing,
   Platform,
   StatusBar as RNStatusBar,
@@ -18,9 +19,12 @@ SplashScreen.preventAutoHideAsync();
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const APP_URL  = 'https://krishnasbliss.com';
-const API_BASE = 'https://krishnasbliss.com/api';
-const CREAM    = '#FAF7F2';
+const APP_URL     = 'https://krishnasbliss.com';
+const API_BASE    = 'https://krishnasbliss.com/api';
+const CREAM       = '#FAF7F2';
+// The native splash renders the 2048×2048 PNG contained within screen-width×screen-width.
+// We use the same explicit square so the React Native overlay matches exactly.
+const SPLASH_SIZE = Dimensions.get('window').width;
 
 // Tells the website it's running inside the app so the postMessage bridge fires
 const USER_AGENT =
@@ -77,31 +81,25 @@ export default function App() {
   const fcmToken   = useRef<string | null>(null);
 
   // ── Splash animation state ─────────────────────────────────────────────────
-  // scale: logo starts slightly small and grows to full — "zooming in"
-  const scale   = useRef(new Animated.Value(0.82)).current;
-  // opacity of the entire splash overlay — fades out to reveal the WebView
+  // Start at 1.0 so the overlay is pixel-identical to the native splash on reveal
+  const scale   = useRef(new Animated.Value(1.0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
   const [splashDone, setSplashDone] = useState(false);
 
   const runSplashAnimation = useCallback(async () => {
-    // Hide the static Expo splash — our animated overlay takes over seamlessly
     await SplashScreen.hideAsync();
 
     Animated.sequence([
-      // Phase 1: Smooth zoom in — logo glides from 82% → 100%, decelerating
-      // to rest. Easing.out(cubic) starts fast and slows gracefully — no bounce.
       Animated.timing(scale, {
-        toValue:         1.0,
-        duration:        1100,
-        easing:          Easing.out(Easing.cubic),
+        toValue:         1.05,
+        duration:        1600,
+        easing:          Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
-      // Phase 2: Hold at full size so the logo has a moment to breathe
-      Animated.delay(900),
-      // Phase 3: Elegant fade out to reveal the WebView
+      Animated.delay(200),
       Animated.timing(opacity, {
         toValue:         0,
-        duration:        550,
+        duration:        600,
         easing:          Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
@@ -162,8 +160,8 @@ export default function App() {
       {!splashDone && (
         <Animated.View style={[styles.splash, { opacity }]} pointerEvents="none">
           <Animated.Image
-            source={require('./assets/splash.png')}
-            style={[styles.splashLogo, { transform: [{ scale }] }]}
+            source={require('./assets/splash-native.png')}
+            style={[styles.splashImg, { transform: [{ scale }] }]}
             resizeMode="contain"
           />
         </Animated.View>
@@ -187,9 +185,10 @@ const styles = StyleSheet.create({
     backgroundColor: CREAM,
     alignItems:      'center',
     justifyContent:  'center',
+    overflow:        'hidden',
   },
-  splashLogo: {
-    width:  '72%',
-    height: '72%',
+  splashImg: {
+    width:  SPLASH_SIZE,
+    height: SPLASH_SIZE,
   },
 });
