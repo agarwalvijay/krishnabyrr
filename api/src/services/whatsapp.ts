@@ -20,6 +20,7 @@
  *   kb_order_cancelled   (UTILITY)          — order cancelled
  *   kb_refund_initiated  (UTILITY)          — refund in progress
  *   kb_password_changed  (UTILITY)          — security alert
+ *   kb_owner_new_order   (UTILITY)          — owner alert: new order received
  *
  * Template body copy (paste exactly as shown into the Meta template editor).
  * All variables are type "text". Bodies must NOT start with a variable.
@@ -97,6 +98,22 @@
  *     Variables: {{1}} = customer name
  *     Sample: "Hi Priya, your Krishna's Bliss account password was recently
  *              changed. If this wasn't you, contact us immediately on WhatsApp."
+ *
+ *   kb_owner_new_order (UTILITY):
+ *     Body: "New order *{{1}}* received!\n\n₹{{2}} · {{3}} item(s)\n{{4}}\n\nCustomer: {{5}} · {{6}}\nPincode: {{7}}\nPayment: {{8}}"
+ *     Variables: {{1}} = order number, {{2}} = total (e.g. 6,750), {{3}} = item count,
+ *                {{4}} = item summary, {{5}} = customer name, {{6}} = customer contact,
+ *                {{7}} = pincode, {{8}} = payment label
+ *     Sample: "New order *KB-000001* received!
+ *
+ *              ₹6,750 · 1 item(s)
+ *              Maheshwari Silk Ivory Bel Buti
+ *
+ *              Customer: Priya Sharma · 9876543210
+ *              Pincode: 110001
+ *              Payment: Paid (Razorpay)"
+ *     Note: set OWNER_PHONE in api/.env to the owner's WhatsApp number.
+ *           If absent, owner notifications are silently skipped.
  *
  * If WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN are not set, all sends
  * are silently skipped — the order/auth flows are never affected.
@@ -344,6 +361,35 @@ export function sendPasswordChanged(phone: string, name: string): void {
     phone,
     'kb_password_changed',
     [{ type: 'body', parameters: [txt(name)] }],
+  );
+}
+
+export function sendOwnerNewOrder(params: {
+  orderNumber:     string;
+  total:           number;
+  itemCount:       number;
+  itemSummary:     string;
+  customerName:    string;
+  customerContact: string;
+  pincode:         string;
+  paymentLabel:    string;
+}): void {
+  const ownerPhone = process.env.OWNER_PHONE;
+  if (!ownerPhone) return;
+  send(
+    ownerPhone,
+    'kb_owner_new_order',
+    [{ type: 'body', parameters: [
+      txt(params.orderNumber),
+      txt(params.total.toLocaleString('en-IN')),
+      txt(String(params.itemCount)),
+      txt(params.itemSummary),
+      txt(params.customerName),
+      txt(params.customerContact),
+      txt(params.pincode),
+      txt(params.paymentLabel),
+    ]}],
+    { order_number: params.orderNumber },
   );
 }
 
