@@ -30,6 +30,11 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
         HOSTNAME: '0.0.0.0',
+        // API is co-located — SSR fetches go direct, never via the public hostname
+        SERVER_API_ORIGIN: 'http://localhost:3001',
+        // REVALIDATE_SECRET is exported into the shell before `pm2 reload` by the
+        // deploy workflow, so process.env picks it up when this file is evaluated.
+        ...(process.env.REVALIDATE_SECRET && { REVALIDATE_SECRET: process.env.REVALIDATE_SECRET }),
       },
     },
   ],

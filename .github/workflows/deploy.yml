@@ -1,0 +1,285 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# KrishnaByrr — Production Deploy
+#
+# Triggers on every push to main (or manually via workflow_dispatch).
+# Builds all workspaces in CI, rsyncs artifacts to the GCP VM, writes the
+# API .env from GitHub Secrets, runs migrations, and reloads pm2.
+#
+# ── Required GitHub Secrets ───────────────────────────────────────────────────
+#
+#   GCP_HOST          user@ip  e.g. vijay@34.100.200.50
+#   GCP_SSH_KEY       private SSH key contents (the key authorised on the VM)
+#
+#   JWT_SECRET        strong random string — MUST be set (server refuses to start without it)
+#   DATABASE_URL      postgres connection string  e.g. postgresql://user:pass@localhost/db
+#   REDIS_URL         redis connection string     e.g. redis://localhost:6379
+#   APP_URL           public site URL             e.g. https://krishnasbliss.com
+#   REVALIDATE_SECRET shared secret for ISR cache invalidation
+#
+# ── Optional GitHub Secrets (features degrade gracefully if absent) ───────────
+#
+#   API_URL                   defaults to APP_URL
+#   CORS_ORIGINS              defaults to APP_URL
+#   WEB_ORIGIN                defaults to APP_URL
+#   RAZORPAY_KEY_ID
+#   RAZORPAY_KEY_SECRET
+#   WHATSAPP_PHONE_NUMBER_ID
+#   WHATSAPP_ACCESS_TOKEN
+#   FIREBASE_PROJECT_ID
+#   FIREBASE_CLIENT_EMAIL
+#   FIREBASE_PRIVATE_KEY      may contain real newlines — handled via base64 encoding
+#   OWNER_WHATSAPP
+#   CALLMEBOT_API_KEY
+#   WHATSAPP_WEBHOOK_SECRET
+#   PHONEPE_MERCHANT_ID
+#   PHONEPE_SALT_KEY
+#   PHONEPE_SALT_INDEX
+#   PHONEPE_MODE
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Prevent concurrent deploys — queue them, never cancel an in-flight deploy.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+
+      # ── 1. Source ─────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node ───────────────────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── 3. Install ────────────────────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci --workspaces --include-workspace-root
+
+      # ── 4. Build ──────────────────────────────────────────────────────────────
+      - name: Build shared package
+        run: npm run build -w packages/shared
+
+      - name: Build API
+        run: npm run build -w api
+
+      - name: Build Admin
+        run: npm run build -w apps/admin
+
+      - name: Build Web (Next.js standalone)
+        run: npm run build -w apps/web
+        env:
+          # Baked into the client bundle — must be the public hostname.
+          NEXT_PUBLIC_API_ORIGIN: ${{ secrets.APP_URL }}
+
+      # ── 5. Prepare artifacts ──────────────────────────────────────────────────
+      - name: Prepare standalone bundle and migrations
+        run: |
+          # Next.js standalone doesn't auto-copy static assets
+          cp -r apps/web/.next/static  apps/web/.next/standalone/apps/web/.next/static
+          cp -r apps/web/public        apps/web/.next/standalone/apps/web/public
+
+          # Drop build-phase pre-rendered pages — they were generated with
+          # IS_BUILD_PHASE=true (empty data). Production data renders on first request.
+          find apps/web/.next/standalone/apps/web/.next/server/app \
+            -maxdepth 1 \
+            \( -name "*.html" -o -name "*.rsc" -o -name "*.body" -o -name "*.meta" \) \
+            -delete 2>/dev/null || true
+
+          # Copy SQL migrations into compiled dist so migrate.js can find them
+          rm -rf api/dist/db/migrations
+          cp -r api/src/db/migrations api/dist/db/migrations
+
+      # ── 6. SSH ────────────────────────────────────────────────────────────────
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          # printf preserves key format exactly (no trailing-newline issues)
+          printf '%s\n' "${{ secrets.GCP_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Add server host key so rsync/ssh don't prompt
+          ssh-keyscan -H "$(echo '${{ secrets.GCP_HOST }}' | cut -d@ -f2)" \
+            >> ~/.ssh/known_hosts 2>/dev/null
+
+      # ── 7. Write api/.env on server ───────────────────────────────────────────
+      # All secrets pass through env vars (GitHub masks them in logs).
+      # base64 round-trip handles multi-line values safely (FIREBASE_PRIVATE_KEY).
+      - name: Write API .env on server
+        env:
+          DATABASE_URL:             ${{ secrets.DATABASE_URL }}
+          REDIS_URL:                ${{ secrets.REDIS_URL }}
+          JWT_SECRET:               ${{ secrets.JWT_SECRET }}
+          APP_URL:                  ${{ secrets.APP_URL }}
+          API_URL:                  ${{ secrets.API_URL }}
+          CORS_ORIGINS:             ${{ secrets.CORS_ORIGINS }}
+          WEB_ORIGIN:               ${{ secrets.WEB_ORIGIN }}
+          REVALIDATE_SECRET:        ${{ secrets.REVALIDATE_SECRET }}
+          RAZORPAY_KEY_ID:          ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET:      ${{ secrets.RAZORPAY_KEY_SECRET }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_ACCESS_TOKEN:    ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          FIREBASE_PROJECT_ID:      ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL:    ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:     ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          OWNER_WHATSAPP:           ${{ secrets.OWNER_WHATSAPP }}
+          CALLMEBOT_API_KEY:        ${{ secrets.CALLMEBOT_API_KEY }}
+          WHATSAPP_WEBHOOK_SECRET:  ${{ secrets.WHATSAPP_WEBHOOK_SECRET }}
+          PHONEPE_MERCHANT_ID:      ${{ secrets.PHONEPE_MERCHANT_ID }}
+          PHONEPE_SALT_KEY:         ${{ secrets.PHONEPE_SALT_KEY }}
+          PHONEPE_SALT_INDEX:       ${{ secrets.PHONEPE_SALT_INDEX }}
+          PHONEPE_MODE:             ${{ secrets.PHONEPE_MODE }}
+        run: |
+          python3 - <<'PY'
+          import os, base64
+
+          keys = [
+            'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET',
+            'APP_URL', 'API_URL', 'CORS_ORIGINS', 'WEB_ORIGIN', 'REVALIDATE_SECRET',
+            'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET',
+            'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_ACCESS_TOKEN',
+            'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY',
+            'OWNER_WHATSAPP', 'CALLMEBOT_API_KEY', 'WHATSAPP_WEBHOOK_SECRET',
+            'PHONEPE_MERCHANT_ID', 'PHONEPE_SALT_KEY', 'PHONEPE_SALT_INDEX', 'PHONEPE_MODE',
+          ]
+
+          lines = ['NODE_ENV=production', 'PORT=3001']
+          for k in keys:
+            v = os.environ.get(k, '').strip()
+            if v:
+              lines.append(f'{k}={v}')
+
+          encoded = base64.b64encode(('\n'.join(lines) + '\n').encode()).decode()
+          with open('/tmp/api_env_b64', 'w') as f:
+            f.write(encoded)
+          PY
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "${{ secrets.GCP_HOST }}" \
+            "mkdir -p ~/krishnabyrr/api"
+
+          # Pipe base64 content and decode on the server — no shell quoting issues
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "${{ secrets.GCP_HOST }}" \
+            "base64 -d > ~/krishnabyrr/api/.env" \
+            < /tmp/api_env_b64
+
+      # ── 8. Prepare remote directories ─────────────────────────────────────────
+      - name: Prepare remote directories
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "${{ secrets.GCP_HOST }}" bash <<'ENDSSH'
+            set -e
+            mkdir -p ~/krishnabyrr/api/uploads \
+                      ~/krishnabyrr/apps/web \
+                      ~/krishnabyrr/apps/admin \
+                      ~/krishnabyrr/deploy \
+                      ~/krishnabyrr/packages/shared/dist
+            # Wipe stale Next.js fetch cache and pre-rendered pages
+            rm -rf ~/krishnabyrr/apps/web/.next/cache
+            rm -rf ~/krishnabyrr/apps/web/.next/server/app
+          ENDSSH
+
+      # ── 9. Rsync artifacts to server ──────────────────────────────────────────
+      - name: Push artifacts to server
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+          HOST="${{ secrets.GCP_HOST }}"
+
+          # Root: package manifests + deploy/
+          rsync -az --no-owner --no-group -e "$SSH" \
+            --include='package.json' \
+            --include='package-lock.json' \
+            --include='tsconfig.json' \
+            --include='deploy/***' \
+            --exclude='*' \
+            ./ "${HOST}:~/krishnabyrr/"
+
+          # Shared compiled dist
+          rsync -az --no-owner --no-group -e "$SSH" \
+            packages/shared/dist/ "${HOST}:~/krishnabyrr/packages/shared/dist/"
+
+          # API compiled dist (includes migrations)
+          rsync -az --no-owner --no-group -e "$SSH" \
+            api/dist/ "${HOST}:~/krishnabyrr/api/dist/"
+
+          # API package.json (needed for npm workspace install on server)
+          rsync -az --no-owner --no-group -e "$SSH" \
+            --include='package.json' --exclude='*' \
+            api/ "${HOST}:~/krishnabyrr/api/"
+
+          # Next.js standalone — node_modules included in bundle, so allow them through.
+          # --delete removes files that no longer exist in the build.
+          rsync -az --no-owner --no-group -e "$SSH" \
+            --delete \
+            apps/web/.next/standalone/ "${HOST}:~/krishnabyrr/apps/web/.next/standalone/"
+
+          # Admin static dist (served by nginx)
+          rsync -az --no-owner --no-group -e "$SSH" \
+            apps/admin/dist/ "${HOST}:~/krishnabyrr/apps/admin/dist/"
+
+      # ── 10. Install API deps, run migrations, reload pm2 ─────────────────────
+      # REVALIDATE_SECRET is sourced from api/.env (already on server) so pm2
+      # passes it to the kb-web process via ecosystem.config.js process.env spread.
+      - name: Install, migrate and reload
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "${{ secrets.GCP_HOST }}" bash <<'ENDSSH'
+            set -e
+
+            # Install API production deps (web uses self-contained standalone)
+            cd ~/krishnabyrr
+            npm install \
+              --omit=dev \
+              --workspace=packages/shared \
+              --workspace=api \
+              --include-workspace-root \
+              --silent
+
+            # Run any new migrations
+            cd ~/krishnabyrr/api
+            NODE_ENV=production node -r dotenv/config dist/db/migrate.js
+
+            # Reload pm2 — pass REVALIDATE_SECRET from api/.env so ecosystem.config.js
+            # can inject it into the kb-web process environment
+            cd ~/krishnabyrr
+            REVALIDATE_SECRET=$(grep '^REVALIDATE_SECRET=' api/.env | cut -d= -f2- | tr -d '\r')
+            export REVALIDATE_SECRET
+            pm2 reload deploy/ecosystem.config.js --update-env
+            pm2 list
+          ENDSSH
+
+      # ── 11. Warm ISR cache ────────────────────────────────────────────────────
+      - name: Warm ISR pages
+        run: |
+          sleep 10
+          SITE="${{ secrets.APP_URL }}"
+
+          warm() {
+            local path="$1"
+            local status
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${SITE}${path}" || echo "err")
+            echo "  ${path} → ${status}"
+          }
+
+          warm "/"
+          warm "/shop"
+
+          # Warm each active category slug from the live API
+          curl -sf "${SITE}/api/categories" 2>/dev/null \
+            | grep -o '"slug":"[^"]*"' \
+            | sed 's/"slug":"//; s/"//' \
+            | while IFS= read -r slug; do
+                warm "/shop/${slug}"
+              done || true
