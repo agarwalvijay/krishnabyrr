@@ -39,7 +39,11 @@ declare global {
 
 // ── Customer auth helpers ─────────────────────────────────────────────────────
 
-const jwtSecret = () => process.env.JWT_SECRET ?? 'change-me-in-production';
+const jwtSecret = () => {
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error('JWT_SECRET environment variable is not set');
+  return s;
+};
 
 async function resolveCustomerFromToken(
   token: string,

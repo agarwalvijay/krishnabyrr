@@ -8,7 +8,11 @@ import { sendVerificationLink, sendLoginLink, sendPasswordChanged } from '../ser
 
 const router = Router();
 
-const JWT_SECRET  = () => process.env.JWT_SECRET ?? 'change-me-in-production';
+const JWT_SECRET  = () => {
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error('JWT_SECRET environment variable is not set');
+  return s;
+};
 const JWT_EXPIRES = '30d';
 const BCRYPT_ROUNDS = 12;
 

@@ -1,8 +1,16 @@
 import { Pool } from 'pg';
+import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 
 const BCRYPT_ROUNDS = 12;
-const ADMIN_PASSWORD = 'KBAdmin2026!';
+
+function resolveAdminPassword(): string {
+  if (process.env.ADMIN_SEED_PASSWORD) return process.env.ADMIN_SEED_PASSWORD;
+  const generated = crypto.randomBytes(16).toString('hex');
+  console.warn(`[seed] No ADMIN_SEED_PASSWORD env var set — generated one-time password: ${generated}`);
+  console.warn('[seed] Change all admin passwords immediately after first login.');
+  return generated;
+}
 
 export async function runSeed(pool: Pool): Promise<void> {
   const client = await pool.connect();
@@ -12,7 +20,7 @@ export async function runSeed(pool: Pool): Promise<void> {
     // ----------------------------------------------------------------
     // 1. Admin users
     // ----------------------------------------------------------------
-    const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, BCRYPT_ROUNDS);
+    const passwordHash = await bcrypt.hash(resolveAdminPassword(), BCRYPT_ROUNDS);
 
     await client.query(`
       INSERT INTO admin_users (email, name, role, password_hash)

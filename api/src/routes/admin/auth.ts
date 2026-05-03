@@ -6,7 +6,11 @@ import { requireAuth } from '../../middleware/auth';
 
 const router = Router();
 
-const JWT_SECRET = () => process.env.JWT_SECRET ?? 'change-me-in-production';
+const JWT_SECRET = () => {
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error('JWT_SECRET environment variable is not set');
+  return s;
+};
 const JWT_EXPIRES = '8h';
 
 // POST /api/admin/auth/login
