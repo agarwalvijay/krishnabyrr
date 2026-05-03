@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth, requireRole } from '../../middleware/auth';
 import authRouter from './auth';
 import adminProductsRouter from './products';
 import adminCategoriesRouter from './categories';
@@ -16,19 +17,28 @@ import adminBadgesRouter from './badges';
 
 const router = Router();
 
+// Auth endpoints (login etc) are public — they have their own checks.
 router.use('/auth', authRouter);
-router.use('/products', adminProductsRouter);
-router.use('/categories', adminCategoriesRouter);
-router.use('/tags', adminTagsRouter);
-router.use('/tag-groups', adminTagGroupsRouter);
-router.use('/collections', adminCollectionsRouter);
-router.use('/orders', adminOrdersRouter);
-router.use('/coupons', adminCouponsRouter);
-router.use('/settings', adminSettingsRouter);
-router.use('/homepage', adminHomepageRouter);
-router.use('/revalidate-cache', adminRevalidateRouter);
-router.use('/customers', adminCustomersRouter);
-router.use('/dashboard', adminDashboardRouter);
-router.use('/badges', adminBadgesRouter);
+
+// Catalog domain — managed by catalog_manager (and super_admin via passthrough)
+router.use('/products',    requireAuth, requireRole('catalog_manager'), adminProductsRouter);
+router.use('/categories',  requireAuth, requireRole('catalog_manager'), adminCategoriesRouter);
+router.use('/tags',        requireAuth, requireRole('catalog_manager'), adminTagsRouter);
+router.use('/tag-groups',  requireAuth, requireRole('catalog_manager'), adminTagGroupsRouter);
+router.use('/collections', requireAuth, requireRole('catalog_manager'), adminCollectionsRouter);
+router.use('/badges',      requireAuth, requireRole('catalog_manager'), adminBadgesRouter);
+router.use('/homepage',    requireAuth, requireRole('catalog_manager'), adminHomepageRouter);
+
+// Order domain — managed by order_manager (and super_admin via passthrough)
+router.use('/orders',    requireAuth, requireRole('order_manager'), adminOrdersRouter);
+router.use('/customers', requireAuth, requireRole('order_manager'), adminCustomersRouter);
+router.use('/coupons',   requireAuth, requireRole('order_manager'), adminCouponsRouter);
+
+// Cross-cutting endpoints — read-only or shared utilities
+router.use('/dashboard',        requireAuth, adminDashboardRouter);
+router.use('/revalidate-cache', requireAuth, adminRevalidateRouter);
+
+// Site settings — only super_admin (no role passes the empty allow-list)
+router.use('/settings', requireAuth, requireRole(), adminSettingsRouter);
 
 export default router;

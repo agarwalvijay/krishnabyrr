@@ -134,3 +134,31 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
     next(err);
   }
 };
+
+// ── Role-based authorization ─────────────────────────────────────────────────
+//
+// Use AFTER requireAuth on a route or router to restrict by admin role.
+//   router.post('/...', requireAuth, requireRole('order_manager'), handler)
+// super_admin always passes regardless of the role list.
+
+export type AdminRole = 'super_admin' | 'catalog_manager' | 'order_manager';
+
+export function requireRole(...allowed: AdminRole[]): RequestHandler {
+  return (req, res, next) => {
+    const role = req.user?.role as AdminRole | undefined;
+    if (!role) {
+      res.status(401).json({ error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
+      return;
+    }
+    if (role === 'super_admin' || allowed.includes(role)) {
+      next();
+      return;
+    }
+    res.status(403).json({
+      error: {
+        message: 'You do not have permission to perform this action',
+        code: 'FORBIDDEN_ROLE',
+      },
+    });
+  };
+}

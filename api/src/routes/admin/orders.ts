@@ -320,26 +320,41 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
     try {
       await client.query('BEGIN');
 
-      // Restore stock for each line item
+      // Idempotency check — if any 'order_cancelled' log already exists for this
+      // order, stock has already been restored. Skip the restore but still proceed
+      // with refund/status updates (they're independently idempotent).
+      const { rows: priorRestores } = await client.query<{ exists: boolean }>(
+        `SELECT EXISTS(
+           SELECT 1 FROM inventory_log
+           WHERE order_id = $1 AND change_type = 'order_cancelled'
+         ) AS exists`,
+        [order.id]
+      );
+      const alreadyRestored = priorRestores[0]?.exists === true;
+
       const lineItems = order.line_items as Array<{ product_id: string; quantity: number; name: string }>;
-      for (const item of lineItems) {
-        const { rows: [prod] } = await client.query<{ stock_qty: number }>(
-          'SELECT stock_qty FROM products WHERE id = $1 FOR UPDATE',
-          [item.product_id]
-        );
-        if (prod) {
-          const qtyAfter = prod.stock_qty + item.quantity;
-          await client.query(
-            'UPDATE products SET stock_qty = $1, updated_at = NOW() WHERE id = $2',
-            [qtyAfter, item.product_id]
+
+      if (!alreadyRestored) {
+        // Restore stock for each line item
+        for (const item of lineItems) {
+          const { rows: [prod] } = await client.query<{ stock_qty: number }>(
+            'SELECT stock_qty FROM products WHERE id = $1 FOR UPDATE',
+            [item.product_id]
           );
-          await client.query(
-            `INSERT INTO inventory_log
-               (product_id, change_type, qty_before, qty_change, qty_after, reason, order_id, admin_user_id)
-             VALUES ($1, 'order_cancelled', $2, $3, $4, $5, $6, $7)`,
-            [item.product_id, prod.stock_qty, item.quantity, qtyAfter,
-             `Order ${order.order_number} cancelled`, order.id, req.user?.id ?? null]
-          );
+          if (prod) {
+            const qtyAfter = prod.stock_qty + item.quantity;
+            await client.query(
+              'UPDATE products SET stock_qty = $1, updated_at = NOW() WHERE id = $2',
+              [qtyAfter, item.product_id]
+            );
+            await client.query(
+              `INSERT INTO inventory_log
+                 (product_id, change_type, qty_before, qty_change, qty_after, reason, order_id, admin_user_id)
+               VALUES ($1, 'order_cancelled', $2, $3, $4, $5, $6, $7)`,
+              [item.product_id, prod.stock_qty, item.quantity, qtyAfter,
+               `Order ${order.order_number} cancelled`, order.id, req.user?.id ?? null]
+            );
+          }
         }
       }
 
@@ -573,26 +588,38 @@ router.post('/:id/void', requireAuth, async (req, res, next) => {
     try {
       await client.query('BEGIN');
 
-      // Restore stock for each line item
+      // Idempotency — skip stock restore if a prior cancel/void already did it.
+      const { rows: priorRestores } = await client.query<{ exists: boolean }>(
+        `SELECT EXISTS(
+           SELECT 1 FROM inventory_log
+           WHERE order_id = $1 AND change_type = 'order_cancelled'
+         ) AS exists`,
+        [order.id]
+      );
+      const alreadyRestored = priorRestores[0]?.exists === true;
+
       const lineItems = order.line_items as Array<{ product_id: string; quantity: number; name: string }>;
-      for (const item of lineItems) {
-        const { rows: [prod] } = await client.query<{ stock_qty: number }>(
-          'SELECT stock_qty FROM products WHERE id = $1 FOR UPDATE',
-          [item.product_id]
-        );
-        if (prod) {
-          const qtyAfter = prod.stock_qty + item.quantity;
-          await client.query(
-            'UPDATE products SET stock_qty = $1, updated_at = NOW() WHERE id = $2',
-            [qtyAfter, item.product_id]
+
+      if (!alreadyRestored) {
+        for (const item of lineItems) {
+          const { rows: [prod] } = await client.query<{ stock_qty: number }>(
+            'SELECT stock_qty FROM products WHERE id = $1 FOR UPDATE',
+            [item.product_id]
           );
-          await client.query(
-            `INSERT INTO inventory_log
-               (product_id, change_type, qty_before, qty_change, qty_after, reason, order_id, admin_user_id)
-             VALUES ($1, 'order_cancelled', $2, $3, $4, $5, $6, $7)`,
-            [item.product_id, prod.stock_qty, item.quantity, qtyAfter,
-             `Order ${order.order_number} voided (auth not captured)`, order.id, req.user?.id ?? null]
-          );
+          if (prod) {
+            const qtyAfter = prod.stock_qty + item.quantity;
+            await client.query(
+              'UPDATE products SET stock_qty = $1, updated_at = NOW() WHERE id = $2',
+              [qtyAfter, item.product_id]
+            );
+            await client.query(
+              `INSERT INTO inventory_log
+                 (product_id, change_type, qty_before, qty_change, qty_after, reason, order_id, admin_user_id)
+               VALUES ($1, 'order_cancelled', $2, $3, $4, $5, $6, $7)`,
+              [item.product_id, prod.stock_qty, item.quantity, qtyAfter,
+               `Order ${order.order_number} voided (auth not captured)`, order.id, req.user?.id ?? null]
+            );
+          }
         }
       }
 

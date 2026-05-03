@@ -26,6 +26,8 @@
 #   WHATSAPP_PHONE_NUMBER_ID
 #   WHATSAPP_ACCESS_TOKEN
 #   WHATSAPP_WEBHOOK_SECRET
+#   WHATSAPP_APP_SECRET       App secret from Meta Dashboard — used to verify
+#                             X-Hub-Signature-256 HMAC on incoming webhooks
 #   FIREBASE_PROJECT_ID
 #   FIREBASE_CLIENT_EMAIL
 #   FIREBASE_PRIVATE_KEY      may contain real newlines — handled via base64 encoding
@@ -131,6 +133,7 @@ jobs:
           WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
           WHATSAPP_ACCESS_TOKEN:    ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
           WHATSAPP_WEBHOOK_SECRET:  ${{ secrets.WHATSAPP_WEBHOOK_SECRET }}
+          WHATSAPP_APP_SECRET:      ${{ secrets.WHATSAPP_APP_SECRET }}
           FIREBASE_PROJECT_ID:      ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_CLIENT_EMAIL:    ${{ secrets.FIREBASE_CLIENT_EMAIL }}
           FIREBASE_PRIVATE_KEY:     ${{ secrets.FIREBASE_PRIVATE_KEY }}
@@ -148,6 +151,7 @@ jobs:
             'OWNER_PHONE',
             'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET',
             'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_WEBHOOK_SECRET',
+            'WHATSAPP_APP_SECRET',
             'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY',
             'PHONEPE_MERCHANT_ID', 'PHONEPE_SALT_KEY', 'PHONEPE_SALT_INDEX', 'PHONEPE_MODE',
           ]

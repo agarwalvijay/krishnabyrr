@@ -10,6 +10,7 @@
  *        WHATSAPP_PHONE_NUMBER_ID=<from Meta developer portal>
  *        WHATSAPP_ACCESS_TOKEN=<system user permanent token>
  *        WHATSAPP_WEBHOOK_SECRET=<any random string you choose>
+ *        WHATSAPP_APP_SECRET=<App Secret from App Dashboard → Settings → Basic>
  *
  * Template names to register with Meta (category in parentheses):
  *   kb_verify_phone      (UTILITY)          — magic link phone verification

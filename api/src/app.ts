@@ -31,7 +31,14 @@ const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://
 const app = express();
 
 app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+// Capture raw body so the WhatsApp webhook can verify Meta's HMAC signature.
+// Other routes use the parsed JSON as usual.
+app.use(express.json({
+  limit: '2mb',
+  verify: (req, _res, buf) => {
+    (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Serve locally-uploaded product images (dev only — use object storage in production)

@@ -44,7 +44,10 @@
       "Bash(curl -sL \"https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83\" -o badge-app-store.svg)",
       "Bash(git *)",
       "Bash(bash -n /Users/vijayagarwal/vijay/vijay/krishnabyrr/deploy/deploy-local.sh)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(convert --version)",
+      "Bash(python3 -c \"from PIL import Image; print\\('PIL ok'\\)\")",
+      "Bash(python3 *)"
     ]
   }
 }
