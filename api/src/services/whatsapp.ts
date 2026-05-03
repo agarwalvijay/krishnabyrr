@@ -100,17 +100,16 @@
  *              changed. If this wasn't you, contact us immediately on WhatsApp."
  *
  *   kb_owner_new_order (UTILITY):
- *     Body: "New order *{{1}}* received!\n\n₹{{2}} · {{3}} item(s)\n{{4}}\n\nCustomer: {{5}} · {{6}}\nPincode: {{7}}\nPayment: {{8}}"
- *     Variables: {{1}} = order number, {{2}} = total (e.g. 6,750), {{3}} = item count,
- *                {{4}} = item summary, {{5}} = customer name, {{6}} = customer contact,
- *                {{7}} = pincode, {{8}} = payment label
+ *     Body: "New order *{{1}}* received!\n\n{{2}}\n\nCustomer: {{3}}\nPayment: {{4}}"
+ *     Variables: {{1}} = order number
+ *                {{2}} = "₹6,750 · 1 item — Maheshwari Silk Ivory Bel Buti"
+ *                {{3}} = "Priya Sharma · 9876543210 · PIN 110001"
+ *                {{4}} = "Paid (Razorpay)"
  *     Sample: "New order *KB-000001* received!
  *
- *              ₹6,750 · 1 item(s)
- *              Maheshwari Silk Ivory Bel Buti
+ *              ₹6,750 · 1 item — Maheshwari Silk Ivory Bel Buti
  *
- *              Customer: Priya Sharma · 9876543210
- *              Pincode: 110001
+ *              Customer: Priya Sharma · 9876543210 · PIN 110001
  *              Payment: Paid (Razorpay)"
  *     Note: set OWNER_PHONE in api/.env to the owner's WhatsApp number.
  *           If absent, owner notifications are silently skipped.
@@ -376,17 +375,17 @@ export function sendOwnerNewOrder(params: {
 }): void {
   const ownerPhone = process.env.OWNER_PHONE;
   if (!ownerPhone) return;
+
+  const itemLine     = `₹${params.total.toLocaleString('en-IN')} · ${params.itemCount} item${params.itemCount !== 1 ? 's' : ''} — ${params.itemSummary}`;
+  const customerLine = `${params.customerName} · ${params.customerContact} · PIN ${params.pincode}`;
+
   send(
     ownerPhone,
     'kb_owner_new_order',
     [{ type: 'body', parameters: [
       txt(params.orderNumber),
-      txt(params.total.toLocaleString('en-IN')),
-      txt(String(params.itemCount)),
-      txt(params.itemSummary),
-      txt(params.customerName),
-      txt(params.customerContact),
-      txt(params.pincode),
+      txt(itemLine),
+      txt(customerLine),
       txt(params.paymentLabel),
     ]}],
     { order_number: params.orderNumber },
