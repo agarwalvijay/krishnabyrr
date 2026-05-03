@@ -38,8 +38,6 @@
 name: Deploy to Production
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 # Prevent concurrent deploys — queue them, never cancel an in-flight deploy.
