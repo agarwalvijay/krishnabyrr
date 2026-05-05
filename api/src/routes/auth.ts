@@ -5,6 +5,7 @@ import pool from '../db/client';
 import { requireCustomerAuth } from '../middleware/auth';
 import { createVerificationToken, createLoginToken, verifyToken } from '../services/otp';
 import { sendVerificationLink, sendLoginLink, sendPasswordChanged } from '../services/whatsapp';
+import { createPairing, markApproved, pollSession } from '../services/magic-session';
 
 const router = Router();
 
@@ -109,14 +110,21 @@ router.post('/register', async (req, res, next) => {
       { expiresIn: JWT_EXPIRES },
     );
 
-    // Send phone verification magic link (fire-and-forget)
+    // Send phone verification magic link + pair the laptop's session for live update.
+    // The pairing happens synchronously so we can return the session_id; the WhatsApp
+    // send itself is fire-and-forget.
+    let verifySessionId: string | null = null;
     if (normalPhone) {
-      createVerificationToken(normalPhone)
-        .then(token => sendVerificationLink(normalPhone, name.trim(), token))
-        .catch(() => {}); // never block registration on verification failure
+      try {
+        const verifyTok = await createVerificationToken(normalPhone);
+        verifySessionId = await createPairing(verifyTok, 'verify');
+        sendVerificationLink(normalPhone, name.trim(), verifyTok); // fire-and-forget
+      } catch {
+        // Never block registration on verification-link issues
+      }
     }
 
-    res.status(201).json({ data: { token, customer } });
+    res.status(201).json({ data: { token, customer, verify_session_id: verifySessionId } });
   } catch (err) {
     next(err);
   }
@@ -321,15 +329,23 @@ router.post('/send-login-link', async (req, res, next) => {
 
     // Always respond with success to prevent account enumeration
     if (!customer?.phone) {
-      // Either account not found or account has no phone — can't send WhatsApp
-      // Respond success anyway; don't reveal whether the account exists
-      res.json({ data: { message: 'If an account exists, a login link has been sent via WhatsApp.' } });
+      // Either account not found or account has no phone — can't send WhatsApp.
+      // Respond as if we sent a link, with a synthesised session_id so the laptop
+      // can still show a "waiting" UI without revealing the account doesn't exist.
+      // The session simply expires after 15 minutes since nothing approves it.
+      const fakeId = (await import('crypto')).randomBytes(16).toString('hex');
+      res.json({ data: {
+        message:    'If an account exists, a login link has been sent via WhatsApp.',
+        session_id: fakeId,
+      }});
       return;
     }
 
+    let loginSessionId: string;
     try {
-      const token = await createLoginToken(customer.phone);
-      sendLoginLink(customer.phone, customer.name, token);
+      const token   = await createLoginToken(customer.phone);
+      loginSessionId = await createPairing(token, 'login');
+      sendLoginLink(customer.phone, customer.name, token); // fire-and-forget
     } catch (err) {
       if ((err as Error).message === 'RATE_LIMITED') {
         res.status(429).json({ error: { message: 'Too many requests. Please wait a few minutes before trying again.', code: 'RATE_LIMITED' } });
@@ -338,7 +354,10 @@ router.post('/send-login-link', async (req, res, next) => {
       throw err;
     }
 
-    res.json({ data: { message: 'If an account exists, a login link has been sent via WhatsApp.' } });
+    res.json({ data: {
+      message:    'If an account exists, a login link has been sent via WhatsApp.',
+      session_id: loginSessionId,
+    }});
   } catch (err) {
     next(err);
   }
@@ -392,6 +411,9 @@ router.post('/verify-login-link', async (req, res, next) => {
       { expiresIn: JWT_EXPIRES },
     );
 
+    // If a laptop is polling for this magic link, hand it the JWT
+    await markApproved(token, { token: freshToken, customer }).catch(() => {});
+
     res.json({ data: { token: freshToken, customer } });
   } catch (err) {
     next(err);
@@ -419,8 +441,10 @@ router.post('/send-verification', requireCustomerAuth, async (req, res, next) =>
       return;
     }
 
+    let verifySessionId: string;
     try {
-      const token = await createVerificationToken(phone);
+      const token     = await createVerificationToken(phone);
+      verifySessionId = await createPairing(token, 'verify');
       sendVerificationLink(phone, c?.name ?? req.customer!.name, token);
     } catch (err) {
       if ((err as Error).message === 'RATE_LIMITED') {
@@ -430,7 +454,7 @@ router.post('/send-verification', requireCustomerAuth, async (req, res, next) =>
       throw err;
     }
 
-    res.json({ data: { message: 'Verification link sent' } });
+    res.json({ data: { message: 'Verification link sent', session_id: verifySessionId } });
   } catch (err) {
     next(err);
   }
@@ -486,7 +510,36 @@ router.post('/verify-phone', async (req, res, next) => {
       { expiresIn: JWT_EXPIRES },
     );
 
+    // If a laptop is polling for this verification, signal it now.
+    // payload includes the customer (with phone_verified=true) so the laptop
+    // can refresh its UI without an extra /auth/me call.
+    await markApproved(token, {
+      verified: true,
+      token:    freshToken,
+      customer: { ...customer, phone_verified: true },
+    }).catch(() => {});
+
     res.json({ data: { verified: true, token: freshToken, customer } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /api/auth/magic-session/:id ──────────────────────────────────────────
+// Polled by the requesting laptop every 1–2s. Returns 'pending' until the
+// phone approves the link (by visiting /verify-phone or /login-link), at
+// which point it returns 'approved' with the payload (JWT + customer) and
+// the session is deleted (single-use).
+
+router.get('/magic-session/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!/^[a-f0-9]{32}$/.test(id)) {
+      res.status(400).json({ error: { message: 'Invalid session id', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    const result = await pollSession(id);
+    res.json({ data: result });
   } catch (err) {
     next(err);
   }

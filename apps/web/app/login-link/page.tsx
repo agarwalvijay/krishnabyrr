@@ -3,7 +3,8 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { apiClient } from '@/lib/api';
+import { apiClient, type Customer } from '@/lib/api';
+import { useCustomerAuth } from '@/contexts/AuthContext';
 
 type Status = 'verifying' | 'success' | 'error';
 
@@ -11,9 +12,11 @@ function LoginLinkPage() {
   const searchParams = useSearchParams();
   const router       = useRouter();
   const token        = searchParams.get('t');
+  const { loginWithToken } = useCustomerAuth();
 
   const [status, setStatus]   = useState<Status>('verifying');
   const [message, setMessage] = useState('');
+  const [signedInHere, setSignedInHere] = useState<{ token: string; customer: Customer } | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -23,16 +26,16 @@ function LoginLinkPage() {
     }
 
     apiClient
-      .post<{ data: { token: string; customer: { id: string; name: string } } }>(
+      .post<{ data: { token: string; customer: Customer } }>(
         '/auth/verify-login-link',
         { token },
       )
       .then(res => {
-        const { token: jwt } = res.data.data;
-        localStorage.setItem('kb_customer_token', jwt);
-        apiClient.defaults.headers.common['Authorization'] = `Bearer ${jwt}`;
+        const { token: jwt, customer } = res.data.data;
+        // Stash the JWT so the user can opt to continue on this device.
+        // The laptop that originated the link gets its own copy via polling.
+        setSignedInHere({ token: jwt, customer });
         setStatus('success');
-        setTimeout(() => router.replace('/account'), 2000);
       })
       .catch(err => {
         const msg =
@@ -43,6 +46,12 @@ function LoginLinkPage() {
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  const continueHere = () => {
+    if (!signedInHere) return;
+    loginWithToken(signedInHere.token, signedInHere.customer);
+    router.replace('/account');
+  };
 
   return (
     <div
@@ -73,11 +82,19 @@ function LoginLinkPage() {
               ✓
             </div>
             <h1 className="text-lg font-semibold" style={{ color: 'var(--kb-charcoal)' }}>
-              You&apos;re signed in!
+              You&apos;re signed in
             </h1>
             <p className="text-sm" style={{ color: 'var(--kb-muted)' }}>
-              Taking you to your account…
+              You can return to the device where you started — it will sign you in automatically.
             </p>
+            <button
+              type="button"
+              onClick={continueHere}
+              className="mt-2 w-full py-3 rounded-xl text-white text-sm font-semibold"
+              style={{ background: 'var(--kb-teal)' }}
+            >
+              Continue here instead
+            </button>
           </>
         )}
 

@@ -1,18 +1,15 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api';
-import { useCustomerAuth } from '@/contexts/AuthContext';
 
 type Status = 'verifying' | 'success' | 'error';
 
 function VerifyPhonePage() {
   const searchParams = useSearchParams();
-  const router       = useRouter();
   const token        = searchParams.get('t');
-  const { login: _login, logout: _logout, ...auth } = useCustomerAuth();
 
   const [status, setStatus]   = useState<Status>('verifying');
   const [message, setMessage] = useState('');
@@ -25,22 +22,12 @@ function VerifyPhonePage() {
     }
 
     apiClient
-      .post<{ data: { verified: boolean; token: string; customer: { id: string; email: string | null; name: string; phone: string | null } } }>(
-        '/auth/verify-phone',
-        { token },
-      )
-      .then(res => {
-        const { token: freshJwt } = res.data.data;
-
-        // If there's a fresher JWT (user opened link in a new browser), store it
-        if (freshJwt) {
-          localStorage.setItem('kb_customer_token', freshJwt);
-          apiClient.defaults.headers.common['Authorization'] = `Bearer ${freshJwt}`;
-        }
-
+      .post('/auth/verify-phone', { token })
+      .then(() => {
+        // Server has already signalled the laptop's polling session — no need
+        // to set anything in this device's local storage. The laptop will
+        // pick up the JWT through /magic-session/:id.
         setStatus('success');
-        // Redirect to account after a short pause so the user sees the confirmation
-        setTimeout(() => router.replace('/account'), 2500);
       })
       .catch(err => {
         const msg =
@@ -65,7 +52,7 @@ function VerifyPhonePage() {
         {status === 'verifying' && (
           <>
             <div
-              className="w-10 h-10 mx-auto rounded-full border-4 border-t-transparent animate-spin"
+              className="w-10 h-10 mx-auto rounded-full border-4 animate-spin"
               style={{ borderColor: 'var(--kb-teal)', borderTopColor: 'transparent' }}
             />
             <p className="text-sm" style={{ color: 'var(--kb-muted)' }}>Verifying your phone number…</p>
@@ -76,15 +63,15 @@ function VerifyPhonePage() {
           <>
             <div
               className="w-14 h-14 mx-auto rounded-full flex items-center justify-center text-2xl"
-              style={{ background: 'rgba(39,174,96,0.1)' }}
+              style={{ background: 'rgba(39,174,96,0.1)', color: 'var(--kb-success)' }}
             >
               ✓
             </div>
             <h1 className="text-lg font-semibold" style={{ color: 'var(--kb-charcoal)' }}>
-              Phone verified!
+              Phone verified
             </h1>
             <p className="text-sm" style={{ color: 'var(--kb-muted)' }}>
-              Your number is confirmed. Taking you to your account…
+              Return to the device where you started — it will continue automatically.
             </p>
           </>
         )}
@@ -93,7 +80,7 @@ function VerifyPhonePage() {
           <>
             <div
               className="w-14 h-14 mx-auto rounded-full flex items-center justify-center text-2xl"
-              style={{ background: 'rgba(192,57,43,0.08)' }}
+              style={{ background: 'rgba(192,57,43,0.08)', color: 'var(--kb-error)' }}
             >
               ✕
             </div>

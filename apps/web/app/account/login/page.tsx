@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useCallback, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Link from 'next/link';
 import { useCustomerAuth } from '@/contexts/AuthContext';
-import { apiClient } from '@/lib/api';
+import { apiClient, type Customer } from '@/lib/api';
+import PairingWaiter from '@/components/auth/PairingWaiter';
 
 const schema = z.object({
   identifier: z.string().min(1, 'Email or mobile number is required'),
@@ -18,13 +19,20 @@ type FormValues = z.infer<typeof schema>;
 
 // ── WhatsApp login section ────────────────────────────────────────────────────
 
-type WaState = 'idle' | 'sending' | 'sent' | 'error';
+type WaState = 'idle' | 'sending' | 'waiting' | 'error';
 
-function WhatsAppLogin({ identifier }: { identifier: string }) {
-  const [waState, setWaState] = useState<WaState>('idle');
-  const [waError, setWaError] = useState('');
+function WhatsAppLogin({
+  identifier,
+  onApproved,
+}: {
+  identifier: string;
+  onApproved: (token: string, customer: Customer) => void;
+}) {
+  const [waState, setWaState]   = useState<WaState>('idle');
+  const [waError, setWaError]   = useState('');
+  const [sessionId, setSession] = useState<string | null>(null);
 
-  const sendLink = async () => {
+  const sendLink = useCallback(async () => {
     if (!identifier.trim()) {
       setWaError('Enter your email or mobile number above first.');
       setWaState('error');
@@ -33,24 +41,37 @@ function WhatsAppLogin({ identifier }: { identifier: string }) {
     setWaState('sending');
     setWaError('');
     try {
-      await apiClient.post('/auth/send-login-link', { identifier: identifier.trim() });
-      setWaState('sent');
+      const res = await apiClient.post<{ data: { session_id: string } }>(
+        '/auth/send-login-link',
+        { identifier: identifier.trim() },
+      );
+      setSession(res.data.data.session_id);
+      setWaState('waiting');
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })
         ?.response?.data?.error?.message ?? 'Could not send link. Please try again.';
       setWaError(msg);
       setWaState('error');
     }
-  };
+  }, [identifier]);
 
-  if (waState === 'sent') {
+  const handleApproved = useCallback((payload: unknown) => {
+    const p = payload as { token?: string; customer?: Customer };
+    if (p?.token && p?.customer) {
+      onApproved(p.token, p.customer);
+    }
+  }, [onApproved]);
+
+  if (waState === 'waiting' && sessionId) {
     return (
-      <div
-        className="rounded-xl px-4 py-3 text-sm text-center"
-        style={{ background: 'rgba(39,174,96,0.08)', color: 'var(--kb-success)' }}
-      >
-        <span className="font-semibold">Link sent!</span> Check WhatsApp and tap the button to sign in.
-      </div>
+      <PairingWaiter
+        sessionId={sessionId}
+        onApproved={handleApproved}
+        onResend={() => { setSession(null); setWaState('idle'); }}
+        title="Check WhatsApp on your phone"
+        subtitle="We've sent you a tap-to-sign-in link. Once you tap it on your phone, this page will sign you in automatically."
+        resendLabel="Send a new link"
+      />
     );
   }
 
@@ -69,7 +90,6 @@ function WhatsAppLogin({ identifier }: { identifier: string }) {
         className="w-full py-3 rounded-xl text-sm font-semibold border-2 flex items-center justify-center gap-2 transition-opacity disabled:opacity-60"
         style={{ borderColor: '#25D366', color: '#25D366' }}
       >
-        {/* WhatsApp icon */}
         <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" aria-hidden>
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
         </svg>
@@ -86,11 +106,11 @@ function WhatsAppLogin({ identifier }: { identifier: string }) {
 // ── Login page ────────────────────────────────────────────────────────────────
 
 function LoginPage() {
-  const router       = useRouter();
-  const searchParams = useSearchParams();
-  const redirect     = searchParams.get('redirect') ?? '/account';
-  const { login }    = useCustomerAuth();
-  const [apiError, setApiError] = useState<string | null>(null);
+  const router                       = useRouter();
+  const searchParams                 = useSearchParams();
+  const redirect                     = searchParams.get('redirect') ?? '/account';
+  const { login, loginWithToken }    = useCustomerAuth();
+  const [apiError, setApiError]      = useState<string | null>(null);
 
   const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -108,6 +128,11 @@ function LoginPage() {
       setApiError(axiosErr?.response?.data?.error?.message ?? 'Invalid credentials');
     }
   };
+
+  const handleWhatsAppApproved = useCallback((token: string, customer: Customer) => {
+    loginWithToken(token, customer);
+    router.push(redirect);
+  }, [loginWithToken, router, redirect]);
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--kb-cream)' }}>
@@ -167,7 +192,7 @@ function LoginPage() {
         </form>
 
         {/* WhatsApp passwordless login */}
-        <WhatsAppLogin identifier={identifierValue} />
+        <WhatsAppLogin identifier={identifierValue} onApproved={handleWhatsAppApproved} />
 
         <div className="text-center space-y-2">
           <p className="text-xs" style={{ color: 'var(--kb-muted)' }}>

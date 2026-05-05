@@ -18,10 +18,19 @@ interface AuthState {
   isLoading: boolean;
 }
 
+interface RegisterResult {
+  customer:           Customer;
+  verify_session_id:  string | null;
+}
+
 interface AuthContextValue extends AuthState {
-  login:    (identifier: string, password: string) => Promise<void>;
-  register: (name: string, email: string, phone: string, password: string) => Promise<void>;
-  logout:   () => void;
+  login:           (identifier: string, password: string) => Promise<void>;
+  register:        (name: string, email: string, phone: string, password: string) => Promise<RegisterResult>;
+  /** Apply a token + customer obtained out-of-band (e.g. WhatsApp magic link). */
+  loginWithToken:  (token: string, customer: Customer) => void;
+  /** Refetch the customer record (e.g. after phone is verified on another device). */
+  refreshCustomer: () => Promise<void>;
+  logout:          () => void;
 }
 
 // ── Context ────────────────────────────────────────────────────────────────────
@@ -108,16 +117,40 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     notifyNativeApp('USER_LOGIN', token);
   }, [storeToken]);
 
-  const register = useCallback(async (name: string, email: string, phone: string, password: string) => {
-    const res = await apiClient.post<{ data: { token: string; customer: Customer } }>(
+  const register = useCallback(async (name: string, email: string, phone: string, password: string): Promise<RegisterResult> => {
+    const res = await apiClient.post<{ data: {
+      token:              string;
+      customer:           Customer;
+      verify_session_id?: string | null;
+    }}>(
       '/auth/register',
       { name, email, phone, password },
     );
-    const { token, customer } = res.data.data;
+    const { token, customer, verify_session_id } = res.data.data;
+    storeToken(token);
+    setState({ customer, token, isLoading: false });
+    notifyNativeApp('USER_LOGIN', token);
+    return { customer, verify_session_id: verify_session_id ?? null };
+  }, [storeToken]);
+
+  const loginWithToken = useCallback((token: string, customer: Customer) => {
     storeToken(token);
     setState({ customer, token, isLoading: false });
     notifyNativeApp('USER_LOGIN', token);
   }, [storeToken]);
+
+  const refreshCustomer = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+    try {
+      const res = await apiClient.get<{ data: Customer }>('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setState(prev => ({ ...prev, customer: res.data.data }));
+    } catch {
+      // network error — leave existing state alone
+    }
+  }, []);
 
   const logout = useCallback(() => {
     const currentToken = localStorage.getItem(TOKEN_KEY);
@@ -128,7 +161,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout }}>
+    <AuthContext.Provider value={{ ...state, login, register, loginWithToken, refreshCustomer, logout }}>
       {children}
     </AuthContext.Provider>
   );

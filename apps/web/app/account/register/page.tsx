@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { useCustomerAuth } from '@/contexts/AuthContext';
 import { apiClient } from '@/lib/api';
 import PhoneInput from '@/components/ui/PhoneInput';
+import PairingWaiter from '@/components/auth/PairingWaiter';
 
 const schema = z.object({
   name:            z.string().min(1, 'Name is required').max(100),
@@ -26,14 +27,16 @@ type FormValues = z.infer<typeof schema>;
 function RegisterPage() {
   const router       = useRouter();
   const searchParams = useSearchParams();
-  const { register: registerCustomer } = useCustomerAuth();
+  const { register: registerCustomer, refreshCustomer } = useCustomerAuth();
 
   const prefillEmail  = searchParams.get('email')  ?? '';
   const linkedOrder   = searchParams.get('order')  ?? '';
-  const [apiError, setApiError]   = useState<string | null>(null);
-  const [linkToast, setLinkToast] = useState(false);
+  const [apiError, setApiError]       = useState<string | null>(null);
+  const [linkToast, setLinkToast]     = useState(false);
+  const [verifySession, setVerifySession] = useState<string | null>(null);
+  const [customerName, setCustomerName]   = useState('');
 
-  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
+  const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: prefillEmail },
   });
@@ -46,7 +49,7 @@ function RegisterPage() {
     setApiError(null);
     try {
       const emailVal = values.email?.trim() || '';
-      await registerCustomer(values.name, emailVal, values.phone, values.password);
+      const result   = await registerCustomer(values.name, emailVal, values.phone, values.password);
 
       // Link the guest order if we came from the confirmation page
       if (linkedOrder && emailVal) {
@@ -56,12 +59,37 @@ function RegisterPage() {
         } catch {}
       }
 
-      router.push('/account');
+      // Show the pairing waiter so the user can verify their phone on WhatsApp
+      // and the laptop completes automatically. If the API didn't issue a session
+      // (no phone, WhatsApp send failed, etc), skip straight to /account.
+      if (result.verify_session_id) {
+        setCustomerName(result.customer.name);
+        setVerifySession(result.verify_session_id);
+      } else {
+        router.push('/account');
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: { message?: string } } } };
       setApiError(axiosErr?.response?.data?.error?.message ?? 'Registration failed. Please try again.');
     }
   };
+
+  const handleVerifyApproved = useCallback(async () => {
+    // Phone is now verified — refresh the customer so phone_verified flips in UI
+    await refreshCustomer();
+    router.push('/account');
+  }, [refreshCustomer, router]);
+
+  const handleResendVerification = useCallback(async () => {
+    try {
+      const res = await apiClient.post<{ data: { session_id: string } }>('/auth/send-verification', {});
+      setVerifySession(res.data.data.session_id);
+    } catch {
+      // surface a toast or noop — user can also click "verify later"
+    }
+  }, []);
+
+  const phoneValue = watch('phone') ?? '';
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--kb-cream)' }}>
@@ -76,9 +104,25 @@ function RegisterPage() {
           <Link href="/" className="font-display text-2xl font-semibold" style={{ color: 'var(--kb-teal)' }}>
             Krishna's Bliss
           </Link>
-          <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>Create your account</p>
+          <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>
+            {verifySession ? `Welcome, ${customerName}` : 'Create your account'}
+          </p>
         </div>
 
+        {verifySession && (
+          <PairingWaiter
+            sessionId={verifySession}
+            onApproved={handleVerifyApproved}
+            onResend={handleResendVerification}
+            onSkip={() => router.push('/account')}
+            title={`We sent a verification link to +91 ${phoneValue}`}
+            subtitle="Tap the link in your WhatsApp message to confirm your number — this page will continue automatically."
+            resendLabel="Send a new link"
+            skipLabel="Skip for now — verify later from my account"
+          />
+        )}
+
+        {!verifySession && (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {[
             { name: 'name',  label: 'Full Name',       type: 'text',     placeholder: 'Priya Sharma',   autoComplete: 'name' },
@@ -158,13 +202,16 @@ function RegisterPage() {
             {isSubmitting ? 'Creating account…' : 'Create Account'}
           </button>
         </form>
+        )}
 
+        {!verifySession && (
         <p className="text-sm text-center" style={{ color: 'var(--kb-muted)' }}>
           Already have an account?{' '}
           <Link href="/account/login" className="font-medium underline" style={{ color: 'var(--kb-teal)' }}>
             Sign in
           </Link>
         </p>
+        )}
       </div>
     </div>
   );
