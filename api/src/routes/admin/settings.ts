@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
+import { invalidateRateLimitCache } from '../../services/otp';
+
+const RATE_LIMIT_KEYS = new Set(['otp_rate_limit_max', 'otp_rate_limit_window_minutes']);
 
 const router = Router();
 
@@ -57,8 +60,13 @@ router.put('/', requireAuth, async (req, res, next) => {
       client.release();
     }
 
-    // Return updated settings
+    // Invalidate any in-process caches whose keys changed
     const keys = Object.keys(updates);
+    if (keys.some((k) => RATE_LIMIT_KEYS.has(k))) {
+      invalidateRateLimitCache();
+    }
+
+    // Return updated settings
     const { rows } = await pool.query<{ key: string; value: unknown }>(
       `SELECT key, value FROM settings WHERE key = ANY($1)`,
       [keys]

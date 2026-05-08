@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import { api } from '../../lib/api';
 
-type Tab = 'store' | 'shipping' | 'exchange' | 'notifications' | 'payments' | 'mobile';
+type Tab = 'store' | 'shipping' | 'exchange' | 'notifications' | 'payments' | 'mobile' | 'security';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -360,6 +360,78 @@ function MobileAppTab({ settings }: { settings: Record<string, unknown> }) {
   );
 }
 
+// ── Security settings ─────────────────────────────────────────────────────────
+
+function SecurityTab({ settings }: { settings: Record<string, unknown> }) {
+  const queryClient = useQueryClient();
+  const [otpMax, setOtpMax]       = useState(Number(settings.otp_rate_limit_max ?? 10));
+  const [otpWindow, setOtpWindow] = useState(Number(settings.otp_rate_limit_window_minutes ?? 15));
+
+  const saveMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => api.put('/admin/settings', data),
+    onSuccess: () => {
+      toast.success('Security settings saved');
+      queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+    },
+    onError: () => toast.error('Save failed'),
+  });
+
+  return (
+    <div className="space-y-5 max-w-lg">
+      <div>
+        <h3 className="text-sm font-semibold text-kb-charcoal mb-1">WhatsApp OTP rate limit</h3>
+        <p className="text-xs text-kb-muted mb-4">
+          Limits how many verification or login links can be requested per phone
+          number within a sliding window. Higher values are friendlier during
+          QA; tighter values protect against abuse in production.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <Field
+            label="Max attempts"
+            hint="Number of links per phone allowed in the window"
+          >
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={otpMax}
+              onChange={(e) => setOtpMax(Number(e.target.value))}
+              className={inputCls}
+            />
+          </Field>
+          <Field
+            label="Window (minutes)"
+            hint="Sliding window the limit applies over"
+          >
+            <input
+              type="number"
+              min={1}
+              max={1440}
+              value={otpWindow}
+              onChange={(e) => setOtpWindow(Number(e.target.value))}
+              className={inputCls}
+            />
+          </Field>
+        </div>
+      </div>
+      <div className="pt-2">
+        <button
+          onClick={() =>
+            saveMutation.mutate({
+              otp_rate_limit_max:            otpMax,
+              otp_rate_limit_window_minutes: otpWindow,
+            })
+          }
+          disabled={saveMutation.isPending}
+          className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
+        >
+          {saveMutation.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -369,6 +441,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'payments',      label: 'Payments' },
   { id: 'mobile',        label: 'Mobile App' },
+  { id: 'security',      label: 'Security' },
 ];
 
 export default function SettingsPage() {
@@ -415,6 +488,7 @@ export default function SettingsPage() {
           {activeTab === 'notifications' && <NotificationsTab settings={settings} />}
           {activeTab === 'payments'      && <PaymentsTab settings={settings} />}
           {activeTab === 'mobile'        && <MobileAppTab settings={settings} />}
+          {activeTab === 'security'      && <SecurityTab settings={settings} />}
         </>
       )}
     </AdminLayout>

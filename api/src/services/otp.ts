@@ -18,10 +18,47 @@
 import crypto from 'crypto';
 import pool from '../db/client';
 
-const TOKEN_EXPIRY_MINUTES         = 30; // phone verification
-const LOGIN_TOKEN_EXPIRY_MINUTES   = 15; // login links — shorter for security
-const RATE_LIMIT_WINDOW_MINUTES = 15;
-const RATE_LIMIT_MAX          = 3;
+const TOKEN_EXPIRY_MINUTES       = 30; // phone verification
+const LOGIN_TOKEN_EXPIRY_MINUTES = 15; // login links — shorter for security
+
+// Defaults applied when no admin override is present in the settings table.
+const DEFAULT_RATE_LIMIT_WINDOW_MINUTES = 15;
+const DEFAULT_RATE_LIMIT_MAX            = 10;
+
+// Tiny in-process cache so we don't hit the settings table on every send.
+// 60s is short enough that admin changes propagate quickly during testing.
+interface RateLimitCfg { window: number; max: number }
+let cachedCfg:        RateLimitCfg | null = null;
+let cachedCfgExpires = 0;
+
+async function getRateLimitConfig(): Promise<RateLimitCfg> {
+  const now = Date.now();
+  if (cachedCfg && now < cachedCfgExpires) return cachedCfg;
+
+  const { rows } = await pool.query<{ key: string; value: unknown }>(
+    `SELECT key, value FROM settings
+     WHERE key IN ('otp_rate_limit_max','otp_rate_limit_window_minutes')`,
+  );
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+
+  const parse = (v: unknown, fallback: number): number => {
+    const n = typeof v === 'number' ? v : parseInt(String(v), 10);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+
+  cachedCfg = {
+    window: parse(map.get('otp_rate_limit_window_minutes'), DEFAULT_RATE_LIMIT_WINDOW_MINUTES),
+    max:    parse(map.get('otp_rate_limit_max'),            DEFAULT_RATE_LIMIT_MAX),
+  };
+  cachedCfgExpires = now + 60_000;
+  return cachedCfg;
+}
+
+/** Forces a refresh on the next call — used by the admin settings PUT handler. */
+export function invalidateRateLimitCache(): void {
+  cachedCfg = null;
+  cachedCfgExpires = 0;
+}
 
 export type TokenPurpose = 'login' | 'verify';
 
@@ -32,14 +69,16 @@ function hashToken(token: string): string {
 async function createToken(phone: string, expiryMinutes: number, purpose: TokenPurpose): Promise<string> {
   const normalPhone = phone.replace(/\D/g, '').slice(-10);
 
-  // Rate limit
+  // Rate limit — window and max come from admin-configurable settings (cached 60s).
+  // Pass window as a parameter rather than string-interpolating it (defence-in-depth).
+  const { window: windowMins, max: maxAttempts } = await getRateLimitConfig();
   const { rows: [{ count }] } = await pool.query<{ count: string }>(
     `SELECT COUNT(*)::text AS count FROM phone_otps
      WHERE phone = $1
-       AND created_at > NOW() - INTERVAL '${RATE_LIMIT_WINDOW_MINUTES} minutes'`,
-    [normalPhone],
+       AND created_at > NOW() - ($2::int * INTERVAL '1 minute')`,
+    [normalPhone, windowMins],
   );
-  if (parseInt(count, 10) >= RATE_LIMIT_MAX) {
+  if (parseInt(count, 10) >= maxAttempts) {
     throw new Error('RATE_LIMITED');
   }
 
