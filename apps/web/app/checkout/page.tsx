@@ -50,13 +50,13 @@ function loadRazorpay(): Promise<void> {
 // ── Zod schema ─────────────────────────────────────────────────────────────────
 
 const INDIAN_STATES = [
-  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat',
-  'Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh',
-  'Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan',
-  'Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal',
-  'Andaman and Nicobar Islands','Chandigarh',
-  'Dadra and Nagar Haveli and Daman and Diu',
-  'Delhi','Jammu and Kashmir','Ladakh','Lakshadweep','Puducherry',
+  'Andaman and Nicobar Islands','Andhra Pradesh','Arunachal Pradesh','Assam',
+  'Bihar','Chandigarh','Chhattisgarh','Dadra and Nagar Haveli and Daman and Diu',
+  'Delhi','Goa','Gujarat','Haryana','Himachal Pradesh','Jammu and Kashmir',
+  'Jharkhand','Karnataka','Kerala','Ladakh','Lakshadweep','Madhya Pradesh',
+  'Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Puducherry',
+  'Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura',
+  'Uttar Pradesh','Uttarakhand','West Bengal',
 ] as const;
 
 const schema = z.object({
@@ -351,7 +351,21 @@ export default function CheckoutPage() {
 
         <div className="lg:grid lg:grid-cols-[1fr_380px] gap-8 items-start">
           {/* ── LEFT: Form ── */}
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form
+            onSubmit={handleSubmit(onSubmit, (errs) => {
+              // Surface a toast and scroll to the first invalid field — otherwise
+              // the user clicks "Proceed to Payment" and sees nothing happen
+              // (validation errors render inline only).
+              const firstKey = Object.keys(errs)[0] as keyof FormValues | undefined;
+              if (firstKey) {
+                showToast('Please fix the highlighted fields and try again.');
+                const el = document.querySelector(`[name="${firstKey}"]`) as HTMLElement | null;
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el?.focus({ preventScroll: true });
+              }
+            })}
+            className="space-y-6"
+          >
 
             {/* Section 1 — Contact (guests only) */}
             {!isLoggedIn && (
