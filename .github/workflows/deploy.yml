@@ -41,6 +41,11 @@ name: Deploy to Production
 
 on:
   workflow_dispatch:
+    inputs:
+      warm_isr:
+        description: 'Warm ISR cache after deploy (smoke-tests pages, adds ~60–90s)'
+        type: boolean
+        default: false
 
 # Prevent concurrent deploys — queue them, never cancel an in-flight deploy.
 concurrency:
@@ -258,8 +263,13 @@ jobs:
             pm2 list
           ENDSSH
 
-      # ── 11. Warm ISR cache ────────────────────────────────────────────────────
+      # ── 11. Warm ISR cache (opt-in via workflow_dispatch input) ───────────────
+      # Skipped by default since image processing happens at upload, so cold
+      # SSR is now ~1s — acceptable for the first visitor. Enable when you
+      # want the smoke test or after schema/template changes that need
+      # re-rendering ahead of real traffic.
       - name: Warm ISR pages
+        if: ${{ inputs.warm_isr == true }}
         run: |
           sleep 10
           SITE="${{ secrets.APP_URL }}"
@@ -267,7 +277,7 @@ jobs:
           warm() {
             local path="$1"
             local status
-            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${SITE}${path}" || echo "err")
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${SITE}${path}" || echo "err")
             echo "  ${path} → ${status}"
           }
 
