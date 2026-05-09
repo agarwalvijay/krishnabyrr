@@ -464,6 +464,124 @@ function daysUntil(seconds: number | undefined): string {
   return `${Math.round(ms / 86_400_000)}d remaining`;
 }
 
+// External links to the Meta dashboards we need to interact with regularly.
+// Grouped by what you're trying to do, since Meta scatters these across at
+// least three different sub-domains and renames the navigation every quarter.
+const META_LINKS: Array<{
+  section: string;
+  hint:    string;
+  links:   Array<{ label: string; desc: string; url: string }>;
+}> = [
+  {
+    section: 'Day-to-day',
+    hint:    'Usage, costs, and what Meta will bill you',
+    links: [
+      {
+        label: 'Usage & insights',
+        desc:  'Conversations sent, delivery rates, template usage',
+        url:   'https://business.facebook.com/wa/manage/insights/',
+      },
+      {
+        label: 'Billing & charges',
+        desc:  'Outstanding balance, monthly statements (PDF)',
+        url:   'https://business.facebook.com/billing_hub/payment_activity',
+      },
+      {
+        label: 'Payment methods',
+        desc:  'Cards, UPI, spending limits',
+        url:   'https://business.facebook.com/billing_hub/payment_methods',
+      },
+    ],
+  },
+  {
+    section: 'Setup & maintenance',
+    hint:    'When you need to add a template, change webhook, or refresh the token',
+    links: [
+      {
+        label: 'Message templates',
+        desc:  'Submit/edit kb_verify_phone, kb_order_conf, kb_owner_new_order, etc.',
+        url:   'https://business.facebook.com/wa/manage/message-templates/',
+      },
+      {
+        label: 'Phone numbers',
+        desc:  'Display name, business profile, two-step verification PIN',
+        url:   'https://business.facebook.com/wa/manage/phone-numbers/',
+      },
+      {
+        label: 'App dashboard (ID, Secret, temp token)',
+        desc:  'Generate fresh 24h temp token, find App ID + App Secret, configure webhook',
+        url:   'https://developers.facebook.com/apps/',
+      },
+    ],
+  },
+  {
+    section: 'Account health',
+    hint:    'When something is broken at the account level',
+    links: [
+      {
+        label: 'Account quality',
+        desc:  'Restrictions, appeals, policy violations',
+        url:   'https://business.facebook.com/accountquality',
+      },
+      {
+        label: 'Business verification',
+        desc:  'GST / CIN / Aadhar verification status',
+        url:   'https://business.facebook.com/settings/security',
+      },
+      {
+        label: 'Support cases',
+        desc:  'Track open support tickets and appeal responses',
+        url:   'https://business.facebook.com/business-support-home',
+      },
+    ],
+  },
+];
+
+function MetaQuickLinks() {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-kb-cream/40 p-4 space-y-5">
+      <div>
+        <h3 className="text-sm font-semibold text-kb-charcoal">Meta dashboards — quick links</h3>
+        <p className="text-xs text-kb-muted mt-0.5">
+          Bookmarks for the pages you'll actually visit. Open in a new tab.
+        </p>
+      </div>
+      {META_LINKS.map((group) => (
+        <div key={group.section}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-kb-muted mb-1.5">
+            {group.section} <span className="font-normal normal-case tracking-normal opacity-70">— {group.hint}</span>
+          </p>
+          <div className="space-y-1.5">
+            {group.links.map((link) => (
+              <a
+                key={link.url}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start gap-2 px-3 py-2 rounded-lg bg-white hover:bg-teal-50/50 border border-gray-100 hover:border-kb-teal/40 transition-colors group"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-medium text-kb-charcoal group-hover:text-kb-teal">
+                      {link.label}
+                    </span>
+                    {/* External-link glyph */}
+                    <svg className="w-3 h-3 text-kb-muted group-hover:text-kb-teal flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </div>
+                  <p className="text-xs text-kb-muted mt-0.5">{link.desc}</p>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function WhatsAppTab() {
   const queryClient = useQueryClient();
   const [tempToken, setTempToken] = useState('');
@@ -507,6 +625,8 @@ function WhatsAppTab() {
 
   return (
     <div className="space-y-6 max-w-2xl">
+      <MetaQuickLinks />
+
       <div>
         <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Current token</h3>
         <p className="text-xs text-kb-muted mb-4">
