@@ -625,8 +625,6 @@ function WhatsAppTab() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <MetaQuickLinks />
-
       <div>
         <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Current token</h3>
         <p className="text-xs text-kb-muted mb-4">
@@ -743,6 +741,8 @@ function WhatsAppTab() {
           </button>
         </div>
       </div>
+
+      <MetaQuickLinks />
     </div>
   );
 }
