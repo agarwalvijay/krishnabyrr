@@ -1,0 +1,137 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# KrishnaByrr — Refresh Environment Variables
+#
+# Manual-only workflow. Rewrites api/.env on the GCP VM from current GitHub
+# Secrets and reloads pm2 (with --update-env so the new vars take effect
+# immediately). Does NOT rebuild, rsync code, or run migrations — use the
+# main Deploy workflow for code changes.
+#
+# Use this when:
+#   - You rotated a secret (e.g. WHATSAPP_ACCESS_TOKEN, JWT_SECRET) and
+#     want it live in production within ~30 seconds
+#   - You added a new secret that the running code already reads from env
+#   - You need to disable a feature by clearing its secret
+#
+# Required GitHub Secrets: same list as the main Deploy workflow.
+# See .github/workflows/deploy.yml for the documented secret reference.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Refresh Environment Variables
+
+on:
+  workflow_dispatch:
+
+# Don't run an env refresh while a real deploy is in flight — they'd race.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh & Reload
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+
+      # ── 1. SSH ────────────────────────────────────────────────────────────────
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.GCP_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$(echo '${{ secrets.GCP_HOST }}' | cut -d@ -f2)" \
+            >> ~/.ssh/known_hosts 2>/dev/null
+
+      # ── 2. Write api/.env on server ───────────────────────────────────────────
+      # Same encoding approach as the main deploy workflow — base64 round-trip
+      # handles multi-line values (FIREBASE_PRIVATE_KEY) safely. GitHub masks
+      # the secrets in logs.
+      - name: Write API .env on server
+        env:
+          DATABASE_URL:             ${{ secrets.DATABASE_URL }}
+          REDIS_URL:                ${{ secrets.REDIS_URL }}
+          JWT_SECRET:               ${{ secrets.JWT_SECRET }}
+          APP_URL:                  ${{ secrets.APP_URL }}
+          CORS_ORIGINS:             ${{ secrets.CORS_ORIGINS }}
+          WEB_ORIGIN:               ${{ secrets.WEB_ORIGIN }}
+          REVALIDATE_SECRET:        ${{ secrets.REVALIDATE_SECRET }}
+          OWNER_PHONE:              ${{ secrets.OWNER_PHONE }}
+          RAZORPAY_KEY_ID:          ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET:      ${{ secrets.RAZORPAY_KEY_SECRET }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_ACCESS_TOKEN:    ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          WHATSAPP_WEBHOOK_SECRET:  ${{ secrets.WHATSAPP_WEBHOOK_SECRET }}
+          WHATSAPP_APP_ID:          ${{ secrets.WHATSAPP_APP_ID }}
+          WHATSAPP_APP_SECRET:      ${{ secrets.WHATSAPP_APP_SECRET }}
+          FIREBASE_PROJECT_ID:      ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL:    ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:     ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          PHONEPE_MERCHANT_ID:      ${{ secrets.PHONEPE_MERCHANT_ID }}
+          PHONEPE_SALT_KEY:         ${{ secrets.PHONEPE_SALT_KEY }}
+          PHONEPE_SALT_INDEX:       ${{ secrets.PHONEPE_SALT_INDEX }}
+          PHONEPE_MODE:             ${{ secrets.PHONEPE_MODE }}
+        run: |
+          python3 - <<'PY'
+          import os, base64
+
+          keys = [
+            'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET',
+            'APP_URL', 'CORS_ORIGINS', 'WEB_ORIGIN', 'REVALIDATE_SECRET',
+            'OWNER_PHONE',
+            'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET',
+            'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_WEBHOOK_SECRET',
+            'WHATSAPP_APP_ID', 'WHATSAPP_APP_SECRET',
+            'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY',
+            'PHONEPE_MERCHANT_ID', 'PHONEPE_SALT_KEY', 'PHONEPE_SALT_INDEX', 'PHONEPE_MODE',
+          ]
+
+          lines = ['NODE_ENV=production', 'PORT=3001']
+          for k in keys:
+            v = os.environ.get(k, '').strip()
+            if v:
+              lines.append(f'{k}={v}')
+
+          encoded = base64.b64encode(('\n'.join(lines) + '\n').encode()).decode()
+          with open('/tmp/api_env_b64', 'w') as f:
+            f.write(encoded)
+          PY
+
+          # Server-side directory should already exist from a prior deploy,
+          # but mkdir -p is cheap insurance.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "${{ secrets.GCP_HOST }}" \
+            "mkdir -p ~/krishnabyrr/api"
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "${{ secrets.GCP_HOST }}" \
+            "base64 -d > ~/krishnabyrr/api/.env" \
+            < /tmp/api_env_b64
+
+      # ── 3. Reload pm2 with the new env ────────────────────────────────────────
+      - name: Reload pm2
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "${{ secrets.GCP_HOST }}" bash <<'ENDSSH'
+            set -e
+            cd ~/krishnabyrr
+
+            # Export REVALIDATE_SECRET so ecosystem.config.js can pass it to kb-web
+            REVALIDATE_SECRET=$(grep '^REVALIDATE_SECRET=' api/.env | cut -d= -f2- | tr -d '\r')
+            export REVALIDATE_SECRET
+
+            # --update-env forces pm2 to re-read env vars for each managed app.
+            # kb-api uses dotenv, so it reads api/.env on next startup; restart
+            # explicitly to ensure the new file is picked up.
+            pm2 reload deploy/ecosystem.config.js --update-env
+            pm2 list
+          ENDSSH
+
+      # ── 4. Smoke check ────────────────────────────────────────────────────────
+      - name: Verify API still healthy
+        run: |
+          sleep 3
+          SITE="${{ secrets.APP_URL }}"
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${SITE}/api/health" || echo "err")
+          echo "  /api/health → ${status}"
+          if [ "${status}" != "200" ]; then
+            echo "::warning::API health check returned ${status} — check pm2 logs on the server"
+            exit 1
+          fi
