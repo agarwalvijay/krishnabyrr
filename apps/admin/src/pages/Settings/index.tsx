@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import { api } from '../../lib/api';
 
-type Tab = 'store' | 'shipping' | 'exchange' | 'notifications' | 'payments' | 'mobile' | 'security';
+type Tab = 'store' | 'shipping' | 'exchange' | 'notifications' | 'payments' | 'mobile' | 'security' | 'whatsapp';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -432,6 +432,201 @@ function SecurityTab({ settings }: { settings: Record<string, unknown> }) {
   );
 }
 
+// ── WhatsApp token settings ───────────────────────────────────────────────────
+
+interface TokenStatus {
+  configured:        boolean;
+  source?:           'database' | 'env' | 'none';
+  stored_expires_at: string | null;
+  meta_debug?:       {
+    is_valid?:    boolean;
+    expires_at?:  number;       // unix seconds, 0 = never
+    data_access_expires_at?: number;
+    scopes?:      string[];
+    application?: string;
+    error?:       { message: string; code: number };
+  } | null;
+  message?:          string;
+}
+
+function fmtUnix(seconds: number | undefined): string {
+  if (!seconds) return '—';
+  if (seconds === 0)  return 'Never';
+  return new Date(seconds * 1000).toLocaleString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function daysUntil(seconds: number | undefined): string {
+  if (!seconds || seconds === 0) return '';
+  const ms = seconds * 1000 - Date.now();
+  if (ms <= 0) return 'expired';
+  return `${Math.round(ms / 86_400_000)}d remaining`;
+}
+
+function WhatsAppTab() {
+  const queryClient = useQueryClient();
+  const [tempToken, setTempToken] = useState('');
+
+  const { data, isLoading, refetch } = useQuery<{ data: TokenStatus }>({
+    queryKey: ['admin-whatsapp-token'],
+    queryFn:  () => api.get('/admin/whatsapp/token').then((r) => r.data),
+  });
+
+  const seedMutation = useMutation({
+    mutationFn: (token: string) => api.post('/admin/whatsapp/token', { token }),
+    onSuccess: () => {
+      toast.success('Token exchanged and stored');
+      setTempToken('');
+      queryClient.invalidateQueries({ queryKey: ['admin-whatsapp-token'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message ?? 'Exchange failed';
+      toast.error(msg);
+    },
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: () => api.post('/admin/whatsapp/token/refresh'),
+    onSuccess:  () => {
+      toast.success('Token refreshed — extended by another 60 days');
+      queryClient.invalidateQueries({ queryKey: ['admin-whatsapp-token'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message ?? 'Refresh failed';
+      toast.error(msg);
+    },
+  });
+
+  const status = data?.data;
+  const debug  = status?.meta_debug ?? null;
+  const isValid = debug?.is_valid === true;
+  const tokenExp  = debug?.expires_at;
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Current token</h3>
+        <p className="text-xs text-kb-muted mb-4">
+          Live status of the WhatsApp Cloud API access token used by the server.
+          The 24-hour temp tokens Meta issues from the developer dashboard are
+          exchanged for 60-day long-lived tokens and auto-renewed before they expire.
+        </p>
+
+        {isLoading && (
+          <div className="flex justify-center py-6">
+            <div className="w-6 h-6 border-4 border-kb-teal border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {!isLoading && status && (
+          <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-kb-muted">Configured</span>
+              <span className={status.configured ? 'text-green-700' : 'text-red-600'}>
+                {status.configured ? 'Yes' : 'No'}
+              </span>
+            </div>
+            {status.configured && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-kb-muted">Source</span>
+                  <span className="text-kb-charcoal">
+                    {status.source === 'database'
+                      ? 'Database (managed)'
+                      : status.source === 'env'
+                      ? 'Environment variable (fallback)'
+                      : '—'}
+                  </span>
+                </div>
+                {debug && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-kb-muted">Valid (per Meta)</span>
+                      <span className={isValid ? 'text-green-700' : 'text-red-600'}>
+                        {isValid ? '✓ Valid' : '✕ Invalid'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-kb-muted">Expires</span>
+                      <span className="text-kb-charcoal">
+                        {fmtUnix(tokenExp)}
+                        {tokenExp ? <span className="text-kb-muted ml-2">({daysUntil(tokenExp)})</span> : null}
+                      </span>
+                    </div>
+                    {debug.scopes && debug.scopes.length > 0 && (
+                      <div className="flex justify-between gap-4">
+                        <span className="text-kb-muted whitespace-nowrap">Scopes</span>
+                        <span className="text-kb-charcoal text-right text-xs font-mono">
+                          {debug.scopes.join(', ')}
+                        </span>
+                      </div>
+                    )}
+                    {debug.error && (
+                      <div className="mt-2 text-xs text-red-600 border-t border-gray-100 pt-2">
+                        Meta says: {debug.error.code} — {debug.error.message}
+                      </div>
+                    )}
+                  </>
+                )}
+                {status.message && (
+                  <p className="text-xs text-kb-muted border-t border-gray-100 pt-2 mt-2">{status.message}</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => refetch()}
+            className="text-xs underline text-kb-teal"
+          >
+            Re-check status
+          </button>
+          {status?.source === 'database' && (
+            <button
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending}
+              className="text-xs underline text-kb-teal disabled:opacity-50"
+            >
+              {refreshMutation.isPending ? 'Refreshing…' : 'Force refresh now'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Paste a fresh temp token</h3>
+        <p className="text-xs text-kb-muted mb-4">
+          When the current token is dying or has expired:
+          go to Meta Developers → WhatsApp → API Setup → click ↻ next to the
+          <strong> Temporary access token</strong>, then paste it here. The server
+          will immediately exchange it for a 60-day long-lived token.
+        </p>
+        <textarea
+          value={tempToken}
+          onChange={(e) => setTempToken(e.target.value)}
+          placeholder="EAAB..."
+          rows={3}
+          className={`${inputCls} font-mono text-xs`}
+        />
+        <div className="mt-3">
+          <button
+            onClick={() => seedMutation.mutate(tempToken)}
+            disabled={seedMutation.isPending || !tempToken.trim()}
+            className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
+          >
+            {seedMutation.isPending ? 'Exchanging…' : 'Exchange & Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -441,6 +636,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'payments',      label: 'Payments' },
   { id: 'mobile',        label: 'Mobile App' },
+  { id: 'whatsapp',      label: 'WhatsApp' },
   { id: 'security',      label: 'Security' },
 ];
 
@@ -488,6 +684,7 @@ export default function SettingsPage() {
           {activeTab === 'notifications' && <NotificationsTab settings={settings} />}
           {activeTab === 'payments'      && <PaymentsTab settings={settings} />}
           {activeTab === 'mobile'        && <MobileAppTab settings={settings} />}
+          {activeTab === 'whatsapp'      && <WhatsAppTab />}
           {activeTab === 'security'      && <SecurityTab settings={settings} />}
         </>
       )}

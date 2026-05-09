@@ -14,6 +14,7 @@ import adminRevalidateRouter from './revalidate';
 import adminCustomersRouter from './customers';
 import adminDashboardRouter from './dashboard';
 import adminBadgesRouter from './badges';
+import adminWhatsappRouter from './whatsapp';
 
 const router = Router();
 
@@ -38,7 +39,8 @@ router.use('/coupons',   requireAuth, requireRole('order_manager'), adminCoupons
 router.use('/dashboard',        requireAuth, adminDashboardRouter);
 router.use('/revalidate-cache', requireAuth, adminRevalidateRouter);
 
-// Site settings — only super_admin (no role passes the empty allow-list)
+// Site settings + WhatsApp token — only super_admin (no role passes the empty allow-list)
 router.use('/settings', requireAuth, requireRole(), adminSettingsRouter);
+router.use('/whatsapp', requireAuth, requireRole(), adminWhatsappRouter);
 
 export default router;

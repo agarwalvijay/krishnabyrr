@@ -120,6 +120,7 @@
  */
 
 import pool from '../db/client';
+import { getAccessToken, invalidateCache as invalidateTokenCache } from './whatsapp-token';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -141,17 +142,15 @@ interface MetaSendResponse {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
+// Phone number ID is static and comes from env. Access token is managed by the
+// whatsapp-token service which exchanges short-lived temp tokens for 60-day
+// long-lived tokens, auto-renews them, and stores them in the settings table.
 
-function cfg() {
+async function cfg(): Promise<{ phoneNumberId: string | undefined; accessToken: string | null }> {
   return {
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
-    accessToken:   process.env.WHATSAPP_ACCESS_TOKEN,
+    accessToken:   await getAccessToken(),
   };
-}
-
-function isConfigured(): boolean {
-  const { phoneNumberId, accessToken } = cfg();
-  return !!(phoneNumberId && accessToken);
 }
 
 /** Normalize to E.164 without '+': 91XXXXXXXXXX */
@@ -171,9 +170,9 @@ async function sendTemplate(
   components:   TemplateComponent[],
   metadata?:    Record<string, string>,
 ): Promise<void> {
-  if (!isConfigured()) return;
+  const { phoneNumberId, accessToken } = await cfg();
+  if (!phoneNumberId || !accessToken) return;
 
-  const { phoneNumberId, accessToken } = cfg();
   const to = toE164India(phone);
 
   // Log intent before attempting send
@@ -223,6 +222,12 @@ async function sendTemplate(
 
     if (failed) {
       console.warn(`[whatsapp] Template "${templateName}" to ${to} failed:`, errorMsg);
+      // 190 = invalid/expired access token. Invalidate the cache so the next
+      // send re-reads from the DB — useful when an admin has just pasted a
+      // new token but this Node process still had the old one cached.
+      if (data.error?.code === 190) {
+        invalidateTokenCache();
+      }
     }
   } catch (err) {
     console.warn(`[whatsapp] Network error sending "${templateName}" to ${to}:`, err);
