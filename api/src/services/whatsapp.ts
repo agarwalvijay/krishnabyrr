@@ -24,7 +24,7 @@
  *   kb_owner_new_order   (UTILITY)          — owner alert: new order received
  *   kb_owner_exchange    (UTILITY)          — owner alert: new exchange request
  *   kb_exchange_received (UTILITY)          — customer: exchange request received
- *   kb_exchange_approved (UTILITY)          — customer: exchange approved
+ *   kb_exchange_appr     (UTILITY)          — customer: exchange approved
  *   kb_exchange_rejected (UTILITY)          — customer: exchange rejected
  *   kb_exchange_done     (UTILITY)          — customer: exchange completed
  *
@@ -135,8 +135,8 @@
  *     Variables: {{1}} = customer name, {{2}} = exchange number
  *     Note: order number is embedded in the exchange number (KB-000012-EX-001) so no need to repeat it.
  *
- *   kb_exchange_approved (UTILITY):
- *     Body: "Hi {{1}}! Your exchange request {{2}} has been approved. We'll contact you shortly to arrange pickup."
+ *   kb_exchange_appr (UTILITY):
+ *     Body: "Hi {{1}}! Your exchange request {{2}} has been approved. Please ship your item within 2 days."
  *     Variables: {{1}} = customer name, {{2}} = exchange number
  *
  *   kb_exchange_rejected (UTILITY):
@@ -482,7 +482,7 @@ export function sendExchangeApproved(params: {
 }): void {
   send(
     params.phone,
-    'kb_exchange_approved',
+    'kb_exchange_appr',
     [{ type: 'body', parameters: [txt(params.name), txt(params.exchangeNumber)] }],
     { exchange_number: params.exchangeNumber },
   );
