@@ -6,7 +6,6 @@ import { pushToCustomer } from '../services/push';
 
 // Human-readable labels for the reason enum stored in DB
 const REASON_LABELS: Record<string, string> = {
-  wrong_size:                  'Wrong size',
   fabric_defect:               'Fabric defect',
   different_from_description:  'Different from description',
   other:                       'Other',
@@ -37,7 +36,7 @@ router.post('/', requireCustomerAuth, async (req, res, next) => {
       return;
     }
 
-    const VALID_REASONS = ['wrong_size', 'fabric_defect', 'different_from_description', 'other'];
+    const VALID_REASONS = ['fabric_defect', 'different_from_description', 'other'];
     if (!VALID_REASONS.includes(reason)) {
       res.status(400).json({
         error: { message: `reason must be one of: ${VALID_REASONS.join(', ')}`, code: 'VALIDATION_ERROR' },

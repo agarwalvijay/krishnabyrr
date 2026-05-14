@@ -124,9 +124,9 @@
  *     Body: "New exchange request {{1}} for order number {{2}} received! {{3}}. We will provide an update soon."
  *     Variables: {{1}} = exchange number (e.g. KB-000012-EX-001)
  *                {{2}} = order number (e.g. KB-000012)
- *                {{3}} = "Items: Maheshwari Silk Ivory Bel Buti x1 · Reason: Wrong size"
+ *                {{3}} = "Items: Maheshwari Silk Ivory Bel Buti x1 · Reason: Fabric defect"
  *     Sample: "New exchange request KB-000012-EX-001 for order number KB-000012 received!
- *              Items: Maheshwari Silk Ivory Bel Buti x1 · Reason: Wrong size.
+ *              Items: Maheshwari Silk Ivory Bel Buti x1 · Reason: Fabric defect.
  *              We will provide an update soon."
  *     Note: exchange number format is now per-order: <order>-EX-<NNN> starting at 001.
  *

@@ -94,8 +94,8 @@ describe('POST /api/exchanges', () => {
       .send({
         order_id:       testOrderId,
         items:          [{ product_id: activeProductId, quantity: 1 }],
-        reason:         'wrong_size',
-        customer_notes: 'Need a larger size',
+        reason:         'fabric_defect',
+        customer_notes: 'Snag in the weave near the pallu',
       });
 
     expect(res.status).toBe(201);
@@ -107,7 +107,7 @@ describe('POST /api/exchanges', () => {
     const res = await request(app).post('/api/exchanges').send({
       order_id: testOrderId,
       items: [{ product_id: activeProductId, quantity: 1 }],
-      reason: 'wrong_size',
+      reason: 'fabric_defect',
     });
     expect(res.status).toBe(401);
   });
@@ -124,7 +124,7 @@ describe('POST /api/exchanges', () => {
       .send({
         order_id: testOrderId,
         items:    [{ product_id: activeProductId, quantity: 1 }],
-        reason:   'wrong_size',
+        reason:   'fabric_defect',
       });
     expect(res.status).toBe(403);
 
@@ -175,7 +175,7 @@ describe('POST /api/exchanges', () => {
       .send({
         order_id: expiredOrderId,
         items:    [{ product_id: activeProductId, quantity: 1 }],
-        reason:   'wrong_size',
+        reason:   'fabric_defect',
       });
     expect(res.status).toBe(422);
     expect(res.body.error.code).toBe('EXCHANGE_WINDOW_EXPIRED');

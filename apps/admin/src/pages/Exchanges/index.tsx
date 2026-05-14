@@ -36,7 +36,6 @@ interface Meta { total: number; page: number; limit: number; pages: number }
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const REASON_LABELS: Record<string, string> = {
-  wrong_size:                  'Wrong size',
   fabric_defect:               'Fabric defect',
   different_from_description:  'Different from description',
   other:                       'Other',

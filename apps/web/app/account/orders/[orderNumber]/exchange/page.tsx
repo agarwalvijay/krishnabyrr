@@ -6,10 +6,9 @@ import AccountLayout from '@/components/account/AccountLayout';
 import { apiClient, formatINR } from '@/lib/api';
 
 const REASONS = [
-  { value: 'wrong_size',               label: 'Wrong size' },
-  { value: 'fabric_defect',            label: 'Fabric defect' },
+  { value: 'fabric_defect',              label: 'Fabric defect' },
   { value: 'different_from_description', label: 'Different from description' },
-  { value: 'other',                    label: 'Other' },
+  { value: 'other',                      label: 'Other' },
 ] as const;
 
 interface LineItem {
