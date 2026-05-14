@@ -300,10 +300,23 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
 });
 
 // ── POST /api/admin/orders/:id/cancel ────────────────────────────────────────
-// Cancels the order, restores inventory, and issues a full Razorpay refund if paid.
+// Cancels the order, restores inventory, and issues a Razorpay refund if paid.
+//
+// Atomic: if the Razorpay refund call fails, the entire transaction rolls back
+// — the order stays in its original state, inventory is not restored, and the
+// admin gets a clear error. This prevents the half-cancelled state where the
+// fulfillment is cancelled but the customer's money is still with us.
+//
+// Body options:
+//   { force_no_refund: true }  — Skip the Razorpay refund call entirely.
+//     Use when you've refunded manually from the Razorpay dashboard (or the
+//     payment was test-mode / off-platform) and you just want the order
+//     marked cancelled in the admin. The order's payment_status is left
+//     unchanged in that case; you can then mark it refunded separately.
 router.post('/:id/cancel', requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { force_no_refund } = req.body as { force_no_refund?: boolean };
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
     const { rows: [order] } = await pool.query(
@@ -323,13 +336,72 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
       return;
     }
 
+    // ── Razorpay refund — done BEFORE the transaction starts ─────────────────
+    // If this fails and we haven't started the DB transaction yet, no rollback
+    // is needed. If it succeeds, we commit; if the post-refund DB writes fail,
+    // the refund stays at Razorpay (rare; admin can reconcile).
+    let razorpayRefundId: string | null = null;
+    let refundedAmount   = 0;
+    let refundWarning: string | null = null;
+
+    const needsRzpRefund =
+      !force_no_refund
+      && order.payment_status === 'paid'
+      && order.razorpay_payment_id
+      && !order.phonepe_transaction_id;
+
+    if (needsRzpRefund) {
+      const rzp = getRazorpay();
+      if (!rzp) {
+        res.status(503).json({
+          error: { message: 'Razorpay is not configured — cannot issue refund automatically. Refund manually and retry with force_no_refund=true.', code: 'RAZORPAY_NOT_CONFIGURED' },
+        });
+        return;
+      }
+      const refundableCeiling   = parseFloat(order.captured_amount ?? order.total);
+      const remainingRefundable = refundableCeiling - parseFloat(order.refunded_amount ?? 0);
+      if (remainingRefundable > 0) {
+        const amountPaise = Math.round(remainingRefundable * 100);
+        // Log the exact request so future failures are easier to diagnose.
+        console.log(`[cancel ${order.order_number}] refund request: payment=${order.razorpay_payment_id} amount=${amountPaise}p captured=${refundableCeiling} already_refunded=${parseFloat(order.refunded_amount ?? 0)}`);
+        try {
+          const refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
+            amount: amountPaise,
+            speed: 'normal',
+            notes: { reason: 'Order cancelled', order_number: order.order_number },
+          } as Parameters<typeof rzp.payments.refund>[1]);
+          razorpayRefundId = (refundResp as { id: string }).id;
+          refundedAmount   = remainingRefundable;
+        } catch (rzpErr: unknown) {
+          console.error(`[cancel ${order.order_number}] Razorpay refund failed:`, rzpErr);
+          const e    = rzpErr as { error?: { description?: string; reason?: string; code?: string } };
+          const desc = e?.error?.description ?? 'Unknown error';
+          const code = e?.error?.code ?? 'UNKNOWN';
+          // Atomic: refund failed → DO NOT mark the order cancelled. Tell the
+          // admin what happened and suggest next steps.
+          res.status(422).json({
+            error: {
+              message:
+                `Refund failed at Razorpay (${code}: ${desc}). Order NOT cancelled. ` +
+                `Options: (1) retry, (2) refund manually from Razorpay dashboard then re-run cancel with force_no_refund=true, ` +
+                `(3) try Issue Refund button which retries the same call.`,
+              code:    'REFUND_FAILED',
+              details: { razorpay_code: code, razorpay_description: desc },
+            },
+          });
+          return;
+        }
+      }
+    }
+
+    // ── DB transaction: restore inventory + update order ─────────────────────
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
       // Idempotency check — if any 'order_cancelled' log already exists for this
       // order, stock has already been restored. Skip the restore but still proceed
-      // with refund/status updates (they're independently idempotent).
+      // with status updates.
       const { rows: priorRestores } = await client.query<{ exists: boolean }>(
         `SELECT EXISTS(
            SELECT 1 FROM inventory_log
@@ -365,39 +437,15 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
         }
       }
 
-      let razorpayRefundId: string | null = null;
-      let refundedAmount = 0;
-      let refundWarning: string | null = null;
-
-      if (order.payment_status === 'authorized' && order.razorpay_payment_id) {
-        // Payment was authorized but never captured — no refund needed.
+      // Build warning messages for non-Razorpay payment paths
+      if (force_no_refund && order.payment_status === 'paid') {
+        refundWarning = 'Order cancelled without automatic refund (force_no_refund). Confirm the refund was handled manually.';
+      } else if (order.payment_status === 'authorized' && order.razorpay_payment_id) {
+        // Authorized but never captured — no refund needed.
         // The authorization hold will auto-expire at Razorpay within 5 days.
-        refundWarning = null; // no warning — no money was ever moved
+        refundWarning = null;
       } else if (order.payment_status === 'paid' && order.phonepe_transaction_id && !order.razorpay_payment_id) {
-        // PhonePe orders: we don't have an automated refund API — warn the admin
         refundWarning = 'PhonePe refunds must be issued manually from the PhonePe merchant dashboard. Order has been cancelled and inventory restored.';
-      } else if (order.payment_status === 'paid' && order.razorpay_payment_id) {
-        // Razorpay captured payment — issue a refund
-        const rzp = getRazorpay();
-        if (rzp) {
-          const refundableCeiling   = parseFloat(order.captured_amount ?? order.total);
-          const remainingRefundable = refundableCeiling - parseFloat(order.refunded_amount ?? 0);
-          if (remainingRefundable > 0) {
-            try {
-              const refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
-                amount: Math.round(remainingRefundable * 100), // paise
-                speed: 'normal',
-                notes: { reason: 'Order cancelled', order_number: order.order_number },
-              } as Parameters<typeof rzp.payments.refund>[1]);
-              razorpayRefundId = (refundResp as { id: string }).id;
-              refundedAmount = remainingRefundable;
-            } catch (rzpErr: unknown) {
-              const desc = (rzpErr as { error?: { description?: string } })?.error?.description;
-              refundWarning = desc ?? 'Razorpay refund could not be issued — please refund manually from the Razorpay dashboard.';
-              console.error('[cancel] Razorpay refund failed:', rzpErr);
-            }
-          }
-        }
       }
 
       // Determine new payment status:

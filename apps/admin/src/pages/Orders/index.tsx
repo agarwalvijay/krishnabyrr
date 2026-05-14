@@ -153,11 +153,12 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => api.post(`/admin/orders/${orderId}/cancel`, {}),
+    mutationFn: (forceNoRefund: boolean) =>
+      api.post(`/admin/orders/${orderId}/cancel`, forceNoRefund ? { force_no_refund: true } : {}),
     onSuccess: (resp) => {
       const { refund_issued, refund_warning } = (resp.data as { data: { refund_issued: boolean; refund_warning?: string } }).data;
       if (refund_warning) {
-        toast.error(`Order cancelled — refund failed: ${refund_warning}`, { duration: 8000 });
+        toast(refund_warning, { duration: 8000, icon: '⚠️' });
       } else {
         toast.success(refund_issued ? 'Order cancelled and refund issued' : 'Order cancelled');
       }
@@ -167,8 +168,10 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
-      toast.error(msg ?? 'Cancel failed');
-      setShowCancelConfirm(false);
+      // The backend now refuses to half-cancel when refund fails. Show the
+      // full message so the admin knows their options (retry, manual + force).
+      toast.error(msg ?? 'Cancel failed', { duration: 12_000 });
+      // Don't hide the confirm panel on error — admin can switch to force mode.
     },
   });
 
@@ -516,26 +519,46 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
                 <p className="text-xs text-kb-muted mb-3">
                   Cancels the order and restores inventory.
                   {order.payment_status === 'paid' && order.razorpay_payment_id
-                    ? ' Issues a full Razorpay refund automatically.'
+                    ? ' Issues a full Razorpay refund automatically — if Razorpay rejects the refund, the order will NOT be cancelled.'
                     : order.payment_status === 'paid' && order.phonepe_transaction_id
                     ? ' PhonePe refund must be issued manually from the PhonePe dashboard.'
                     : ''}
                 </p>
                 {showCancelConfirm ? (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => cancelMutation.mutate()}
-                      disabled={cancelMutation.isPending}
-                      className="px-4 py-2 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
-                    >
-                      {cancelMutation.isPending ? 'Cancelling…' : 'Yes, Cancel Order'}
-                    </button>
-                    <button
-                      onClick={() => setShowCancelConfirm(false)}
-                      className="px-4 py-2 rounded-md border border-gray-200 text-sm text-kb-muted hover:bg-gray-50"
-                    >
-                      Never mind
-                    </button>
+                  <div className="space-y-2">
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => cancelMutation.mutate(false)}
+                        disabled={cancelMutation.isPending}
+                        className="px-4 py-2 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {cancelMutation.isPending ? 'Cancelling…' : 'Yes, Cancel Order'}
+                      </button>
+                      <button
+                        onClick={() => setShowCancelConfirm(false)}
+                        className="px-4 py-2 rounded-md border border-gray-200 text-sm text-kb-muted hover:bg-gray-50"
+                      >
+                        Never mind
+                      </button>
+                    </div>
+
+                    {/* Force option — only shown for paid Razorpay orders where the automatic refund could fail */}
+                    {order.payment_status === 'paid' && order.razorpay_payment_id && (
+                      <div className="pt-3 border-t border-red-100">
+                        <p className="text-xs text-kb-muted mb-2">
+                          Already refunded manually in Razorpay? Use this to skip the automatic
+                          refund and just mark the order cancelled. <strong>Only use after confirming
+                          the refund was issued in the Razorpay dashboard</strong> — this will not move money.
+                        </p>
+                        <button
+                          onClick={() => cancelMutation.mutate(true)}
+                          disabled={cancelMutation.isPending}
+                          className="px-3 py-1.5 rounded-md border border-amber-400 text-amber-700 text-xs font-medium hover:bg-amber-50 disabled:opacity-50"
+                        >
+                          Force cancel (no refund attempt)
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <button
