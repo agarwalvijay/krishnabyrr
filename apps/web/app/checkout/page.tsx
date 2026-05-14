@@ -327,7 +327,8 @@ export default function CheckoutPage() {
       }
       setSubmitting(false);
     }
-  }, [cart, isLoggedIn, router, showToast, removeCoupon, refreshCart, fetchCart]);
+  }, [cart, isLoggedIn, router, showToast, removeCoupon, refreshCart, fetchCart,
+      selectedAddressId, saveAddress]);
 
   if (!cart || cart.items.length === 0) {
     return (
