@@ -79,6 +79,176 @@ router.get('/export', requireAuth, async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Exchange requests ─────────────────────────────────────────────────────────
+//
+// IMPORTANT: these routes MUST come before the /:id routes below.
+// Express matches by registration order; otherwise GET /exchanges would be
+// caught by GET /:id (treating "exchanges" as an order number → 404).
+
+// GET /api/admin/orders/exchanges  — list, optionally filtered by status
+router.get('/exchanges', requireAuth, async (req, res, next) => {
+  try {
+    const {
+      status,
+      page = '1',
+      limit = '25',
+    } = req.query as Record<string, string>;
+
+    const pageNum  = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
+    const offset   = (pageNum - 1) * limitNum;
+
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let i = 1;
+
+    if (status) {
+      conditions.push(`er.status = $${i}`); params.push(status); i++;
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const { rows: [{ total }] } = await pool.query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM exchange_requests er ${where}`,
+      params
+    );
+
+    const { rows } = await pool.query(
+      `SELECT
+         er.id, er.exchange_number, er.status, er.reason,
+         er.customer_notes, er.admin_notes, er.created_at, er.updated_at,
+         o.order_number, o.id AS order_id,
+         COALESCE(c.email, o.guest_email) AS customer_email
+       FROM exchange_requests er
+       JOIN orders o ON o.id = er.order_id
+       LEFT JOIN customers c ON c.id = er.customer_id
+       ${where}
+       ORDER BY er.created_at DESC
+       LIMIT $${i} OFFSET $${i + 1}`,
+      [...params, limitNum, offset]
+    );
+
+    res.json({
+      data: rows,
+      meta: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/orders/exchanges/:id — full detail for the admin slide-over
+router.get('/exchanges/:id', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rows: [row] } = await pool.query(
+      `SELECT
+         er.id, er.exchange_number, er.status, er.reason,
+         er.items, er.customer_notes, er.admin_notes,
+         er.created_at, er.updated_at,
+         o.order_number, o.id AS order_id,
+         o.line_items AS order_line_items,
+         o.shipping_address,
+         COALESCE(c.name,  (o.shipping_address->>'name'))  AS customer_name,
+         COALESCE(c.email, o.guest_email)                  AS customer_email,
+         COALESCE(c.phone, (o.shipping_address->>'phone')) AS customer_phone
+       FROM exchange_requests er
+       JOIN orders o ON o.id = er.order_id
+       LEFT JOIN customers c ON c.id = er.customer_id
+       WHERE er.id = $1`,
+      [id]
+    );
+    if (!row) {
+      res.status(404).json({ error: { message: 'Exchange not found', code: 'NOT_FOUND' } });
+      return;
+    }
+    res.json({ data: row });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/admin/orders/exchanges/:id — update exchange status + admin notes
+router.patch('/exchanges/:id', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status, admin_notes } = req.body as Record<string, unknown>;
+
+    const VALID_STATUS = ['requested', 'approved', 'rejected', 'completed'] as const;
+
+    const setClauses = ['updated_at = NOW()'];
+    const params: unknown[] = [];
+    let i = 1;
+
+    if (status !== undefined) {
+      if (!VALID_STATUS.includes(status as typeof VALID_STATUS[number])) {
+        res.status(422).json({ error: { message: 'Invalid exchange status', code: 'VALIDATION_ERROR' } });
+        return;
+      }
+      setClauses.push(`status = $${i}`); params.push(status); i++;
+    }
+    if (admin_notes !== undefined) { setClauses.push(`admin_notes = $${i}`); params.push(admin_notes); i++; }
+
+    params.push(id);
+    const { rows: [er] } = await pool.query(
+      `UPDATE exchange_requests SET ${setClauses.join(', ')} WHERE id = $${i} RETURNING *`,
+      params
+    );
+    if (!er) {
+      res.status(404).json({ error: { message: 'Exchange request not found', code: 'NOT_FOUND' } });
+      return;
+    }
+    res.json({ data: er });
+
+    // ── Customer notifications on status change ─────────────────────────────
+    if (status === 'approved' || status === 'rejected' || status === 'completed') {
+      const { rows: [cust] } = await pool.query<{ phone: string | null; name: string }>(
+        `SELECT c.phone, c.name
+           FROM customers c
+           JOIN exchange_requests er ON er.customer_id = c.id
+          WHERE er.id = $1`,
+        [er.id],
+      );
+
+      if (cust?.phone) {
+        const notesStr = typeof admin_notes === 'string' ? admin_notes : undefined;
+        if (status === 'approved') {
+          sendExchangeApproved({
+            phone:          cust.phone,
+            name:           cust.name,
+            exchangeNumber: er.exchange_number,
+          });
+        } else if (status === 'rejected') {
+          sendExchangeRejected({
+            phone:          cust.phone,
+            name:           cust.name,
+            exchangeNumber: er.exchange_number,
+            adminNotes:     notesStr,
+          });
+        } else if (status === 'completed') {
+          sendExchangeCompleted({
+            phone:          cust.phone,
+            name:           cust.name,
+            exchangeNumber: er.exchange_number,
+          });
+        }
+      }
+
+      const titleMap: Record<string, string> = {
+        approved:  'Exchange Approved',
+        rejected:  'Exchange Update',
+        completed: 'Exchange Complete',
+      };
+      const bodyMap: Record<string, string> = {
+        approved:  `Your exchange ${er.exchange_number} has been approved — we'll be in touch to arrange pickup.`,
+        rejected:  `We couldn't process exchange ${er.exchange_number}. Tap to see details.`,
+        completed: `Exchange ${er.exchange_number} is complete. The replacement has shipped.`,
+      };
+      pushToCustomer(er.customer_id, {
+        title: titleMap[status as string],
+        body:  bodyMap[status as string],
+        data:  { url: '/account/orders' },
+      }).catch(() => {});
+    }
+  } catch (err) { next(err); }
+});
+
 // ── List orders ───────────────────────────────────────────────────────────────
 
 // GET /api/admin/orders
@@ -1060,176 +1230,6 @@ router.get('/:id/pdf', requireAuth, async (req, res, next) => {
       .text("Thank you for shopping with Krishna's Bliss!", LEFT, pageBottom, { align: 'center', width: WIDTH });
 
     doc.end();
-  } catch (err) { next(err); }
-});
-
-// ── Exchange requests ─────────────────────────────────────────────────────────
-
-// GET /api/admin/orders/exchanges  — list all exchange requests with filters
-// ?status=requested|approved|rejected|completed
-router.get('/exchanges', requireAuth, async (req, res, next) => {
-  try {
-    const {
-      status,
-      page = '1',
-      limit = '25',
-    } = req.query as Record<string, string>;
-
-    const pageNum  = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
-    const offset   = (pageNum - 1) * limitNum;
-
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    let i = 1;
-
-    if (status) {
-      conditions.push(`er.status = $${i}`); params.push(status); i++;
-    }
-
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const { rows: [{ total }] } = await pool.query<{ total: number }>(
-      `SELECT COUNT(*)::int AS total FROM exchange_requests er ${where}`,
-      params
-    );
-
-    const { rows } = await pool.query(
-      `SELECT
-         er.id, er.exchange_number, er.status, er.reason,
-         er.customer_notes, er.admin_notes, er.created_at, er.updated_at,
-         o.order_number, o.id AS order_id,
-         COALESCE(c.email, o.guest_email) AS customer_email
-       FROM exchange_requests er
-       JOIN orders o ON o.id = er.order_id
-       LEFT JOIN customers c ON c.id = er.customer_id
-       ${where}
-       ORDER BY er.created_at DESC
-       LIMIT $${i} OFFSET $${i + 1}`,
-      [...params, limitNum, offset]
-    );
-
-    res.json({
-      data: rows,
-      meta: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
-    });
-  } catch (err) { next(err); }
-});
-
-// GET /api/admin/orders/exchanges/:id — full detail for the admin slide-over
-router.get('/exchanges/:id', requireAuth, async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { rows: [row] } = await pool.query(
-      `SELECT
-         er.id, er.exchange_number, er.status, er.reason,
-         er.items, er.customer_notes, er.admin_notes,
-         er.created_at, er.updated_at,
-         o.order_number, o.id AS order_id,
-         o.line_items AS order_line_items,
-         o.shipping_address,
-         COALESCE(c.name,  (o.shipping_address->>'name'))  AS customer_name,
-         COALESCE(c.email, o.guest_email)                  AS customer_email,
-         COALESCE(c.phone, (o.shipping_address->>'phone')) AS customer_phone
-       FROM exchange_requests er
-       JOIN orders o ON o.id = er.order_id
-       LEFT JOIN customers c ON c.id = er.customer_id
-       WHERE er.id = $1`,
-      [id]
-    );
-    if (!row) {
-      res.status(404).json({ error: { message: 'Exchange not found', code: 'NOT_FOUND' } });
-      return;
-    }
-    res.json({ data: row });
-  } catch (err) { next(err); }
-});
-
-// PATCH /api/admin/orders/exchanges/:id — update exchange status + admin notes
-router.patch('/exchanges/:id', requireAuth, async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { status, admin_notes } = req.body as Record<string, unknown>;
-
-    const VALID_STATUS = ['requested', 'approved', 'rejected', 'completed'] as const;
-
-    const setClauses = ['updated_at = NOW()'];
-    const params: unknown[] = [];
-    let i = 1;
-
-    if (status !== undefined) {
-      if (!VALID_STATUS.includes(status as typeof VALID_STATUS[number])) {
-        res.status(422).json({ error: { message: 'Invalid exchange status', code: 'VALIDATION_ERROR' } });
-        return;
-      }
-      setClauses.push(`status = $${i}`); params.push(status); i++;
-    }
-    if (admin_notes !== undefined) { setClauses.push(`admin_notes = $${i}`); params.push(admin_notes); i++; }
-
-    params.push(id);
-    const { rows: [er] } = await pool.query(
-      `UPDATE exchange_requests SET ${setClauses.join(', ')} WHERE id = $${i} RETURNING *`,
-      params
-    );
-    if (!er) {
-      res.status(404).json({ error: { message: 'Exchange request not found', code: 'NOT_FOUND' } });
-      return;
-    }
-    res.json({ data: er });
-
-    // ── Customer notifications on status change ─────────────────────────────
-    // Only fire when status actually changed to a customer-visible state.
-    if (status === 'approved' || status === 'rejected' || status === 'completed') {
-      // Need customer phone + name — lookup once
-      const { rows: [cust] } = await pool.query<{ phone: string | null; name: string }>(
-        `SELECT c.phone, c.name
-           FROM customers c
-           JOIN exchange_requests er ON er.customer_id = c.id
-          WHERE er.id = $1`,
-        [er.id],
-      );
-
-      if (cust?.phone) {
-        const notesStr = typeof admin_notes === 'string' ? admin_notes : undefined;
-        if (status === 'approved') {
-          sendExchangeApproved({
-            phone:          cust.phone,
-            name:           cust.name,
-            exchangeNumber: er.exchange_number,
-          });
-        } else if (status === 'rejected') {
-          sendExchangeRejected({
-            phone:          cust.phone,
-            name:           cust.name,
-            exchangeNumber: er.exchange_number,
-            adminNotes:     notesStr,
-          });
-        } else if (status === 'completed') {
-          sendExchangeCompleted({
-            phone:          cust.phone,
-            name:           cust.name,
-            exchangeNumber: er.exchange_number,
-          });
-        }
-      }
-
-      // Push notification — for logged-in customers
-      const titleMap: Record<string, string> = {
-        approved:  'Exchange Approved',
-        rejected:  'Exchange Update',
-        completed: 'Exchange Complete',
-      };
-      const bodyMap: Record<string, string> = {
-        approved:  `Your exchange ${er.exchange_number} has been approved — we'll be in touch to arrange pickup.`,
-        rejected:  `We couldn't process exchange ${er.exchange_number}. Tap to see details.`,
-        completed: `Exchange ${er.exchange_number} is complete. The replacement has shipped.`,
-      };
-      pushToCustomer(er.customer_id, {
-        title: titleMap[status as string],
-        body:  bodyMap[status as string],
-        data:  { url: '/account/orders' },
-      }).catch(() => {});
-    }
   } catch (err) { next(err); }
 });
 
