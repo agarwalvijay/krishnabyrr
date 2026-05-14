@@ -4,7 +4,14 @@ import PDFDocument from 'pdfkit';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { pushToCustomer } from '../../services/push';
-import { sendOrderShipped, sendOrderCancelled, sendRefundInitiated } from '../../services/whatsapp';
+import {
+  sendOrderShipped,
+  sendOrderCancelled,
+  sendRefundInitiated,
+  sendExchangeApproved,
+  sendExchangeRejected,
+  sendExchangeCompleted,
+} from '../../services/whatsapp';
 
 function getRazorpay(): Razorpay | null {
   const keyId     = process.env.RAZORPAY_KEY_ID;
@@ -1092,6 +1099,60 @@ router.patch('/exchanges/:id', requireAuth, async (req, res, next) => {
       return;
     }
     res.json({ data: er });
+
+    // ── Customer notifications on status change ─────────────────────────────
+    // Only fire when status actually changed to a customer-visible state.
+    if (status === 'approved' || status === 'rejected' || status === 'completed') {
+      // Need customer phone + name — lookup once
+      const { rows: [cust] } = await pool.query<{ phone: string | null; name: string }>(
+        `SELECT c.phone, c.name
+           FROM customers c
+           JOIN exchange_requests er ON er.customer_id = c.id
+          WHERE er.id = $1`,
+        [er.id],
+      );
+
+      if (cust?.phone) {
+        const notesStr = typeof admin_notes === 'string' ? admin_notes : undefined;
+        if (status === 'approved') {
+          sendExchangeApproved({
+            phone:          cust.phone,
+            name:           cust.name,
+            exchangeNumber: er.exchange_number,
+          });
+        } else if (status === 'rejected') {
+          sendExchangeRejected({
+            phone:          cust.phone,
+            name:           cust.name,
+            exchangeNumber: er.exchange_number,
+            adminNotes:     notesStr,
+          });
+        } else if (status === 'completed') {
+          sendExchangeCompleted({
+            phone:          cust.phone,
+            name:           cust.name,
+            exchangeNumber: er.exchange_number,
+          });
+        }
+      }
+
+      // Push notification — for logged-in customers
+      const titleMap: Record<string, string> = {
+        approved:  'Exchange Approved',
+        rejected:  'Exchange Update',
+        completed: 'Exchange Complete',
+      };
+      const bodyMap: Record<string, string> = {
+        approved:  `Your exchange ${er.exchange_number} has been approved — we'll be in touch to arrange pickup.`,
+        rejected:  `We couldn't process exchange ${er.exchange_number}. Tap to see details.`,
+        completed: `Exchange ${er.exchange_number} is complete. The replacement has shipped.`,
+      };
+      pushToCustomer(er.customer_id, {
+        title: titleMap[status as string],
+        body:  bodyMap[status as string],
+        data:  { url: '/account/orders' },
+      }).catch(() => {});
+    }
   } catch (err) { next(err); }
 });
 

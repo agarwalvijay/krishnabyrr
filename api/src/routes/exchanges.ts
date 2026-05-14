@@ -1,6 +1,16 @@
 import { Router } from 'express';
 import pool from '../db/client';
 import { requireCustomerAuth } from '../middleware/auth';
+import { sendOwnerExchangeRequest, sendExchangeReceived } from '../services/whatsapp';
+import { pushToCustomer } from '../services/push';
+
+// Human-readable labels for the reason enum stored in DB
+const REASON_LABELS: Record<string, string> = {
+  wrong_size:                  'Wrong size',
+  fabric_defect:               'Fabric defect',
+  different_from_description:  'Different from description',
+  other:                       'Other',
+};
 
 const router = Router();
 
@@ -38,13 +48,14 @@ router.post('/', requireCustomerAuth, async (req, res, next) => {
     // Fetch the order and verify ownership
     const { rows: [order] } = await pool.query<{
       id: string;
+      order_number: string;
       customer_id: string | null;
       fulfillment_status: string;
       exchange_eligible_until: Date | null;
       policy_snapshot: { exchange_window_days: number; exchange_active: boolean };
       line_items: Array<{ product_id: string; quantity: number; name: string }>;
     }>(
-      `SELECT id, customer_id, fulfillment_status, exchange_eligible_until,
+      `SELECT id, order_number, customer_id, fulfillment_status, exchange_eligible_until,
               policy_snapshot, line_items
        FROM orders WHERE id = $1`,
       [order_id],
@@ -116,6 +127,44 @@ router.post('/', requireCustomerAuth, async (req, res, next) => {
         created_at:      exchange.created_at,
       },
     });
+
+    // ── Notifications (fire-and-forget, after response) ─────────────────────
+    // Build a short item summary: "Maheshwari Silk x1, Banarasi Katan x2"
+    const itemSummary = items
+      .map(i => {
+        const li = lineItemMap.get(i.product_id);
+        return li ? `${li.name} x${i.quantity}` : `${i.product_id} x${i.quantity}`;
+      })
+      .slice(0, 3)
+      .join(', ')
+      + (items.length > 3 ? ` +${items.length - 3} more` : '');
+
+    const reasonLabel = REASON_LABELS[reason] ?? reason;
+
+    // Owner alert
+    sendOwnerExchangeRequest({
+      exchangeNumber:  exchange.exchange_number,
+      orderNumber:     order.order_number,
+      reason:          reasonLabel,
+      itemSummary,
+      customerName:    req.customer!.name,
+      customerContact: req.customer!.phone ?? req.customer!.email ?? '',
+    });
+
+    // Customer confirmation — WhatsApp + push (best-effort each)
+    if (req.customer!.phone) {
+      sendExchangeReceived({
+        phone:          req.customer!.phone,
+        name:           req.customer!.name,
+        exchangeNumber: exchange.exchange_number,
+        orderNumber:    order.order_number,
+      });
+    }
+    pushToCustomer(req.customer!.id, {
+      title: 'Exchange request received',
+      body:  `Your exchange request ${exchange.exchange_number} for order ${order.order_number} is being reviewed.`,
+      data:  { url: '/account/orders' },
+    }).catch(() => {});
   } catch (err) {
     next(err);
   }

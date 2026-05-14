@@ -22,6 +22,11 @@
  *   kb_refund_initiated  (UTILITY)          — refund in progress
  *   kb_password_changed  (UTILITY)          — security alert
  *   kb_owner_new_order   (UTILITY)          — owner alert: new order received
+ *   kb_owner_exchange    (UTILITY)          — owner alert: new exchange request
+ *   kb_exchange_received (UTILITY)          — customer: exchange request received
+ *   kb_exchange_approved (UTILITY)          — customer: exchange approved
+ *   kb_exchange_rejected (UTILITY)          — customer: exchange rejected
+ *   kb_exchange_done     (UTILITY)          — customer: exchange completed
  *
  * Template body copy (paste exactly as shown into the Meta template editor).
  * All variables are type "text". Bodies must NOT start with a variable.
@@ -114,6 +119,34 @@
  *              Payment: Paid (Razorpay)"
  *     Note: set OWNER_PHONE in api/.env to the owner's WhatsApp number.
  *           If absent, owner notifications are silently skipped.
+ *
+ *   kb_owner_exchange (UTILITY):
+ *     Body: "New exchange request *{{1}}* received!\n\n{{2}}\n\nCustomer: {{3}}"
+ *     Variables: {{1}} = exchange number (KB-EX-000001)
+ *                {{2}} = "Order KB-000001 · Reason: Wrong size · Maheshwari Silk Ivory Bel Buti x1"
+ *                {{3}} = "Priya Sharma · 9876543210"
+ *     Sample: "New exchange request *KB-EX-000001* received!
+ *
+ *              Order KB-000001 · Reason: Wrong size · Maheshwari Silk Ivory Bel Buti x1
+ *
+ *              Customer: Priya Sharma · 9876543210"
+ *
+ *   kb_exchange_received (UTILITY):
+ *     Body: "Hi {{1}}! Your exchange request *{{2}}* for order {{3}} has been received. We'll review it and contact you within 24-48 hours."
+ *     Variables: {{1}} = customer name, {{2}} = exchange number, {{3}} = order number
+ *
+ *   kb_exchange_approved (UTILITY):
+ *     Body: "Hi {{1}}! Your exchange request {{2}} has been approved. We'll contact you shortly to arrange pickup."
+ *     Variables: {{1}} = customer name, {{2}} = exchange number
+ *
+ *   kb_exchange_rejected (UTILITY):
+ *     Body: "Hi {{1}}, regarding your exchange request {{2}}: we're unable to process it.{{3}} If you have questions, please message us on WhatsApp."
+ *     Variables: {{1}} = customer name, {{2}} = exchange number,
+ *                {{3}} = " Reason: <admin notes>" or "" if no notes
+ *
+ *   kb_exchange_done (UTILITY):
+ *     Body: "Hi {{1}}! Your exchange {{2}} is complete. The replacement has been dispatched. Thank you for shopping with Krishna's Bliss!"
+ *     Variables: {{1}} = customer name, {{2}} = exchange number
  *
  * If WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN are not set, all sends
  * are silently skipped — the order/auth flows are never affected.
@@ -395,6 +428,96 @@ export function sendOwnerNewOrder(params: {
       txt(params.paymentLabel),
     ]}],
     { order_number: params.orderNumber },
+  );
+}
+
+// ── Exchange flow templates ───────────────────────────────────────────────────
+
+export function sendOwnerExchangeRequest(params: {
+  exchangeNumber:  string;
+  orderNumber:     string;
+  reason:          string;       // human-readable, e.g. "Wrong size"
+  itemSummary:     string;       // "Maheshwari Silk x1"
+  customerName:    string;
+  customerContact: string;       // phone, formatted as "9876543210"
+}): void {
+  const ownerPhone = process.env.OWNER_PHONE;
+  if (!ownerPhone) return;
+  const detail = `Order ${params.orderNumber} · Reason: ${params.reason} · ${params.itemSummary}`;
+  send(
+    ownerPhone,
+    'kb_owner_exchange',
+    [{ type: 'body', parameters: [
+      txt(params.exchangeNumber),
+      txt(detail),
+      txt(`${params.customerName} · ${params.customerContact}`),
+    ]}],
+    { exchange_number: params.exchangeNumber },
+  );
+}
+
+export function sendExchangeReceived(params: {
+  phone:          string;
+  name:           string;
+  exchangeNumber: string;
+  orderNumber:    string;
+}): void {
+  send(
+    params.phone,
+    'kb_exchange_received',
+    [{ type: 'body', parameters: [
+      txt(params.name),
+      txt(params.exchangeNumber),
+      txt(params.orderNumber),
+    ]}],
+    { exchange_number: params.exchangeNumber },
+  );
+}
+
+export function sendExchangeApproved(params: {
+  phone:          string;
+  name:           string;
+  exchangeNumber: string;
+}): void {
+  send(
+    params.phone,
+    'kb_exchange_approved',
+    [{ type: 'body', parameters: [txt(params.name), txt(params.exchangeNumber)] }],
+    { exchange_number: params.exchangeNumber },
+  );
+}
+
+export function sendExchangeRejected(params: {
+  phone:          string;
+  name:           string;
+  exchangeNumber: string;
+  adminNotes?:    string;
+}): void {
+  const reasonNote = params.adminNotes?.trim()
+    ? ` Reason: ${params.adminNotes.trim()}.`
+    : '';
+  send(
+    params.phone,
+    'kb_exchange_rejected',
+    [{ type: 'body', parameters: [
+      txt(params.name),
+      txt(params.exchangeNumber),
+      txt(reasonNote),
+    ]}],
+    { exchange_number: params.exchangeNumber },
+  );
+}
+
+export function sendExchangeCompleted(params: {
+  phone:          string;
+  name:           string;
+  exchangeNumber: string;
+}): void {
+  send(
+    params.phone,
+    'kb_exchange_done',
+    [{ type: 'body', parameters: [txt(params.name), txt(params.exchangeNumber)] }],
+    { exchange_number: params.exchangeNumber },
   );
 }
 
