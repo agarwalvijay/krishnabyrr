@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -59,22 +59,29 @@ const INDIAN_STATES = [
   'Uttar Pradesh','Uttarakhand','West Bengal',
 ] as const;
 
-const schema = z.object({
-  email:                 z.string().email('Enter a valid email address'),
-  phone:                 z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number'),
-  name:                  z.string().min(1, 'Full name is required').max(100),
-  line1:                 z.string().min(1, 'Address is required'),
-  line2:                 z.string().optional(),
-  city:                  z.string().min(1, 'City is required'),
-  state:                 z.string().min(1, 'Please select a state'),
-  pincode:               z.string().regex(/^\d{6}$/, 'Enter a valid 6-digit pincode'),
-  billing_gstin:         z.string().optional(),
-  exchange_acknowledged: z.literal(true, {
-    errorMap: () => ({ message: 'You must acknowledge the exchange policy' }),
-  }),
-});
+// Email is rendered only for guests, so it must NOT be required when the user
+// is logged in — otherwise zod fails on the missing field, the toast fires,
+// and the scroll-to-error has nothing to scroll to (silent confusion).
+function buildSchema(isLoggedIn: boolean) {
+  return z.object({
+    email: isLoggedIn
+      ? z.union([z.string().email('Enter a valid email address'), z.literal('')]).optional()
+      : z.string().email('Enter a valid email address'),
+    phone:                 z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number'),
+    name:                  z.string().min(1, 'Full name is required').max(100),
+    line1:                 z.string().min(1, 'Address is required'),
+    line2:                 z.string().optional(),
+    city:                  z.string().min(1, 'City is required'),
+    state:                 z.string().min(1, 'Please select a state'),
+    pincode:               z.string().regex(/^\d{6}$/, 'Enter a valid 6-digit pincode'),
+    billing_gstin:         z.string().optional(),
+    exchange_acknowledged: z.literal(true, {
+      errorMap: () => ({ message: 'You must acknowledge the exchange policy' }),
+    }),
+  });
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof buildSchema>>;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -143,6 +150,8 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => { fetchCart(); }, [fetchCart]);
+
+  const schema = useMemo(() => buildSchema(isLoggedIn), [isLoggedIn]);
 
   const {
     register,
@@ -226,7 +235,8 @@ export default function CheckoutPage() {
       };
 
       if (!isLoggedIn) {
-        body.guestEmail = values.email;
+        // Schema requires email here, so values.email is guaranteed non-empty
+        body.guestEmail = values.email!;
         body.guestPhone = values.phone;
       }
 
@@ -253,7 +263,7 @@ export default function CheckoutPage() {
 
       const { order, payment } = res.data.data;
       const orderNumber = order.order_number;
-      const emailSuffix = isLoggedIn ? '' : `?email=${encodeURIComponent(values.email)}`;
+      const emailSuffix = isLoggedIn ? '' : `?email=${encodeURIComponent(values.email!)}`;
 
       if (payment.method === 'razorpay' && payment.key_id && payment.razorpay_order_id) {
         // Load Razorpay script on demand (only when actually needed)
