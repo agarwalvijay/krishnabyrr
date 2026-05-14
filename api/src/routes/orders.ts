@@ -476,27 +476,37 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
       }
 
       // ── Optionally save shipping address to customer's address book ────────────
-      if (customerId && saveAddress) {
-        const { rows: [{ cnt }] } = await client.query<{ cnt: string }>(
-          `SELECT COUNT(*)::text AS cnt FROM addresses WHERE customer_id = $1`,
-          [customerId],
-        );
-        if (parseInt(cnt, 10) < 5) {
-          await client.query(
-            `INSERT INTO addresses (customer_id, name, phone, line1, line2, city, state, pincode, country, is_default)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)`,
-            [
-              customerId,
-              normalizedAddress.name,
-              normalizedAddress.phone,
-              normalizedAddress.line1,
-              normalizedAddress.line2 ?? null,
-              normalizedAddress.city,
-              normalizedAddress.state,
-              normalizedAddress.pincode,
-              normalizedAddress.country ?? 'India',
-            ],
+      // Logged with outcome so we can diagnose "address didn't save" reports
+      // from pm2 logs without speculation.
+      if (saveAddress) {
+        if (!customerId) {
+          console.warn(`[order ${orderNumber}] saveAddress=true but no customer_id (guest checkout) — skipping`);
+        } else {
+          const { rows: [{ cnt }] } = await client.query<{ cnt: string }>(
+            `SELECT COUNT(*)::text AS cnt FROM addresses WHERE customer_id = $1`,
+            [customerId],
           );
+          const count = parseInt(cnt, 10);
+          if (count >= 5) {
+            console.warn(`[order ${orderNumber}] saveAddress=true but customer ${customerId} already has ${count} addresses — skipping`);
+          } else {
+            await client.query(
+              `INSERT INTO addresses (customer_id, name, phone, line1, line2, city, state, pincode, country, is_default)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)`,
+              [
+                customerId,
+                normalizedAddress.name,
+                normalizedAddress.phone,
+                normalizedAddress.line1,
+                normalizedAddress.line2 ?? null,
+                normalizedAddress.city,
+                normalizedAddress.state,
+                normalizedAddress.pincode,
+                normalizedAddress.country ?? 'India',
+              ],
+            );
+            console.log(`[order ${orderNumber}] saved address to customer ${customerId} (now ${count + 1}/5)`);
+          }
         }
       }
 
