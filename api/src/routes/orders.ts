@@ -270,27 +270,42 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
         }
       }
 
-      // Build line_items snapshot
+      // ── Build line_items snapshot ─────────────────────────────────────────────
+      // Product prices are stored GST-INCLUSIVE — what the customer pays per
+      // unit, all-in. We extract the GST portion at each item's own rate so the
+      // invoice and accounting can break it out, but the customer-facing total
+      // is unchanged (GST is NOT added on top).
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+
       const lineItems = cart.items.map(item => {
-        const p = stockMap.get(item.productId)!;
-        const unitPrice = p.sale_price ? parseFloat(p.sale_price) : parseFloat(p.mrp);
+        const p          = stockMap.get(item.productId)!;
+        const unitPrice  = p.sale_price ? parseFloat(p.sale_price) : parseFloat(p.mrp);  // inclusive
+        const gstRate    = parseFloat(p.gst_rate);
+        const lineTotal  = unitPrice * item.quantity;
+        const taxable    = lineTotal / (1 + gstRate / 100);
+        const gstAmount  = lineTotal - taxable;
         return {
-          product_id:  p.id,
-          name:        p.name,
-          slug:        p.slug,
-          sku:         p.sku,
-          mrp:         parseFloat(p.mrp),
-          sale_price:  p.sale_price ? parseFloat(p.sale_price) : null,
-          unit_price:  unitPrice,
-          quantity:    item.quantity,
-          line_total:  unitPrice * item.quantity,
-          gst_rate:    parseFloat(p.gst_rate),
-          hsn_code:    p.hsn_code,
+          product_id:     p.id,
+          name:           p.name,
+          slug:           p.slug,
+          sku:            p.sku,
+          mrp:            parseFloat(p.mrp),
+          sale_price:     p.sale_price ? parseFloat(p.sale_price) : null,
+          unit_price:     unitPrice,            // GST-inclusive
+          quantity:       item.quantity,
+          line_total:     round2(lineTotal),    // GST-inclusive
+          taxable_amount: round2(taxable),      // pre-GST portion
+          gst_amount:     round2(gstAmount),    // GST portion (extracted)
+          gst_rate:       gstRate,
+          hsn_code:       p.hsn_code,
         };
       });
 
       // ── Calculate totals ───────────────────────────────────────────────────────
-      const subtotal = lineItems.reduce((s, i) => s + i.line_total, 0);
+      // subtotal is GST-INCLUSIVE; gstIncluded is for reporting only.
+      const subtotal       = lineItems.reduce((s, i) => s + i.line_total,     0);
+      const taxableTotal   = lineItems.reduce((s, i) => s + i.taxable_amount, 0);
+      const gstIncluded    = lineItems.reduce((s, i) => s + i.gst_amount,     0);
 
       const discountAmount = (couponResult?.valid && couponResult.type !== 'free_shipping')
         ? couponResult.discount_amount
@@ -311,8 +326,19 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
         }
       }
 
-      const gst   = Math.round((subtotal - discountAmount) * 0.05);
-      const total = subtotal - discountAmount + shipping + gst;
+      // GST is already inside subtotal. Discount applies to inclusive amounts.
+      // For accounting, split the discount proportionally between taxable & GST.
+      const discountGstPortion     = subtotal > 0 ? discountAmount * (gstIncluded   / subtotal) : 0;
+      const discountTaxablePortion = discountAmount - discountGstPortion;
+      const finalTaxable           = round2(taxableTotal - discountTaxablePortion);
+      const finalGst               = round2(gstIncluded  - discountGstPortion);
+
+      // `gst` stored on the order is the GST portion AFTER discount, extracted
+      // from the inclusive subtotal. Not added to total.
+      const gst   = finalGst;
+      const total = round2(subtotal - discountAmount + shipping);
+      // `finalTaxable` is unused at order-write time but available for PDF/GSTR computation
+      void finalTaxable;
 
       // ── Order number ───────────────────────────────────────────────────────────
       const { rows: [seqRow] } = await client.query<{ nextval: string }>(

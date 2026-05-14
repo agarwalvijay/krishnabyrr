@@ -238,9 +238,17 @@ export default function ConfirmationPage() {
             </div>
             <div className="border-t border-gray-100 pt-3 space-y-1.5">
               <div className="flex justify-between text-sm">
-                <span style={{ color: 'var(--kb-muted)' }}>Subtotal</span>
+                <span style={{ color: 'var(--kb-muted)' }}>
+                  Subtotal <span className="text-xs">(incl. GST)</span>
+                </span>
                 <span>{formatINR(Number(order.subtotal))}</span>
               </div>
+              {Number(order.gst_amount) > 0 && (
+                <div className="flex justify-between text-xs pl-3">
+                  <span style={{ color: 'var(--kb-muted)' }}>of which GST</span>
+                  <span style={{ color: 'var(--kb-muted)' }}>{formatINR(Number(order.gst_amount))}</span>
+                </div>
+              )}
               {Number(order.discount_amount) > 0 && (
                 <div className="flex justify-between text-sm">
                   <span style={{ color: 'var(--kb-success)' }}>{order.coupon_code}</span>
@@ -250,10 +258,6 @@ export default function ConfirmationPage() {
               <div className="flex justify-between text-sm">
                 <span style={{ color: 'var(--kb-muted)' }}>Shipping</span>
                 <span>{Number(order.shipping_amount) === 0 ? 'Free' : formatINR(Number(order.shipping_amount))}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span style={{ color: 'var(--kb-muted)' }}>GST</span>
-                <span>{formatINR(Number(order.gst_amount))}</span>
               </div>
               <div className="flex justify-between text-sm font-bold border-t border-gray-100 pt-2">
                 <span>Total</span>

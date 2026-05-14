@@ -138,10 +138,13 @@ export interface CartData {
 }
 
 export interface CartTotals {
+  /** GST-INCLUSIVE — what customers see as the line-items sum */
   subtotal:       number;
   discountAmount: number;
   shipping:       number;
+  /** GST already included in `subtotal` (informational, NOT added to total) */
   gst:            number;
+  /** subtotal − discount + shipping. GST is part of subtotal, not added again. */
   total:          number;
 }
 

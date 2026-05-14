@@ -171,7 +171,7 @@ export default function CartDrawer() {
             {/* Order summary */}
             <div className="space-y-1.5 text-sm">
               <div className="flex justify-between text-kb-charcoal">
-                <span>Subtotal</span>
+                <span>Subtotal <span className="text-xs text-kb-muted">(incl. GST)</span></span>
                 <span>{formatINR(totals.subtotal)}</span>
               </div>
               {totals.discountAmount > 0 && (
@@ -192,10 +192,6 @@ export default function CartDrawer() {
                   <span>{cart.zone ? formatINR(totals.shipping) : '—'}</span>
                 </div>
               )}
-              <div className="flex justify-between text-kb-muted">
-                <span>GST (5%)</span>
-                <span>{formatINR(totals.gst)}</span>
-              </div>
               <div className="flex justify-between font-semibold text-kb-charcoal text-base pt-1 border-t border-gray-100 mt-1">
                 <span>Total</span>
                 <span>{formatINR(totals.total)}</span>

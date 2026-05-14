@@ -22,11 +22,18 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 // ── Store settings ────────────────────────────────────────────────────────────
 
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
 function StoreTab({ settings }: { settings: Record<string, unknown> }) {
   const queryClient = useQueryClient();
-  const [storeName, setStoreName]       = useState(String(settings.store_name ?? ''));
-  const [newBadgeDays, setNewBadgeDays] = useState(Number(settings.new_badge_days ?? 30));
-  const [gaTag, setGaTag]               = useState(String(settings.ga_tag ?? ''));
+  const [storeName, setStoreName]               = useState(String(settings.store_name ?? ''));
+  const [newBadgeDays, setNewBadgeDays]         = useState(Number(settings.new_badge_days ?? 30));
+  const [gaTag, setGaTag]                       = useState(String(settings.ga_tag ?? ''));
+  const [merchantState, setMerchantState]       = useState(String(settings.merchant_state ?? ''));
+  const [merchantGstin, setMerchantGstin]       = useState(String(settings.merchant_gstin ?? ''));
+  const [merchantAddress, setMerchantAddress]   = useState(String(settings.merchant_address ?? ''));
+
+  const gstinValid = !merchantGstin || GSTIN_REGEX.test(merchantGstin.toUpperCase());
 
   const saveMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.put('/admin/settings', data),
@@ -42,32 +49,84 @@ function StoreTab({ settings }: { settings: Record<string, unknown> }) {
       <Field label="Store Name">
         <input value={storeName} onChange={(e) => setStoreName(e.target.value)} className={inputCls} />
       </Field>
-      <Field
-        label="'New' Badge — Days"
-        hint="Products added within this many days will show a 'New' badge. Set to 0 to disable."
-      >
-        <input
-          type="number" min="0" max="365"
-          value={newBadgeDays}
-          onChange={(e) => setNewBadgeDays(Number(e.target.value))}
-          className={inputCls}
-        />
-      </Field>
-      <Field
-        label="Google Analytics Tag ID"
-        hint="Your GA4 Measurement ID, e.g. G-XXXXXXXXXX. Leave blank to disable analytics."
-      >
-        <input
-          value={gaTag}
-          onChange={(e) => setGaTag(e.target.value.trim())}
-          className={inputCls}
-          placeholder="G-XXXXXXXXXX"
-        />
-      </Field>
+
+      <div className="pt-4 mt-4 border-t border-gray-100">
+        <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Tax invoice details</h3>
+        <p className="text-xs text-kb-muted mb-4">
+          Used on the order PDF for proper GST tax invoices.
+          Merchant state determines CGST+SGST (intra-state) vs IGST (inter-state) on each order.
+        </p>
+        <div className="space-y-4">
+          <Field label="Merchant State" hint="The state where you are GST-registered (e.g. Delhi, Maharashtra).">
+            <input
+              value={merchantState}
+              onChange={(e) => setMerchantState(e.target.value)}
+              className={inputCls}
+              placeholder="Delhi"
+            />
+          </Field>
+          <Field label="Merchant GSTIN" hint="15-character GST Identification Number. Must be valid to issue tax invoices.">
+            <input
+              value={merchantGstin}
+              onChange={(e) => setMerchantGstin(e.target.value.toUpperCase())}
+              className={`${inputCls} font-mono`}
+              placeholder="07AAAAA0000A1Z5"
+              maxLength={15}
+            />
+            {merchantGstin && !gstinValid && (
+              <p className="text-xs mt-1" style={{ color: '#c0392b' }}>
+                Doesn't match GSTIN format (NNCCCCCNNNNCNZN — 2 digits + 5 letters + 4 digits + 1 letter + alphanumeric + Z + alphanumeric)
+              </p>
+            )}
+          </Field>
+          <Field label="Merchant Address" hint="Appears on tax invoices below the store name.">
+            <textarea
+              value={merchantAddress}
+              onChange={(e) => setMerchantAddress(e.target.value)}
+              className={`${inputCls} resize-none`}
+              rows={3}
+              placeholder="Shop No. X, Block Y, Lajpat Nagar, New Delhi 110024"
+            />
+          </Field>
+        </div>
+      </div>
+
+      <div className="pt-4 mt-4 border-t border-gray-100 space-y-4">
+        <Field
+          label="'New' Badge — Days"
+          hint="Products added within this many days will show a 'New' badge. Set to 0 to disable."
+        >
+          <input
+            type="number" min="0" max="365"
+            value={newBadgeDays}
+            onChange={(e) => setNewBadgeDays(Number(e.target.value))}
+            className={inputCls}
+          />
+        </Field>
+        <Field
+          label="Google Analytics Tag ID"
+          hint="Your GA4 Measurement ID, e.g. G-XXXXXXXXXX. Leave blank to disable analytics."
+        >
+          <input
+            value={gaTag}
+            onChange={(e) => setGaTag(e.target.value.trim())}
+            className={inputCls}
+            placeholder="G-XXXXXXXXXX"
+          />
+        </Field>
+      </div>
+
       <div className="pt-2">
         <button
-          onClick={() => saveMutation.mutate({ store_name: storeName, new_badge_days: newBadgeDays, ga_tag: gaTag || null })}
-          disabled={saveMutation.isPending}
+          onClick={() => saveMutation.mutate({
+            store_name:       storeName,
+            new_badge_days:   newBadgeDays,
+            ga_tag:           gaTag || null,
+            merchant_state:   merchantState.trim() || null,
+            merchant_gstin:   merchantGstin.trim() || null,
+            merchant_address: merchantAddress.trim() || null,
+          })}
+          disabled={saveMutation.isPending || !gstinValid}
           className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
         >
           {saveMutation.isPending ? 'Saving…' : 'Save'}

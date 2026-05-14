@@ -754,9 +754,18 @@ export default function CheckoutPage() {
 
               <div className="border-t border-gray-100 pt-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span style={{ color: 'var(--kb-muted)' }}>Subtotal</span>
+                  <span style={{ color: 'var(--kb-muted)' }}>
+                    Subtotal <span className="text-xs">(incl. GST)</span>
+                  </span>
                   <span style={{ color: 'var(--kb-charcoal)' }}>{formatINR(totals?.subtotal ?? 0)}</span>
                 </div>
+
+                {totals != null && totals.gst > 0 && (
+                  <div className="flex justify-between text-xs pl-3">
+                    <span style={{ color: 'var(--kb-muted)' }}>of which GST</span>
+                    <span style={{ color: 'var(--kb-muted)' }}>{formatINR(totals.gst)}</span>
+                  </div>
+                )}
 
                 {cart.couponData && (
                   <div className="flex justify-between text-sm items-center">
@@ -781,11 +790,6 @@ export default function CheckoutPage() {
                 <div className="flex justify-between text-sm">
                   <span style={{ color: 'var(--kb-muted)' }}>Shipping</span>
                   <span style={{ color: 'var(--kb-charcoal)' }}>{shippingLabel}</span>
-                </div>
-
-                <div className="flex justify-between text-sm">
-                  <span style={{ color: 'var(--kb-muted)' }}>GST (5%)</span>
-                  <span style={{ color: 'var(--kb-charcoal)' }}>{formatINR(totals?.gst ?? 0)}</span>
                 </div>
 
                 <div className="border-t border-gray-100 pt-3 flex justify-between items-baseline">

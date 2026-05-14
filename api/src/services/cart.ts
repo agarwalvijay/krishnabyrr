@@ -20,6 +20,9 @@ export interface CartItem {
   stockQty:     number;   // snapshot at add time
   quantity:     number;
   maxQty:       number;   // live stock (refreshed on GET)
+  // GST rate snapshot at add time. Optional for backward compat with carts in
+  // Redis from before this field existed — calcTotals falls back to 5%.
+  gstRate?:     number;
 }
 
 export interface CouponSnapshot {

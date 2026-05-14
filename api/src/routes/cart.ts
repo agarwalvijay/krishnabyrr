@@ -39,12 +39,28 @@ function getSessionId(req: Request, res: Response): string {
 }
 
 // ── Cart totals ────────────────────────────────────────────────────────────────
+//
+// Product prices (mrp / sale_price) are stored GST-INCLUSIVE — what the customer
+// pays per unit, all-in. For each line we extract the GST portion at the
+// product's own rate. The cart subtotal is therefore inclusive of GST; the
+// total is NOT recomputed by adding GST on top.
+//
+// The `gst` field returned here is informational ("of which GST included") so
+// the UI can show "incl. GST" labels. It is NOT added into total.
 
 function calcTotals(cart: CartData, settings: Record<string, string>) {
-  const subtotal = cart.items.reduce(
-    (sum, item) => sum + (item.salePrice ?? item.mrp) * item.quantity,
-    0,
-  );
+  // Compute per-line inclusive total + GST portion, accumulate
+  let subtotal     = 0;
+  let gstIncluded  = 0;
+
+  for (const item of cart.items) {
+    const unit     = item.salePrice ?? item.mrp;          // inclusive
+    const rate     = item.gstRate ?? 5;                   // fallback for old carts
+    const lineTot  = unit * item.quantity;
+    const taxable  = lineTot / (1 + rate / 100);
+    subtotal      += lineTot;
+    gstIncluded   += lineTot - taxable;
+  }
 
   const discountAmount = cart.couponData
     ? cart.couponData.type === 'free_shipping'
@@ -67,10 +83,12 @@ function calcTotals(cart: CartData, settings: Record<string, string>) {
     }
   }
 
-  const gst   = Math.round((subtotal - discountAmount) * 0.05);
-  const total = subtotal - discountAmount + shipping + gst;
+  // GST is already inside subtotal — total just adds shipping
+  const total = subtotal - discountAmount + shipping;
 
-  return { subtotal, discountAmount, shipping, gst, total };
+  // `gst` here represents "GST already included in subtotal" — kept for the
+  // existing API contract; the frontend renders it as informational.
+  return { subtotal, discountAmount, shipping, gst: Math.round(gstIncluded), total };
 }
 
 // ── GET /api/cart ──────────────────────────────────────────────────────────────
@@ -132,9 +150,10 @@ router.post('/items', async (req: Request, res: Response, next: NextFunction) =>
     const result = await pool.query<{
       id: string; name: string; slug: string; sku: string;
       mrp: string; sale_price: string | null; stock_qty: number;
+      gst_rate: string;
       gcs_path: string | null;
     }>(
-      `SELECT p.id, p.name, p.slug, p.sku, p.mrp, p.sale_price, p.stock_qty,
+      `SELECT p.id, p.name, p.slug, p.sku, p.mrp, p.sale_price, p.stock_qty, p.gst_rate,
               pi.gcs_path
        FROM products p
        LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = true
@@ -178,6 +197,7 @@ router.post('/items', async (req: Request, res: Response, next: NextFunction) =>
         stockQty:     p.stock_qty,
         quantity:     allowedQty,
         maxQty:       p.stock_qty,
+        gstRate:      parseFloat(p.gst_rate),
       };
       cart.items.push(item);
       await setReserve(productId, sessionId, allowedQty);
