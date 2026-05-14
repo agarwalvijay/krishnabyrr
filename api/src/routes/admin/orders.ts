@@ -1116,6 +1116,35 @@ router.get('/exchanges', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/admin/orders/exchanges/:id — full detail for the admin slide-over
+router.get('/exchanges/:id', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rows: [row] } = await pool.query(
+      `SELECT
+         er.id, er.exchange_number, er.status, er.reason,
+         er.items, er.customer_notes, er.admin_notes,
+         er.created_at, er.updated_at,
+         o.order_number, o.id AS order_id,
+         o.line_items AS order_line_items,
+         o.shipping_address,
+         COALESCE(c.name,  (o.shipping_address->>'name'))  AS customer_name,
+         COALESCE(c.email, o.guest_email)                  AS customer_email,
+         COALESCE(c.phone, (o.shipping_address->>'phone')) AS customer_phone
+       FROM exchange_requests er
+       JOIN orders o ON o.id = er.order_id
+       LEFT JOIN customers c ON c.id = er.customer_id
+       WHERE er.id = $1`,
+      [id]
+    );
+    if (!row) {
+      res.status(404).json({ error: { message: 'Exchange not found', code: 'NOT_FOUND' } });
+      return;
+    }
+    res.json({ data: row });
+  } catch (err) { next(err); }
+});
+
 // PATCH /api/admin/orders/exchanges/:id — update exchange status + admin notes
 router.patch('/exchanges/:id', requireAuth, async (req, res, next) => {
   try {

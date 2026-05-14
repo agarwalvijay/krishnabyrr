@@ -8,6 +8,7 @@ import CategoriesPage from './pages/Categories';
 import CollectionsPage from './pages/Collections';
 import TagsPage from './pages/Tags';
 import OrdersPage from './pages/Orders';
+import ExchangesPage from './pages/Exchanges';
 import CouponsPage from './pages/Coupons';
 import SettingsPage from './pages/Settings';
 import HomepagePage from './pages/Homepage';
@@ -58,6 +59,7 @@ export default function App() {
       <Route path="/collections" element={<ProtectedRoute><CollectionsPage /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
+      <Route path="/exchanges" element={<ProtectedRoute><ExchangesPage /></ProtectedRoute>} />
       <Route path="/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
       <Route path="/customers" element={<ProtectedRoute><CustomersPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
