@@ -99,25 +99,48 @@ router.post('/', requireCustomerAuth, async (req, res, next) => {
       }
     }
 
-    // Generate exchange number
-    const { rows: [seqRow] } = await pool.query<{ nextval: string }>(`SELECT NEXTVAL('exchange_number_seq')`);
-    const exchangeNumber = `KB-EX-${String(seqRow.nextval).padStart(6, '0')}`;
+    // Generate exchange number as `<order_number>-EX-<NNN>` where NNN is a
+    // per-order serial starting at 001. Wrap in a transaction with FOR UPDATE
+    // on the order row so concurrent exchange creates for the same order
+    // serialize (otherwise both could see the same count and collide on
+    // the UNIQUE constraint).
+    const client = await pool.connect();
+    let exchange: { id: string; exchange_number: string; created_at: Date };
+    try {
+      await client.query('BEGIN');
+      // Lock the order row so any other exchange-create for the same order waits
+      await client.query('SELECT id FROM orders WHERE id = $1 FOR UPDATE', [order_id]);
 
-    const { rows: [exchange] } = await pool.query<{ id: string; exchange_number: string; created_at: Date }>(
-      `INSERT INTO exchange_requests (
-         exchange_number, order_id, customer_id,
-         items, reason, customer_notes, status
-       ) VALUES ($1, $2, $3, $4, $5, $6, 'requested')
-       RETURNING id, exchange_number, created_at`,
-      [
-        exchangeNumber,
-        order_id,
-        req.customer!.id,
-        JSON.stringify(items),
-        reason,
-        customer_notes?.trim() ?? null,
-      ],
-    );
+      const { rows: [{ count }] } = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM exchange_requests WHERE order_id = $1`,
+        [order_id],
+      );
+      const serial = parseInt(count, 10) + 1;
+      const exchangeNumber = `${order.order_number}-EX-${String(serial).padStart(3, '0')}`;
+
+      const { rows: [row] } = await client.query<{ id: string; exchange_number: string; created_at: Date }>(
+        `INSERT INTO exchange_requests (
+           exchange_number, order_id, customer_id,
+           items, reason, customer_notes, status
+         ) VALUES ($1, $2, $3, $4, $5, $6, 'requested')
+         RETURNING id, exchange_number, created_at`,
+        [
+          exchangeNumber,
+          order_id,
+          req.customer!.id,
+          JSON.stringify(items),
+          reason,
+          customer_notes?.trim() ?? null,
+        ],
+      );
+      exchange = row;
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
 
     res.status(201).json({
       data: {

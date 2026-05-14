@@ -121,15 +121,14 @@
  *           If absent, owner notifications are silently skipped.
  *
  *   kb_owner_exchange (UTILITY):
- *     Body: "New exchange request *{{1}}* received!\n\n{{2}}\n\nCustomer: {{3}}"
- *     Variables: {{1}} = exchange number (KB-EX-000001)
- *                {{2}} = "Order KB-000001 · Reason: Wrong size · Maheshwari Silk Ivory Bel Buti x1"
- *                {{3}} = "Priya Sharma · 9876543210"
- *     Sample: "New exchange request *KB-EX-000001* received!
- *
- *              Order KB-000001 · Reason: Wrong size · Maheshwari Silk Ivory Bel Buti x1
- *
- *              Customer: Priya Sharma · 9876543210"
+ *     Body: "New exchange request {{1}} for order number {{2}} received! {{3}}. We will provide an update soon."
+ *     Variables: {{1}} = exchange number (e.g. KB-000012-EX-001)
+ *                {{2}} = order number (e.g. KB-000012)
+ *                {{3}} = "Items: Maheshwari Silk Ivory Bel Buti x1 · Reason: Wrong size"
+ *     Sample: "New exchange request KB-000012-EX-001 for order number KB-000012 received!
+ *              Items: Maheshwari Silk Ivory Bel Buti x1 · Reason: Wrong size.
+ *              We will provide an update soon."
+ *     Note: exchange number format is now per-order: <order>-EX-<NNN> starting at 001.
  *
  *   kb_exchange_received (UTILITY):
  *     Body: "Hi {{1}}! Your exchange request *{{2}}* for order {{3}} has been received. We'll review it and contact you within 24-48 hours."
@@ -437,20 +436,23 @@ export function sendOwnerExchangeRequest(params: {
   exchangeNumber:  string;
   orderNumber:     string;
   reason:          string;       // human-readable, e.g. "Wrong size"
-  itemSummary:     string;       // "Maheshwari Silk x1"
-  customerName:    string;
-  customerContact: string;       // phone, formatted as "9876543210"
+  itemSummary:     string;       // "Maheshwari Silk Ivory Bel Buti x1"
+  customerName:    string;       // unused by the current template, kept for future
+  customerContact: string;       // unused by the current template, kept for future
 }): void {
   const ownerPhone = process.env.OWNER_PHONE;
   if (!ownerPhone) return;
-  const detail = `Order ${params.orderNumber} · Reason: ${params.reason} · ${params.itemSummary}`;
+  // Template body:
+  //   "New exchange request {{1}} for order number {{2}} received! {{3}}. We will provide an update soon."
+  // {{3}} sits between "received! " and ". We will" — so no trailing punctuation.
+  const items = `Items: ${params.itemSummary} · Reason: ${params.reason}`;
   send(
     ownerPhone,
     'kb_owner_exchange',
     [{ type: 'body', parameters: [
       txt(params.exchangeNumber),
-      txt(detail),
-      txt(`${params.customerName} · ${params.customerContact}`),
+      txt(params.orderNumber),
+      txt(items),
     ]}],
     { exchange_number: params.exchangeNumber },
   );
