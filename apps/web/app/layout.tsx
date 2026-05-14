@@ -74,15 +74,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </Suspense>
         )}
         <SiteSettingsProvider>
-          <CartProvider>
-            <CustomerAuthProvider>
+          {/* AuthProvider wraps CartProvider so the cart can observe login/logout
+              transitions and refetch (cross-device cart sync). */}
+          <CustomerAuthProvider>
+            <CartProvider>
               <WishlistProvider>
                 <Header />
                 <main className="flex-1">{children}</main>
                 <Footer />
               </WishlistProvider>
-            </CustomerAuthProvider>
-          </CartProvider>
+            </CartProvider>
+          </CustomerAuthProvider>
         </SiteSettingsProvider>
       </body>
     </html>

@@ -9,6 +9,7 @@ import React, {
   useRef,
 } from 'react';
 import { apiClient, type CartData, type CartTotals } from '@/lib/api';
+import { useCustomerAuth } from '@/contexts/AuthContext';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     fetched.current = true;
     refreshCart();
   }, [refreshCart]);
+
+  // Re-fetch the cart when the authenticated customer changes (login or logout).
+  // The backend keys carts by customer-id when a JWT is present, so we want
+  // the UI to immediately reflect "your cart" the moment auth state flips.
+  const { customer, isLoading: authLoading } = useCustomerAuth();
+  const lastCustomerId = useRef<string | null>(null);
+  useEffect(() => {
+    if (authLoading) return;       // auth still resolving on initial mount
+    if (!fetched.current) return;  // initial fetch hasn't fired yet
+    const currentId = customer?.id ?? null;
+    if (currentId === lastCustomerId.current) return; // no transition
+    lastCustomerId.current = currentId;
+    refreshCart();
+  }, [customer?.id, authLoading, refreshCart]);
 
   const openCart  = useCallback(() => setState(s => ({ ...s, open: true })),  []);
   const closeCart = useCallback(() => setState(s => ({ ...s, open: false })), []);

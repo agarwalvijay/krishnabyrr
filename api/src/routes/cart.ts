@@ -11,12 +11,21 @@ import {
   setReserve,
   clearReserve,
   clearAllReserves,
+  sessionOwnerKey,
+  customerOwnerKey,
+  claimSessionCartForCustomer,
   type CartData,
   type CartItem,
 } from '../services/cart';
 import { validateCoupon } from '../services/coupon-engine';
+import { optionalCustomerAuth } from '../middleware/auth';
 
 const router = Router();
+
+// All cart endpoints know whether the requester is logged in.
+// This is what makes cross-device cart possible: when a JWT is present we
+// route to a customer-keyed cart instead of a session-keyed one.
+router.use(optionalCustomerAuth);
 
 // ── Cookie helpers ─────────────────────────────────────────────────────────────
 
@@ -36,6 +45,23 @@ function getSessionId(req: Request, res: Response): string {
   const newId = generateSessionId();
   res.setHeader('Set-Cookie', serialize(COOKIE_NAME, newId, COOKIE_OPTS));
   return newId;
+}
+
+/**
+ * The Redis key the cart lives under for THIS request:
+ *   customer:<uuid>  if logged in
+ *   session:<uuid>   if guest
+ * Session cookie is always set/refreshed so stock reserves still work.
+ */
+function getOwnerKey(req: Request, res: Response): {
+  ownerKey:   string;
+  sessionId:  string;
+  customerId: string | null;
+} {
+  const sessionId  = getSessionId(req, res);
+  const customerId = req.customer?.id ?? null;
+  const ownerKey   = customerId ? customerOwnerKey(customerId) : sessionOwnerKey(sessionId);
+  return { ownerKey, sessionId, customerId };
 }
 
 // ── Cart totals ────────────────────────────────────────────────────────────────
@@ -95,12 +121,18 @@ function calcTotals(cart: CartData, settings: Record<string, string>) {
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const sessionId = getSessionId(req, res);
-    let   cart      = await getCart(sessionId);
+    const { ownerKey, sessionId, customerId } = getOwnerKey(req, res);
 
-    if (!cart) {
-      cart = emptyCart(sessionId);
-      await setCart(sessionId, cart);
+    let cart: CartData;
+    if (customerId) {
+      // First request after login on this device: claim/merge any session cart
+      // into the customer cart. Cheap if nothing to do.
+      cart = await claimSessionCartForCustomer(sessionId, customerId);
+    } else {
+      cart = (await getCart(ownerKey)) ?? emptyCart(sessionId);
+      if (!(await getCart(ownerKey))) {
+        await setCart(ownerKey, cart);
+      }
     }
 
     // Refresh maxQty for each item from live DB stock
@@ -114,7 +146,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       for (const item of cart.items) {
         item.maxQty = stockMap.get(item.productId) ?? 0;
       }
-      await setCart(sessionId, cart);
+      await setCart(ownerKey, cart);
     }
 
     // Load settings for totals
@@ -173,8 +205,8 @@ router.post('/items', async (req: Request, res: Response, next: NextFunction) =>
 
     const allowedQty = Math.min(qty, p.stock_qty);
 
-    const sessionId = getSessionId(req, res);
-    let   cart      = await getCart(sessionId) ?? emptyCart(sessionId);
+    const { ownerKey, sessionId, customerId } = getOwnerKey(req, res);
+    let cart = await getCart(ownerKey) ?? emptyCart(sessionId, customerId);
 
     // Check if item already exists in cart
     const existing = cart.items.find(i => i.productId === productId);
@@ -203,7 +235,7 @@ router.post('/items', async (req: Request, res: Response, next: NextFunction) =>
       await setReserve(productId, sessionId, allowedQty);
     }
 
-    await setCart(sessionId, cart);
+    await setCart(ownerKey, cart);
     res.status(201).json({ data: { cart } });
   } catch (err) {
     next(err);
@@ -221,8 +253,8 @@ router.put('/items/:itemId', async (req: Request, res: Response, next: NextFunct
       return res.status(400).json({ error: { message: 'quantity is required', code: 'VALIDATION_ERROR' } });
     }
 
-    const sessionId = getSessionId(req, res);
-    const cart      = await getCart(sessionId);
+    const { ownerKey, sessionId } = getOwnerKey(req, res);
+    const cart = await getCart(ownerKey);
 
     if (!cart) {
       return res.status(404).json({ error: { message: 'Cart not found', code: 'NOT_FOUND' } });
@@ -251,7 +283,7 @@ router.put('/items/:itemId', async (req: Request, res: Response, next: NextFunct
       await setReserve(item.productId, sessionId, item.quantity);
     }
 
-    await setCart(sessionId, cart);
+    await setCart(ownerKey, cart);
     res.json({ data: { cart } });
   } catch (err) {
     next(err);
@@ -263,8 +295,8 @@ router.put('/items/:itemId', async (req: Request, res: Response, next: NextFunct
 router.delete('/items/:itemId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { itemId } = req.params;
-    const sessionId  = getSessionId(req, res);
-    const cart       = await getCart(sessionId);
+    const { ownerKey, sessionId } = getOwnerKey(req, res);
+    const cart = await getCart(ownerKey);
 
     if (!cart) {
       return res.status(404).json({ error: { message: 'Cart not found', code: 'NOT_FOUND' } });
@@ -277,7 +309,7 @@ router.delete('/items/:itemId', async (req: Request, res: Response, next: NextFu
 
     cart.items = cart.items.filter(i => i.id !== itemId);
     await clearReserve(item.productId, sessionId);
-    await setCart(sessionId, cart);
+    await setCart(ownerKey, cart);
 
     res.json({ data: { cart } });
   } catch (err) {
@@ -289,15 +321,15 @@ router.delete('/items/:itemId', async (req: Request, res: Response, next: NextFu
 
 router.delete('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const sessionId = getSessionId(req, res);
-    const cart      = await getCart(sessionId);
+    const { ownerKey, sessionId, customerId } = getOwnerKey(req, res);
+    const cart = await getCart(ownerKey);
 
     if (cart) {
       await clearAllReserves(sessionId, cart.items);
     }
-    await clearCart(sessionId);
+    await clearCart(ownerKey);
 
-    res.json({ data: { cart: emptyCart(sessionId) } });
+    res.json({ data: { cart: emptyCart(sessionId, customerId) } });
   } catch (err) {
     next(err);
   }
@@ -315,8 +347,8 @@ router.post('/pincode', async (req: Request, res: Response, next: NextFunction) 
       });
     }
 
-    const sessionId = getSessionId(req, res);
-    let   cart      = await getCart(sessionId) ?? emptyCart(sessionId);
+    const { ownerKey, sessionId, customerId } = getOwnerKey(req, res);
+    let cart = await getCart(ownerKey) ?? emptyCart(sessionId, customerId);
 
     // Determine zone (Delhi NCR prefixes)
     const DELHI_NCR_PREFIXES = [
@@ -328,7 +360,7 @@ router.post('/pincode', async (req: Request, res: Response, next: NextFunction) 
 
     cart.pincode = pincode;
     cart.zone    = zone;
-    await setCart(sessionId, cart);
+    await setCart(ownerKey, cart);
 
     res.json({ data: { pincode, zone } });
   } catch (err) {
@@ -346,13 +378,9 @@ router.post('/coupon', async (req: Request, res: Response, next: NextFunction) =
       return res.status(400).json({ error: { message: 'code is required', code: 'VALIDATION_ERROR' } });
     }
 
-    const sessionId = getSessionId(req, res);
-    const cart      = await getCart(sessionId) ?? emptyCart(sessionId);
-
+    const { ownerKey, sessionId, customerId } = getOwnerKey(req, res);
+    const cart  = await getCart(ownerKey) ?? emptyCart(sessionId, customerId);
     const redis = await getRedisClient();
-
-    // Derive customerId from session if authenticated (for now: null — auth is Session 6)
-    const customerId: string | null = cart.customerId ?? null;
 
     const cartItems = cart.items.map(i => ({
       productId: i.productId,
@@ -386,7 +414,7 @@ router.post('/coupon', async (req: Request, res: Response, next: NextFunction) =
       description:     result.description,
     };
 
-    await setCart(sessionId, cart);
+    await setCart(ownerKey, cart);
     res.json({ data: { coupon: cart.couponData } });
   } catch (err) {
     next(err);
@@ -397,8 +425,8 @@ router.post('/coupon', async (req: Request, res: Response, next: NextFunction) =
 
 router.delete('/coupon', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const sessionId = getSessionId(req, res);
-    const cart      = await getCart(sessionId);
+    const { ownerKey } = getOwnerKey(req, res);
+    const cart = await getCart(ownerKey);
 
     if (!cart) {
       return res.status(404).json({ error: { message: 'Cart not found', code: 'NOT_FOUND' } });
@@ -406,7 +434,7 @@ router.delete('/coupon', async (req: Request, res: Response, next: NextFunction)
 
     cart.couponCode = null;
     cart.couponData = null;
-    await setCart(sessionId, cart);
+    await setCart(ownerKey, cart);
 
     res.json({ data: { cart } });
   } catch (err) {

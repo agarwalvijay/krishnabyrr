@@ -4,7 +4,10 @@ import crypto from 'crypto';
 import Razorpay from 'razorpay';
 import pool from '../db/client';
 import { getRedisClient } from '../redis';
-import { getCart, clearCart, clearAllReserves } from '../services/cart';
+import {
+  getCart, clearCart, clearAllReserves,
+  sessionOwnerKey, customerOwnerKey,
+} from '../services/cart';
 import { validateCoupon } from '../services/coupon-engine';
 import { optionalCustomerAuth, requireCustomerAuth } from '../middleware/auth';
 import { notifyNewOrder } from '../services/notifications';
@@ -180,6 +183,10 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
     }
 
     // ── Load cart ──────────────────────────────────────────────────────────────
+    // Cart lives under one of two Redis keys depending on auth:
+    //   customer:<uuid>  if the request carries a valid JWT
+    //   session:<uuid>   if guest
+    // Reserves stay session-keyed regardless (short-lived checkout guard).
     const cookies   = parseCookie(req.headers.cookie ?? '');
     const sessionId = cookies['kb_session'];
 
@@ -188,7 +195,11 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
       return;
     }
 
-    const cart = await getCart(sessionId);
+    const cartOwnerKey = customerId
+      ? customerOwnerKey(customerId)
+      : sessionOwnerKey(sessionId);
+
+    const cart = await getCart(cartOwnerKey);
     if (!cart || cart.items.length === 0) {
       res.status(400).json({ error: { message: 'Cart is empty', code: 'EMPTY_CART' } });
       return;
@@ -513,8 +524,10 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response, next:
       await client.query('COMMIT');
 
       // ── Clear cart (best-effort — outside transaction) ─────────────────────────
+      // Clear whichever owner key the cart was stored under, plus any reserves
+      // tied to this session.
       await clearAllReserves(sessionId, cart.items).catch(() => {});
-      await clearCart(sessionId).catch(() => {});
+      await clearCart(cartOwnerKey).catch(() => {});
 
       // ── Notify owner for manual orders only (gateway orders notify after payment confirm) ─
       if (paymentMethod === 'manual') {
