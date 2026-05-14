@@ -180,7 +180,6 @@ router.post('/', requireCustomerAuth, async (req, res, next) => {
         phone:          req.customer!.phone,
         name:           req.customer!.name,
         exchangeNumber: exchange.exchange_number,
-        orderNumber:    order.order_number,
       });
     }
     pushToCustomer(req.customer!.id, {

@@ -131,8 +131,9 @@
  *     Note: exchange number format is now per-order: <order>-EX-<NNN> starting at 001.
  *
  *   kb_exchange_received (UTILITY):
- *     Body: "Hi {{1}}! Your exchange request *{{2}}* for order {{3}} has been received. We'll review it and contact you within 24-48 hours."
- *     Variables: {{1}} = customer name, {{2}} = exchange number, {{3}} = order number
+ *     Body: "Hi {{1}}! Your exchange request *{{2}}* has been received. We'll review it and contact you within 24-48 hours."
+ *     Variables: {{1}} = customer name, {{2}} = exchange number
+ *     Note: order number is embedded in the exchange number (KB-000012-EX-001) so no need to repeat it.
  *
  *   kb_exchange_approved (UTILITY):
  *     Body: "Hi {{1}}! Your exchange request {{2}} has been approved. We'll contact you shortly to arrange pickup."
@@ -462,7 +463,6 @@ export function sendExchangeReceived(params: {
   phone:          string;
   name:           string;
   exchangeNumber: string;
-  orderNumber:    string;
 }): void {
   send(
     params.phone,
@@ -470,7 +470,6 @@ export function sendExchangeReceived(params: {
     [{ type: 'body', parameters: [
       txt(params.name),
       txt(params.exchangeNumber),
-      txt(params.orderNumber),
     ]}],
     { exchange_number: params.exchangeNumber },
   );
