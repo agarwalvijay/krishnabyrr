@@ -649,15 +649,24 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
                   <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-kb-charcoal">Initiate exchange</h3>
 
-                    {/* Items + quantities */}
+                    {/* Items + quantities — grid is deterministic vs flex+w-16
+                        (admin app has global input styling that was fighting the
+                        fixed width). Column 1: text takes all remaining space.
+                        Column 2: exactly 80px for the qty input. */}
                     <div>
                       <p className="text-xs text-kb-muted mb-1.5">Items to exchange (qty 0 = skip)</p>
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         {(order.line_items as Array<{ product_id: string; name: string; sku: string; quantity: number }>).map((li) => (
-                          <div key={li.product_id} className="flex items-center gap-2 text-sm">
-                            <div className="flex-1 min-w-0">
+                          <div
+                            key={li.product_id}
+                            className="grid items-center gap-3 text-sm"
+                            style={{ gridTemplateColumns: 'minmax(0, 1fr) 80px' }}
+                          >
+                            <div className="min-w-0">
                               <div className="text-kb-charcoal truncate">{li.name}</div>
-                              <div className="text-xs text-kb-muted">{li.sku} · ordered {li.quantity}</div>
+                              <div className="text-xs text-kb-muted truncate">
+                                {li.sku} · ordered {li.quantity}
+                              </div>
                             </div>
                             <input
                               type="number"
@@ -668,7 +677,8 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
                                 ...prev,
                                 [li.product_id]: Math.max(0, Math.min(li.quantity, Number(e.target.value) || 0)),
                               }))}
-                              className="w-16 border border-gray-200 rounded-md px-2 py-1 text-sm text-right"
+                              className="border border-gray-200 rounded-md px-2 py-1 text-sm text-right"
+                              style={{ width: '100%' }}
                             />
                           </div>
                         ))}
