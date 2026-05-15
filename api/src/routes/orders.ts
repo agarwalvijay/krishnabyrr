@@ -639,6 +639,47 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
       return;
     }
 
+    // Look up the order and gate on its current state. The signature itself
+    // remains valid indefinitely (it's just an HMAC of order_id|payment_id),
+    // so without this guard a stale browser tab / replayed request could flip
+    // an order from paid/refunded/cancelled back to authorized and re-fire
+    // owner + customer notifications.
+    const { rows: [existing] } = await pool.query<{
+      id: string; payment_status: string; razorpay_payment_id: string | null;
+    }>(
+      `SELECT id, payment_status, razorpay_payment_id
+         FROM orders
+        WHERE UPPER(order_number) = UPPER($1)
+          AND razorpay_order_id   = $2`,
+      [orderNumber, razorpay_order_id],
+    );
+
+    if (!existing) {
+      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    // Idempotent retry: already authorized with this same payment. Return
+    // success without re-running the UPDATE or re-firing notifications.
+    if (existing.payment_status === 'authorized'
+        && existing.razorpay_payment_id === razorpay_payment_id) {
+      res.json({ data: { order_number: orderNumber.toUpperCase(), payment_status: 'authorized' } });
+      return;
+    }
+
+    // Any non-pending state means the order has moved past initial verify.
+    // Reject — admin should reconcile manually via Razorpay dashboard rather
+    // than letting a stale client request mutate a terminal order.
+    if (existing.payment_status !== 'pending') {
+      res.status(409).json({
+        error: {
+          message: `Order is already in '${existing.payment_status}' state — cannot reverify.`,
+          code:    'ORDER_NOT_PENDING',
+        },
+      });
+      return;
+    }
+
     // Mark order as authorized (funds held, not yet captured)
     const { rows: [updated] } = await pool.query<{
       id: string; order_number: string; total: string;
@@ -651,14 +692,18 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
              razorpay_payment_id     = $1,
              razorpay_authorized_at  = NOW(),
              updated_at              = NOW()
-       WHERE UPPER(order_number) = UPPER($2)
-         AND razorpay_order_id   = $3
+       WHERE id = $2
+         AND payment_status = 'pending'
        RETURNING id, order_number, total, line_items, shipping_address, guest_email`,
-      [razorpay_payment_id, orderNumber, razorpay_order_id],
+      [razorpay_payment_id, existing.id],
     );
 
     if (!updated) {
-      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+      // Race: status changed between SELECT and UPDATE. Treat as a duplicate
+      // and don't fire notifications.
+      res.status(409).json({
+        error: { message: 'Order state changed concurrently — please retry.', code: 'ORDER_STATE_CHANGED' },
+      });
       return;
     }
 
