@@ -11,6 +11,7 @@ import {
   sendExchangeApproved,
   sendExchangeRejected,
   sendExchangeCompleted,
+  sendExchangeReceived,
 } from '../../services/whatsapp';
 
 function getRazorpay(): Razorpay | null {
@@ -161,6 +162,166 @@ router.get('/exchanges/:id', requireAuth, async (req, res, next) => {
       return;
     }
     res.json({ data: row });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/orders/:id/exchanges — admin initiates exchange on customer's behalf
+// Used when a guest (or any customer) requests an exchange via WhatsApp/phone
+// and the admin creates the record so the standard exchange flow can take over.
+// No exchange-window enforcement here — admin can override on a case-by-case basis.
+router.post('/:id/exchanges', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { items, reason, customer_notes, admin_notes } = req.body as {
+      items?:          Array<{ product_id: string; quantity: number }>;
+      reason?:         string;
+      customer_notes?: string;
+      admin_notes?:    string;
+    };
+
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    if (!Array.isArray(items) || items.length === 0 || !reason) {
+      res.status(400).json({
+        error: { message: 'items (non-empty) and reason are required', code: 'VALIDATION_ERROR' },
+      });
+      return;
+    }
+
+    const VALID_REASONS = ['fabric_defect', 'different_from_description', 'other'];
+    if (!VALID_REASONS.includes(reason)) {
+      res.status(400).json({
+        error: { message: `reason must be one of: ${VALID_REASONS.join(', ')}`, code: 'VALIDATION_ERROR' },
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Lock the order so the serial number generation is race-safe vs another
+      // exchange-create for the same order. Same pattern as the customer route.
+      const { rows: [order] } = await client.query<{
+        id: string;
+        order_number: string;
+        customer_id: string | null;
+        guest_phone: string | null;
+        fulfilled_at: Date | null;
+        line_items: Array<{ product_id: string; quantity: number; name: string }>;
+        shipping_address: { name?: string; phone?: string };
+      }>(
+        `SELECT id, order_number, customer_id, guest_phone, fulfilled_at,
+                line_items, shipping_address
+         FROM orders
+         WHERE ${isUUID ? 'id = $1' : 'order_number = $1'}
+         FOR UPDATE`,
+        [id]
+      );
+
+      if (!order) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+        return;
+      }
+      if (!order.fulfilled_at) {
+        await client.query('ROLLBACK');
+        res.status(422).json({
+          error: {
+            message: 'Order has not shipped yet — there is nothing to exchange. Mark it fulfilled first if needed.',
+            code: 'NOT_FULFILLED',
+          },
+        });
+        return;
+      }
+
+      // Validate each requested item is in the original order with enough quantity
+      const lineItemMap = new Map(order.line_items.map(li => [li.product_id, li]));
+      for (const item of items) {
+        const ordered = lineItemMap.get(item.product_id);
+        if (!ordered) {
+          await client.query('ROLLBACK');
+          res.status(422).json({
+            error: { message: `Product ${item.product_id} was not in the original order`, code: 'INVALID_ITEM' },
+          });
+          return;
+        }
+        if (item.quantity < 1 || item.quantity > ordered.quantity) {
+          await client.query('ROLLBACK');
+          res.status(422).json({
+            error: { message: `Invalid quantity for "${ordered.name}"`, code: 'INVALID_QUANTITY' },
+          });
+          return;
+        }
+      }
+
+      // Per-order serial: <order>-EX-<NNN>
+      const { rows: [{ count }] } = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM exchange_requests WHERE order_id = $1`,
+        [order.id],
+      );
+      const serial = parseInt(count, 10) + 1;
+      const exchangeNumber = `${order.order_number}-EX-${String(serial).padStart(3, '0')}`;
+
+      const { rows: [exchange] } = await client.query<{
+        id: string; exchange_number: string; status: string; created_at: Date;
+      }>(
+        `INSERT INTO exchange_requests (
+           exchange_number, order_id, customer_id,
+           items, reason, customer_notes, admin_notes, status
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'requested')
+         RETURNING id, exchange_number, status, created_at`,
+        [
+          exchangeNumber,
+          order.id,
+          order.customer_id,
+          JSON.stringify(items),
+          reason,
+          customer_notes?.trim() ?? null,
+          admin_notes?.trim() ?? null,
+        ],
+      );
+
+      await client.query('COMMIT');
+
+      res.status(201).json({ data: exchange });
+
+      // ── Notifications (fire-and-forget) ────────────────────────────────────
+      // Notify the customer via WhatsApp using their phone from the order
+      // (customer profile if logged-in, else guest_phone or shipping_address).
+      const customerPhone =
+        (order.customer_id ? (await pool.query<{ phone: string | null }>(
+          `SELECT phone FROM customers WHERE id = $1`, [order.customer_id],
+        )).rows[0]?.phone : null)
+        ?? order.guest_phone
+        ?? order.shipping_address.phone
+        ?? null;
+
+      const customerName =
+        order.shipping_address.name
+        ?? (order.customer_id ? 'there' : 'there');
+
+      if (customerPhone) {
+        sendExchangeReceived({
+          phone:          customerPhone,
+          name:           customerName,
+          exchangeNumber: exchange.exchange_number,
+        });
+      }
+
+      if (order.customer_id) {
+        pushToCustomer(order.customer_id, {
+          title: 'Exchange request received',
+          body:  `Your exchange request ${exchange.exchange_number} for order ${order.order_number} is being reviewed.`,
+          data:  { url: '/account/orders' },
+        }).catch(() => {});
+      }
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) { next(err); }
 });
 

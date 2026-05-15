@@ -123,6 +123,13 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
   const [captureAmount, setCaptureAmount]         = useState('');
   const refundInputRef                            = useRef<HTMLInputElement>(null);
 
+  // Initiate-exchange-on-customer's-behalf state
+  const [showExchangeForm, setShowExchangeForm]     = useState(false);
+  const [exItemQtys, setExItemQtys]                 = useState<Record<string, number>>({});
+  const [exReason, setExReason]                     = useState('fabric_defect');
+  const [exCustomerNotes, setExCustomerNotes]       = useState('');
+  const [exAdminNotes, setExAdminNotes]             = useState('');
+
   const { data, isLoading } = useQuery<{ data: OrderDetail }>({
     queryKey: ['admin-order', orderId],
     queryFn: async () => {
@@ -213,6 +220,25 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
       toast.error(msg ?? 'Void failed');
+    },
+  });
+
+  const initiateExchangeMutation = useMutation({
+    mutationFn: (body: { items: Array<{ product_id: string; quantity: number }>; reason: string; customer_notes?: string; admin_notes?: string }) =>
+      api.post(`/admin/orders/${orderId}/exchanges`, body),
+    onSuccess: () => {
+      toast.success('Exchange created — customer notified');
+      setShowExchangeForm(false);
+      setExItemQtys({});
+      setExCustomerNotes('');
+      setExAdminNotes('');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-order', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['admin-exchanges'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      toast.error(msg ?? 'Could not create exchange');
     },
   });
 
@@ -587,6 +613,136 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
                     </div>
                   ))}
                 </div>
+              </section>
+            )}
+
+            {/* Initiate exchange on customer's behalf — only for shipped orders.
+                Useful when a guest (or any customer) requests exchange via WhatsApp
+                and admin creates the record so the standard flow can take over. */}
+            {order.fulfilled_at && order.fulfillment_status !== 'cancelled' && (
+              <section className="border border-amber-100 rounded-xl p-4 bg-amber-50/30">
+                {!showExchangeForm ? (
+                  <>
+                    <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Initiate exchange on customer's behalf</h3>
+                    <p className="text-xs text-kb-muted mb-3">
+                      Use when a customer requests an exchange via WhatsApp / phone and you
+                      want to create the record manually. The customer is notified, then the
+                      exchange shows up under <strong>Exchanges</strong> for the standard
+                      approve / reject / complete flow.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setShowExchangeForm(true);
+                        // Pre-fill: zero qty per item, admin picks what to include
+                        const initial: Record<string, number> = {};
+                        for (const li of order.line_items as Array<{ product_id: string }>) {
+                          initial[li.product_id] = 0;
+                        }
+                        setExItemQtys(initial);
+                      }}
+                      className="px-4 py-2 rounded-md border border-amber-300 text-amber-700 text-sm font-medium hover:bg-amber-50"
+                    >
+                      + Initiate Exchange
+                    </button>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-kb-charcoal">Initiate exchange</h3>
+
+                    {/* Items + quantities */}
+                    <div>
+                      <p className="text-xs text-kb-muted mb-1.5">Items to exchange (qty 0 = skip)</p>
+                      <div className="space-y-1.5">
+                        {(order.line_items as Array<{ product_id: string; name: string; sku: string; quantity: number }>).map((li) => (
+                          <div key={li.product_id} className="flex items-center gap-2 text-sm">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-kb-charcoal truncate">{li.name}</div>
+                              <div className="text-xs text-kb-muted">{li.sku} · ordered {li.quantity}</div>
+                            </div>
+                            <input
+                              type="number"
+                              min={0}
+                              max={li.quantity}
+                              value={exItemQtys[li.product_id] ?? 0}
+                              onChange={(e) => setExItemQtys(prev => ({
+                                ...prev,
+                                [li.product_id]: Math.max(0, Math.min(li.quantity, Number(e.target.value) || 0)),
+                              }))}
+                              className="w-16 border border-gray-200 rounded-md px-2 py-1 text-sm text-right"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Reason */}
+                    <div>
+                      <label className="block text-xs text-kb-muted mb-1">Reason</label>
+                      <select
+                        value={exReason}
+                        onChange={(e) => setExReason(e.target.value)}
+                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 outline-none"
+                      >
+                        <option value="fabric_defect">Fabric defect</option>
+                        <option value="different_from_description">Different from description</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+
+                    {/* Customer notes (what they told you) */}
+                    <div>
+                      <label className="block text-xs text-kb-muted mb-1">Customer's description (optional)</label>
+                      <textarea
+                        value={exCustomerNotes}
+                        onChange={(e) => setExCustomerNotes(e.target.value)}
+                        rows={2}
+                        placeholder="What did the customer tell you over WhatsApp?"
+                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 outline-none resize-none"
+                      />
+                    </div>
+
+                    {/* Internal notes */}
+                    <div>
+                      <label className="block text-xs text-kb-muted mb-1">Internal admin notes (optional, not sent to customer)</label>
+                      <textarea
+                        value={exAdminNotes}
+                        onChange={(e) => setExAdminNotes(e.target.value)}
+                        rows={2}
+                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 outline-none resize-none"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => {
+                          const items = Object.entries(exItemQtys)
+                            .filter(([, q]) => q > 0)
+                            .map(([product_id, quantity]) => ({ product_id, quantity }));
+                          if (items.length === 0) {
+                            toast.error('Pick at least one item with quantity ≥ 1');
+                            return;
+                          }
+                          initiateExchangeMutation.mutate({
+                            items,
+                            reason: exReason,
+                            customer_notes: exCustomerNotes.trim() || undefined,
+                            admin_notes:    exAdminNotes.trim() || undefined,
+                          });
+                        }}
+                        disabled={initiateExchangeMutation.isPending}
+                        className="px-4 py-2 rounded-md bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+                      >
+                        {initiateExchangeMutation.isPending ? 'Creating…' : 'Create Exchange'}
+                      </button>
+                      <button
+                        onClick={() => setShowExchangeForm(false)}
+                        className="px-4 py-2 rounded-md border border-gray-200 text-sm text-kb-muted hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </section>
             )}
           </div>
