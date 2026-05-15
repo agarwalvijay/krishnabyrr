@@ -8,6 +8,7 @@ import {
   getCart, clearCart, clearAllReserves,
   sessionOwnerKey, customerOwnerKey,
 } from '../services/cart';
+import { streamInvoicePdf } from '../services/invoice-pdf';
 import { validateCoupon } from '../services/coupon-engine';
 import { optionalCustomerAuth, requireCustomerAuth } from '../middleware/auth';
 import { notifyNewOrder } from '../services/notifications';
@@ -737,6 +738,47 @@ router.get('/:orderNumber', optionalCustomerAuth, async (req: Request, res: Resp
     }
 
     res.json({ data: order });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /api/orders/:orderNumber/invoice ──────────────────────────────────────
+// Customer-facing PDF download. Same access rules as the order GET above:
+// owning customer (via JWT) or guest providing matching email.
+
+router.get('/:orderNumber/invoice', optionalCustomerAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { orderNumber } = req.params;
+    const { email } = req.query as { email?: string };
+
+    // Access check using the same pattern as GET /:orderNumber
+    const { rows: [accessRow] } = await pool.query<{
+      id: string; customer_id: string | null; guest_email: string | null;
+    }>(
+      `SELECT id, customer_id, guest_email FROM orders WHERE order_number = $1`,
+      [orderNumber.toUpperCase()],
+    );
+
+    if (!accessRow) {
+      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const isOwner = req.customer && accessRow.customer_id === req.customer.id;
+    const isGuest = email && accessRow.guest_email
+      && accessRow.guest_email.toLowerCase() === email.toLowerCase().trim();
+
+    if (!isOwner && !isGuest) {
+      res.status(403).json({ error: { message: 'Access denied', code: 'FORBIDDEN' } });
+      return;
+    }
+
+    // Generate + stream the PDF
+    const ok = await streamInvoicePdf(accessRow.id, res);
+    if (!ok) {
+      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+    }
   } catch (err) {
     next(err);
   }

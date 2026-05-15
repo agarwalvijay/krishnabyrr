@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import Razorpay from 'razorpay';
-import PDFDocument from 'pdfkit';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { pushToCustomer } from '../../services/push';
+import { streamInvoicePdf } from '../../services/invoice-pdf';
 import {
   sendOrderShipped,
   sendOrderCancelled,
@@ -398,6 +398,13 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
         return;
       }
       setClauses.push(`payment_status = $${i}`); params.push(payment_status); i++;
+      // When flipping the order to 'paid' manually (not via the /capture endpoint),
+      // initialise captured_amount to the order total if it's NULL. Otherwise the
+      // refund ceiling falls back to `total` later, allowing over-refund on orders
+      // that were only partially captured externally.
+      if (payment_status === 'paid') {
+        setClauses.push(`captured_amount = COALESCE(captured_amount, total)`);
+      }
     }
     if (fulfillment_status !== undefined) {
       if (!VALID_FULFIL.includes(fulfillment_status as typeof VALID_FULFIL[number])) {
@@ -878,103 +885,127 @@ router.post('/:id/refund', requireAuth, async (req, res, next) => {
     const { amount: rawAmount } = req.body as { amount?: number | null };
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-    const { rows: [order] } = await pool.query(
-      `SELECT * FROM orders WHERE ${isUUID ? 'id = $1' : 'order_number = $1'}`,
-      [id]
-    );
-    if (!order) {
-      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
-      return;
-    }
-    if (order.payment_status !== 'paid') {
-      res.status(409).json({ error: { message: 'Order is not in paid status', code: 'NOT_PAID' } });
-      return;
-    }
-    if (!order.razorpay_payment_id) {
-      const isPhonePe = !!order.phonepe_transaction_id;
-      res.status(409).json({
-        error: {
-          message: isPhonePe
-            ? 'PhonePe refunds must be issued manually from the PhonePe merchant dashboard'
-            : 'No payment recorded on this order',
-          code: isPhonePe ? 'PHONEPE_MANUAL_REFUND' : 'NO_PAYMENT',
-        },
-      });
-      return;
-    }
-
-    const alreadyRefunded     = parseFloat(order.refunded_amount ?? 0);
-    const refundableCeiling   = parseFloat(order.captured_amount ?? order.total);
-    const remainingRefundable = refundableCeiling - alreadyRefunded;
-
-    if (remainingRefundable <= 0) {
-      res.status(409).json({ error: { message: 'Order has already been fully refunded', code: 'FULLY_REFUNDED' } });
-      return;
-    }
-
-    const refundAmount = rawAmount != null ? rawAmount : remainingRefundable;
-
-    if (typeof refundAmount !== 'number' || refundAmount <= 0) {
-      res.status(422).json({ error: { message: 'amount must be a positive number', code: 'VALIDATION_ERROR' } });
-      return;
-    }
-    if (refundAmount > remainingRefundable + 0.01) { // +0.01 for float tolerance
-      res.status(422).json({
-        error: {
-          message: `Refund amount ₹${refundAmount} exceeds remaining refundable amount ₹${remainingRefundable.toFixed(2)}`,
-          code: 'EXCEEDS_REFUNDABLE',
-        },
-      });
-      return;
-    }
-
-    const rzp = getRazorpay();
-    if (!rzp) {
-      res.status(503).json({ error: { message: 'Razorpay is not configured on this server', code: 'RAZORPAY_NOT_CONFIGURED' } });
-      return;
-    }
-
-    let refundResp: { id: string };
+    // Lock the order row for the duration of the refund. Two admins clicking
+    // Refund simultaneously won't both read refunded_amount=0 and over-refund.
+    // The Razorpay HTTP call sits inside the lock — admin volume is low so the
+    // ~2s hold is acceptable.
+    const client = await pool.connect();
     try {
-      refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
-        amount: Math.round(refundAmount * 100), // paise
-        speed: 'normal',
-        notes: { order_number: order.order_number },
-      } as Parameters<typeof rzp.payments.refund>[1]) as { id: string };
-    } catch (rzpErr: unknown) {
-      const desc = (rzpErr as { error?: { description?: string } })?.error?.description;
-      res.status(422).json({
-        error: {
-          message: desc ?? 'Razorpay refund was rejected — please try a different amount or refund from the Razorpay dashboard.',
-          code: 'RAZORPAY_ERROR',
-        },
-      });
-      return;
+      await client.query('BEGIN');
+
+      const { rows: [order] } = await client.query(
+        `SELECT * FROM orders WHERE ${isUUID ? 'id = $1' : 'order_number = $1'} FOR UPDATE`,
+        [id]
+      );
+      if (!order) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+        return;
+      }
+      if (order.payment_status !== 'paid') {
+        await client.query('ROLLBACK');
+        res.status(409).json({ error: { message: 'Order is not in paid status', code: 'NOT_PAID' } });
+        return;
+      }
+      if (!order.razorpay_payment_id) {
+        await client.query('ROLLBACK');
+        const isPhonePe = !!order.phonepe_transaction_id;
+        res.status(409).json({
+          error: {
+            message: isPhonePe
+              ? 'PhonePe refunds must be issued manually from the PhonePe merchant dashboard'
+              : 'No payment recorded on this order',
+            code: isPhonePe ? 'PHONEPE_MANUAL_REFUND' : 'NO_PAYMENT',
+          },
+        });
+        return;
+      }
+
+      const alreadyRefunded     = parseFloat(order.refunded_amount ?? 0);
+      const refundableCeiling   = parseFloat(order.captured_amount ?? order.total);
+      const remainingRefundable = refundableCeiling - alreadyRefunded;
+
+      if (remainingRefundable <= 0) {
+        await client.query('ROLLBACK');
+        res.status(409).json({ error: { message: 'Order has already been fully refunded', code: 'FULLY_REFUNDED' } });
+        return;
+      }
+
+      const refundAmount = rawAmount != null ? rawAmount : remainingRefundable;
+
+      if (typeof refundAmount !== 'number' || refundAmount <= 0) {
+        await client.query('ROLLBACK');
+        res.status(422).json({ error: { message: 'amount must be a positive number', code: 'VALIDATION_ERROR' } });
+        return;
+      }
+      if (refundAmount > remainingRefundable + 0.01) { // +0.01 for float tolerance
+        await client.query('ROLLBACK');
+        res.status(422).json({
+          error: {
+            message: `Refund amount ₹${refundAmount} exceeds remaining refundable amount ₹${remainingRefundable.toFixed(2)}`,
+            code: 'EXCEEDS_REFUNDABLE',
+          },
+        });
+        return;
+      }
+
+      const rzp = getRazorpay();
+      if (!rzp) {
+        await client.query('ROLLBACK');
+        res.status(503).json({ error: { message: 'Razorpay is not configured on this server', code: 'RAZORPAY_NOT_CONFIGURED' } });
+        return;
+      }
+
+      let refundResp: { id: string };
+      try {
+        refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
+          amount: Math.round(refundAmount * 100), // paise
+          speed: 'normal',
+          notes: { order_number: order.order_number },
+        } as Parameters<typeof rzp.payments.refund>[1]) as { id: string };
+      } catch (rzpErr: unknown) {
+        await client.query('ROLLBACK');
+        const desc = (rzpErr as { error?: { description?: string } })?.error?.description;
+        res.status(422).json({
+          error: {
+            message: desc ?? 'Razorpay refund was rejected — please try a different amount or refund from the Razorpay dashboard.',
+            code: 'RAZORPAY_ERROR',
+          },
+        });
+        return;
+      }
+      const razorpayRefundId = refundResp.id;
+
+      const newRefundedAmount  = alreadyRefunded + refundAmount;
+      const isFullyRefunded    = newRefundedAmount >= refundableCeiling - 0.01;
+      const newPaymentStatus   = isFullyRefunded ? 'refunded' : 'paid';
+
+      const { rows: [updated] } = await client.query(
+        `UPDATE orders SET
+           refunded_amount    = $1,
+           razorpay_refund_id = $2,
+           payment_status     = $3,
+           updated_at         = NOW()
+         WHERE id = $4
+         RETURNING *`,
+        [newRefundedAmount, razorpayRefundId, newPaymentStatus, order.id]
+      );
+
+      // Record the individual refund transaction inside the same transaction so
+      // it either commits with the order update or rolls back together.
+      await client.query(
+        `INSERT INTO order_refunds (order_id, amount, razorpay_refund_id) VALUES ($1, $2, $3)`,
+        [order.id, refundAmount, razorpayRefundId]
+      );
+
+      await client.query('COMMIT');
+      res.json({ data: { ...updated, razorpay_refund_id: razorpayRefundId } });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
     }
-    const razorpayRefundId = refundResp.id;
-
-    const newRefundedAmount  = alreadyRefunded + refundAmount;
-    const isFullyRefunded    = newRefundedAmount >= refundableCeiling - 0.01;
-    const newPaymentStatus   = isFullyRefunded ? 'refunded' : 'paid';
-
-    const { rows: [updated] } = await pool.query(
-      `UPDATE orders SET
-         refunded_amount    = $1,
-         razorpay_refund_id = $2,
-         payment_status     = $3,
-         updated_at         = NOW()
-       WHERE id = $4
-       RETURNING *`,
-      [newRefundedAmount, razorpayRefundId, newPaymentStatus, order.id]
-    );
-
-    res.json({ data: { ...updated, razorpay_refund_id: razorpayRefundId } });
-
-    // Record the individual refund transaction — best-effort, does not affect response
-    pool.query(
-      `INSERT INTO order_refunds (order_id, amount, razorpay_refund_id) VALUES ($1, $2, $3)`,
-      [order.id, refundAmount, razorpayRefundId]
-    ).catch((e) => console.error('[refund] order_refunds insert failed:', e.message));
   } catch (err) { next(err); }
 });
 
@@ -982,255 +1013,13 @@ router.post('/:id/refund', requireAuth, async (req, res, next) => {
 router.get('/:id/pdf', requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-
-    const { rows: [order] } = await pool.query(
-      `SELECT o.*,
-              COALESCE(c.email, o.guest_email) AS customer_email,
-              COALESCE(c.name, (o.shipping_address->>'name')) AS customer_name_db,
-              c.phone AS customer_phone_db
-       FROM orders o
-       LEFT JOIN customers c ON c.id = o.customer_id
-       WHERE ${isUUID ? 'o.id = $1' : 'o.order_number = $1'}`,
-      [id]
-    );
-    if (!order) {
+    const ok = await streamInvoicePdf(id, res);
+    if (!ok) {
       res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
       return;
     }
-
-    const addr      = order.shipping_address as Record<string, string>;
-    const lineItems = order.line_items as Array<{
-      name: string; sku: string; hsn_code: string | null;
-      quantity: number;
-      unit_price: number;            // GST-inclusive
-      line_total: number;            // GST-inclusive
-      taxable_amount?: number;       // pre-GST (added after the inclusive-pricing change)
-      gst_amount?: number;           // GST portion (added after the inclusive-pricing change)
-      gst_rate: number;
-    }>;
-    const orderDate = new Date(order.created_at).toLocaleDateString('en-IN', {
-      day: 'numeric', month: 'long', year: 'numeric',
-    });
-
-    // ── Load merchant info from settings (GSTIN, state, address) ───────────────
-    const { rows: settingRows } = await pool.query<{ key: string; value: unknown }>(
-      `SELECT key, value FROM settings
-       WHERE key IN ('store_name','merchant_state','merchant_gstin','merchant_address','support_email')`
-    );
-    const settings: Record<string, string> = {};
-    for (const r of settingRows) {
-      settings[r.key] = typeof r.value === 'string' ? r.value : String(r.value ?? '');
-    }
-    const merchantName    = settings.store_name       ?? "Krishna's Bliss";
-    const merchantState   = settings.merchant_state   ?? '';
-    const merchantGstin   = settings.merchant_gstin   ?? '';
-    const merchantAddress = settings.merchant_address ?? '';
-    const supportEmail    = settings.support_email    ?? '';
-
-    // Intra-state vs inter-state determines CGST+SGST vs IGST split
-    const buyerState  = (addr.state ?? '').trim();
-    const isIntraState = !!merchantState
-      && buyerState.toLowerCase() === merchantState.toLowerCase();
-
-    // ── Per-line tax breakdown (handle legacy orders without taxable_amount) ───
-    // For old orders written before inclusive-pricing change, line items lack
-    // taxable_amount / gst_amount. Derive them defensively.
-    function lineTax(item: typeof lineItems[number]) {
-      const total = item.line_total;
-      if (item.taxable_amount != null && item.gst_amount != null) {
-        return { taxable: item.taxable_amount, gst: item.gst_amount };
-      }
-      const rate    = item.gst_rate || 0;
-      const taxable = total / (1 + rate / 100);
-      return { taxable, gst: total - taxable };
-    }
-
-    // Aggregate per GST rate so the tax summary can show one row per rate.
-    const taxByRate = new Map<number, { taxable: number; gst: number }>();
-    for (const item of lineItems) {
-      const { taxable, gst } = lineTax(item);
-      const bucket = taxByRate.get(item.gst_rate) ?? { taxable: 0, gst: 0 };
-      bucket.taxable += taxable;
-      bucket.gst     += gst;
-      taxByRate.set(item.gst_rate, bucket);
-    }
-
-    // ── Build PDF ──────────────────────────────────────────────────────────────
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="invoice-${order.order_number}.pdf"`);
-    doc.pipe(res);
-
-    const TEAL   = '#1A6B6B';
-    const MUTED  = '#888888';
-    const DARK   = '#1C1C1C';
-    const LEFT   = 50;
-    const RIGHT  = 545;
-    const WIDTH  = RIGHT - LEFT;
-    const fmt    = (n: number | string) =>
-      `${parseFloat(String(n)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-    // ── Header ─────────────────────────────────────────────────────────────────
-    doc.fontSize(22).font('Helvetica-Bold').fillColor(TEAL).text(merchantName, LEFT, 50);
-    doc.fontSize(9).font('Helvetica').fillColor(MUTED)
-      .text('Handcrafted with ♥ in India', LEFT, 76);
-
-    doc.fontSize(20).font('Helvetica-Bold').fillColor(DARK)
-      .text('TAX INVOICE', RIGHT - 200, 50, { width: 200, align: 'right' });
-    doc.fontSize(10).font('Helvetica').fillColor(MUTED)
-      .text(`# ${order.order_number}`, RIGHT - 200, 76, { width: 200, align: 'right' })
-      .text(orderDate,                   RIGHT - 200, 90, { width: 200, align: 'right' });
-
-    // ── Divider ────────────────────────────────────────────────────────────────
-    doc.moveTo(LEFT, 110).lineTo(RIGHT, 110).strokeColor('#E5E5E5').lineWidth(1).stroke();
-
-    // ── Seller (left) and Buyer (right) blocks ─────────────────────────────────
-    const COL2 = LEFT + WIDTH / 2 + 10;
-    let y = 122;
-
-    doc.fontSize(8).font('Helvetica-Bold').fillColor(MUTED).text('SELLER', LEFT, y);
-    doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(merchantName, LEFT, y + 13);
-    doc.fontSize(9).font('Helvetica').fillColor(MUTED);
-    let sy = y + 27;
-    if (merchantAddress) { doc.text(merchantAddress, LEFT, sy, { width: WIDTH / 2 - 10 }); sy += 26; }
-    if (merchantGstin)   { doc.text(`GSTIN: ${merchantGstin}`, LEFT, sy); sy += 13; }
-    if (merchantState)   { doc.text(`State: ${merchantState}`, LEFT, sy); sy += 13; }
-    if (supportEmail)    { doc.text(supportEmail, LEFT, sy); sy += 13; }
-
-    doc.fontSize(8).font('Helvetica-Bold').fillColor(MUTED).text('BILL / SHIP TO', COL2, y);
-    doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(addr.name, COL2, y + 13);
-    doc.fontSize(9).font('Helvetica').fillColor(MUTED);
-    let by = y + 27;
-    doc.text(addr.line1 + (addr.line2 ? `, ${addr.line2}` : ''), COL2, by, { width: WIDTH / 2 - 10 });
-    by += 13;
-    doc.text(`${addr.city}, ${addr.state} – ${addr.pincode}`, COL2, by); by += 13;
-    doc.text(`Phone: ${addr.phone}`, COL2, by); by += 13;
-    if (order.billing_gstin) { doc.text(`GSTIN: ${order.billing_gstin}`, COL2, by); by += 13; }
-    doc.text(`Place of Supply: ${buyerState || '—'}`, COL2, by);
-
-    y = Math.max(sy, by + 13) + 12;
-
-    // ── Items table ────────────────────────────────────────────────────────────
-    doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor('#E5E5E5').lineWidth(1).stroke();
-    y += 10;
-
-    // Column geometry — fits A4 width
-    const COL_ITEM   = LEFT;          // wide
-    const COL_HSN    = LEFT + 220;
-    const COL_QTY    = LEFT + 270;
-    const COL_PRICE  = LEFT + 310;    // inclusive unit price
-    const COL_TAX    = LEFT + 380;    // taxable amount
-    const COL_GST    = LEFT + 440;    // GST amount
-    const COL_TOTAL  = LEFT + 495;    // line total (inclusive)
-    const COL_WIDTHS = { item: 200, hsn: 45, qty: 30, price: 60, tax: 50, gst: 50, total: 50 };
-
-    doc.fontSize(8).font('Helvetica-Bold').fillColor(MUTED);
-    doc.text('ITEM',     COL_ITEM,  y, { width: COL_WIDTHS.item });
-    doc.text('HSN',      COL_HSN,   y, { width: COL_WIDTHS.hsn,   align: 'right' });
-    doc.text('QTY',      COL_QTY,   y, { width: COL_WIDTHS.qty,   align: 'right' });
-    doc.text('PRICE',    COL_PRICE, y, { width: COL_WIDTHS.price, align: 'right' });
-    doc.text('TAXABLE',  COL_TAX,   y, { width: COL_WIDTHS.tax,   align: 'right' });
-    doc.text('GST',      COL_GST,   y, { width: COL_WIDTHS.gst,   align: 'right' });
-    doc.text('TOTAL',    COL_TOTAL, y, { width: COL_WIDTHS.total, align: 'right' });
-    y += 14;
-    doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor('#E5E5E5').lineWidth(0.5).stroke();
-    y += 8;
-
-    for (const item of lineItems) {
-      const { taxable, gst } = lineTax(item);
-      doc.fontSize(9).font('Helvetica').fillColor(DARK)
-         .text(item.name, COL_ITEM, y, { width: COL_WIDTHS.item });
-      doc.fontSize(8).fillColor(MUTED)
-         .text(item.sku, COL_ITEM, y + 11, { width: COL_WIDTHS.item });
-
-      doc.fontSize(9).fillColor(DARK)
-         .text(item.hsn_code ?? '—', COL_HSN,  y, { width: COL_WIDTHS.hsn,   align: 'right' })
-         .text(String(item.quantity), COL_QTY,  y, { width: COL_WIDTHS.qty,   align: 'right' })
-         .text(fmt(item.unit_price),  COL_PRICE,y, { width: COL_WIDTHS.price, align: 'right' })
-         .text(fmt(taxable),          COL_TAX,  y, { width: COL_WIDTHS.tax,   align: 'right' })
-         .text(`${fmt(gst)}`,         COL_GST,  y, { width: COL_WIDTHS.gst,   align: 'right' })
-         .text(fmt(item.line_total),  COL_TOTAL,y, { width: COL_WIDTHS.total, align: 'right' });
-
-      y += 24;
-    }
-
-    doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor('#E5E5E5').lineWidth(1).stroke();
-    y += 12;
-
-    // ── Tax summary (CGST+SGST or IGST per rate) ──────────────────────────────
-    const totalsLeft   = RIGHT - 240;
-    const taxableSubtotal = Array.from(taxByRate.values()).reduce((s, b) => s + b.taxable, 0);
-    const gstSubtotal     = Array.from(taxByRate.values()).reduce((s, b) => s + b.gst,     0);
-
-    const sumRows: Array<[string, string, boolean?]> = [];
-    sumRows.push(['Taxable value', `₹${fmt(taxableSubtotal)}`]);
-
-    // Sort rates ascending for stable display
-    const rates = Array.from(taxByRate.keys()).sort((a, b) => a - b);
-    for (const rate of rates) {
-      const { gst } = taxByRate.get(rate)!;
-      if (isIntraState) {
-        const half = gst / 2;
-        sumRows.push([`CGST @ ${rate / 2}%`, `₹${fmt(half)}`]);
-        sumRows.push([`SGST @ ${rate / 2}%`, `₹${fmt(half)}`]);
-      } else {
-        sumRows.push([`IGST @ ${rate}%`, `₹${fmt(gst)}`]);
-      }
-    }
-
-    if (parseFloat(order.discount_amount) > 0) {
-      sumRows.push([
-        `Discount${order.coupon_code ? ` (${order.coupon_code})` : ''}`,
-        `−₹${fmt(order.discount_amount)}`,
-      ]);
-    }
-    sumRows.push([
-      'Shipping',
-      parseFloat(order.shipping_amount) === 0 ? 'Free' : `₹${fmt(order.shipping_amount)}`,
-    ]);
-    sumRows.push(['Total', `₹${fmt(order.total)}`, true]);
-
-    for (const [label, value, bold] of sumRows) {
-      if (bold) {
-        y += 4;
-        doc.moveTo(totalsLeft, y).lineTo(RIGHT, y).strokeColor('#E5E5E5').lineWidth(0.5).stroke();
-        y += 8;
-        doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(label, totalsLeft, y, { width: 120 });
-        doc.fontSize(12).font('Helvetica-Bold').fillColor(TEAL).text(value, totalsLeft + 130, y, { width: 110, align: 'right' });
-      } else {
-        doc.fontSize(9).font('Helvetica').fillColor(MUTED).text(label, totalsLeft, y, { width: 120 });
-        doc.fontSize(9).fillColor(DARK).text(value, totalsLeft + 130, y, { width: 110, align: 'right' });
-      }
-      y += 16;
-    }
-
-    // ── Tax-supply note ───────────────────────────────────────────────────────
-    y += 12;
-    const supplyNote = isIntraState
-      ? `Intra-state supply (seller and buyer both in ${merchantState}). CGST + SGST applied.`
-      : merchantState
-      ? `Inter-state supply (seller in ${merchantState}, buyer in ${buyerState || '—'}). IGST applied.`
-      : 'Place of supply: see Bill/Ship To. Set merchant_state in Settings to enable CGST/SGST/IGST split.';
-    doc.fontSize(8).font('Helvetica').fillColor(MUTED).text(supplyNote, LEFT, y, { width: WIDTH });
-    y += 16;
-
-    if (!merchantGstin) {
-      doc.fontSize(8).font('Helvetica-Oblique').fillColor('#B26' + '500')
-        .text('Note: merchant GSTIN not configured in Settings — this document is a bill of supply, not a tax invoice for input-credit purposes.',
-          LEFT, y, { width: WIDTH });
-      y += 16;
-    }
-
-    // ── Footer ─────────────────────────────────────────────────────────────────
-    const pageBottom = doc.page.height - 60;
-    doc.moveTo(LEFT, pageBottom - 10).lineTo(RIGHT, pageBottom - 10).strokeColor('#E5E5E5').lineWidth(0.5).stroke();
-    doc.fontSize(8).font('Helvetica').fillColor(MUTED)
-      .text("Thank you for shopping with Krishna's Bliss!", LEFT, pageBottom, { align: 'center', width: WIDTH });
-
-    doc.end();
   } catch (err) { next(err); }
 });
+
 
 export default router;
