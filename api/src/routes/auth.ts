@@ -95,13 +95,27 @@ router.post('/register', async (req, res, next) => {
       [normalEmail, name.trim(), password_hash, normalPhone],
     );
 
-    // Auto-link any guest orders placed with this email before registration
+    // Auto-link any guest orders placed with this email before registration.
+    // Also bump customers.total_orders / lifetime_value so the customer
+    // dashboard count matches the orders listing.
     if (normalEmail) {
-      await pool.query(
+      const { rows: linked } = await pool.query<{ total: string }>(
         `UPDATE orders SET customer_id = $1, updated_at = NOW()
-         WHERE LOWER(guest_email) = $2 AND customer_id IS NULL`,
+         WHERE LOWER(guest_email) = $2 AND customer_id IS NULL
+         RETURNING total::text`,
         [customer.id, normalEmail],
       );
+      if (linked.length > 0) {
+        const sum = linked.reduce((s, r) => s + parseFloat(r.total), 0);
+        await pool.query(
+          `UPDATE customers
+             SET total_orders   = total_orders + $1,
+                 lifetime_value = lifetime_value + $2,
+                 updated_at     = NOW()
+           WHERE id = $3`,
+          [linked.length, sum, customer.id],
+        );
+      }
     }
 
     const token = jwt.sign(
@@ -187,12 +201,23 @@ router.post('/login', async (req, res, next) => {
 
 router.get('/me', requireCustomerAuth, async (req, res, next) => {
   try {
+    // Compute total_orders + lifetime_value live from the orders table rather
+    // than trusting the denormalised counter on customers. Otherwise orders
+    // linked AFTER registration (via auto-link or /link-order) wouldn't be
+    // reflected in the dashboard count.
     const { rows: [customer] } = await pool.query<{
       id: string; email: string | null; name: string; phone: string | null;
       phone_verified: boolean; total_orders: number; lifetime_value: string; created_at: Date;
     }>(
-      `SELECT id, email, name, phone, phone_verified, total_orders, lifetime_value::text, created_at
-       FROM customers WHERE id = $1`,
+      `SELECT
+         c.id, c.email, c.name, c.phone, c.phone_verified,
+         COUNT(o.id)::int               AS total_orders,
+         COALESCE(SUM(o.total), 0)::text AS lifetime_value,
+         c.created_at
+       FROM customers c
+       LEFT JOIN orders o ON o.customer_id = c.id
+       WHERE c.id = $1
+       GROUP BY c.id`,
       [req.customer!.id],
     );
 
@@ -230,8 +255,8 @@ router.post('/link-order', async (req, res, next) => {
       return;
     }
 
-    const { rows: [order] } = await pool.query<{ id: string }>(
-      `SELECT id FROM orders
+    const { rows: [order] } = await pool.query<{ id: string; total: string }>(
+      `SELECT id, total::text FROM orders
        WHERE order_number = $1
          AND customer_id IS NULL
          AND LOWER(guest_email) = $2`,
@@ -246,6 +271,17 @@ router.post('/link-order', async (req, res, next) => {
     await pool.query(
       `UPDATE orders SET customer_id = $1, updated_at = NOW() WHERE id = $2`,
       [customer.id, order.id],
+    );
+
+    // Keep customers.total_orders + lifetime_value consistent with the linked
+    // order so admin Customers page reflects reality.
+    await pool.query(
+      `UPDATE customers
+         SET total_orders   = total_orders + 1,
+             lifetime_value = lifetime_value + $1,
+             updated_at     = NOW()
+       WHERE id = $2`,
+      [parseFloat(order.total), customer.id],
     );
 
     res.json({ data: { linked: true } });
