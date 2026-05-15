@@ -746,17 +746,27 @@ router.get('/:orderNumber', optionalCustomerAuth, async (req: Request, res: Resp
 // ── GET /api/orders/:orderNumber/invoice ──────────────────────────────────────
 // Customer-facing PDF download. Same access rules as the order GET above:
 // owning customer (via JWT) or guest providing matching email.
+//
+// Fraud protection: the invoice is only released after the order has actually
+// shipped (fulfilled_at IS NOT NULL). Otherwise a buyer could place an order,
+// immediately pull the tax invoice complete with merchant GSTIN, then attempt
+// to claim input credit or otherwise misuse the document before any goods
+// changed hands. fulfilled_at remains set after cancellation, so a cancelled-
+// after-shipping order can still be invoiced.
 
 router.get('/:orderNumber/invoice', optionalCustomerAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { orderNumber } = req.params;
     const { email } = req.query as { email?: string };
 
-    // Access check using the same pattern as GET /:orderNumber
     const { rows: [accessRow] } = await pool.query<{
-      id: string; customer_id: string | null; guest_email: string | null;
+      id: string;
+      customer_id: string | null;
+      guest_email: string | null;
+      fulfilled_at: Date | null;
     }>(
-      `SELECT id, customer_id, guest_email FROM orders WHERE order_number = $1`,
+      `SELECT id, customer_id, guest_email, fulfilled_at
+       FROM orders WHERE order_number = $1`,
       [orderNumber.toUpperCase()],
     );
 
@@ -771,6 +781,16 @@ router.get('/:orderNumber/invoice', optionalCustomerAuth, async (req: Request, r
 
     if (!isOwner && !isGuest) {
       res.status(403).json({ error: { message: 'Access denied', code: 'FORBIDDEN' } });
+      return;
+    }
+
+    if (!accessRow.fulfilled_at) {
+      res.status(403).json({
+        error: {
+          message: 'Tax invoice is available after your order ships. You will be notified by WhatsApp when it does.',
+          code: 'INVOICE_NOT_READY',
+        },
+      });
       return;
     }
 

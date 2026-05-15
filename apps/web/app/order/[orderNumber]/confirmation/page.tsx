@@ -274,32 +274,17 @@ export default function ConfirmationPage() {
           </div>
         </details>
 
-        {/* Download invoice */}
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              const url = `/api/orders/${orderNumber}/invoice${guestEmail ? `?email=${encodeURIComponent(guestEmail)}` : ''}`;
-              const res = await apiClient.get(url, { responseType: 'blob' });
-              const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
-              const link = document.createElement('a');
-              link.href = URL.createObjectURL(blob);
-              link.download = `invoice-${orderNumber}.pdf`;
-              link.click();
-              URL.revokeObjectURL(link.href);
-            } catch {
-              alert('Could not download invoice. Please try again or contact us on WhatsApp.');
-            }
-          }}
-          className="w-full bg-white rounded-2xl p-4 shadow-sm flex items-center justify-center gap-2 text-sm font-medium hover:bg-gray-50 transition-colors"
-          style={{ color: 'var(--kb-teal)' }}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+        {/* Invoice availability note (PDF is released after shipping) */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm text-sm flex items-start gap-3" style={{ color: 'var(--kb-muted)' }}>
+          <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5} style={{ color: 'var(--kb-teal)' }}>
             <path strokeLinecap="round" strokeLinejoin="round"
-              d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          Download Tax Invoice (PDF)
-        </button>
+          <p>
+            <strong style={{ color: 'var(--kb-charcoal)' }}>Tax invoice</strong> will be available
+            for download in your account once your order ships. We'll notify you via WhatsApp.
+          </p>
+        </div>
 
         {/* Exchange Policy Note */}
         <div className="bg-white rounded-2xl p-5 shadow-sm text-sm space-y-1" style={{ color: 'var(--kb-charcoal)' }}>
