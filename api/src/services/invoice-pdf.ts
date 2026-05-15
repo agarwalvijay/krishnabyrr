@@ -116,7 +116,7 @@ export async function streamInvoicePdf(orderId: string, res: Response): Promise<
   // Header
   doc.fontSize(22).font('Helvetica-Bold').fillColor(TEAL).text(merchantName, LEFT, 50);
   doc.fontSize(9).font('Helvetica').fillColor(MUTED)
-    .text('Handcrafted with ♥ in India', LEFT, 76);
+    .text('Handcrafted with love in India', LEFT, 76);
 
   doc.fontSize(20).font('Helvetica-Bold').fillColor(DARK)
     .text('TAX INVOICE', RIGHT - 200, 50, { width: 200, align: 'right' });
@@ -130,69 +130,91 @@ export async function streamInvoicePdf(orderId: string, res: Response): Promise<
   const COL2 = LEFT + WIDTH / 2 + 10;
   let y = 122;
 
+  // Column widths for the two-block layout
+  const HALF_W = WIDTH / 2 - 10;
+
   doc.fontSize(8).font('Helvetica-Bold').fillColor(MUTED).text('SELLER', LEFT, y);
   doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(merchantName, LEFT, y + 13);
   doc.fontSize(9).font('Helvetica').fillColor(MUTED);
   let sy = y + 27;
-  if (merchantAddress) { doc.text(merchantAddress, LEFT, sy, { width: WIDTH / 2 - 10 }); sy += 26; }
-  if (merchantGstin)   { doc.text(`GSTIN: ${merchantGstin}`, LEFT, sy); sy += 13; }
-  if (merchantState)   { doc.text(`State: ${merchantState}`, LEFT, sy); sy += 13; }
-  if (supportEmail)    { doc.text(supportEmail, LEFT, sy); sy += 13; }
+  if (merchantAddress) {
+    // Reserve actual rendered height — multi-line addresses no longer
+    // collide with GSTIN below.
+    const h = doc.heightOfString(merchantAddress, { width: HALF_W });
+    doc.text(merchantAddress, LEFT, sy, { width: HALF_W });
+    sy += h + 3;
+  }
+  if (merchantGstin)   { doc.text(`GSTIN: ${merchantGstin}`, LEFT, sy, { width: HALF_W }); sy += 13; }
+  if (merchantState)   { doc.text(`State: ${merchantState}`, LEFT, sy, { width: HALF_W }); sy += 13; }
+  if (supportEmail)    { doc.text(supportEmail,              LEFT, sy, { width: HALF_W }); sy += 13; }
 
   doc.fontSize(8).font('Helvetica-Bold').fillColor(MUTED).text('BILL / SHIP TO', COL2, y);
-  doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(addr.name, COL2, y + 13);
+  doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(addr.name, COL2, y + 13, { width: HALF_W });
   doc.fontSize(9).font('Helvetica').fillColor(MUTED);
   let by = y + 27;
-  doc.text(addr.line1 + (addr.line2 ? `, ${addr.line2}` : ''), COL2, by, { width: WIDTH / 2 - 10 });
+  const line1Full = addr.line1 + (addr.line2 ? `, ${addr.line2}` : '');
+  const line1H    = doc.heightOfString(line1Full, { width: HALF_W });
+  doc.text(line1Full, COL2, by, { width: HALF_W });
+  by += line1H + 1;
+  doc.text(`${addr.city}, ${addr.state} - ${addr.pincode}`, COL2, by, { width: HALF_W }); by += 13;
+  doc.text(`Phone: ${addr.phone}`, COL2, by, { width: HALF_W }); by += 13;
+  if (order.billing_gstin) { doc.text(`GSTIN: ${order.billing_gstin}`, COL2, by, { width: HALF_W }); by += 13; }
+  doc.text(`Place of Supply: ${buyerState || '-'}`, COL2, by, { width: HALF_W });
   by += 13;
-  doc.text(`${addr.city}, ${addr.state} – ${addr.pincode}`, COL2, by); by += 13;
-  doc.text(`Phone: ${addr.phone}`, COL2, by); by += 13;
-  if (order.billing_gstin) { doc.text(`GSTIN: ${order.billing_gstin}`, COL2, by); by += 13; }
-  doc.text(`Place of Supply: ${buyerState || '—'}`, COL2, by);
 
-  y = Math.max(sy, by + 13) + 12;
+  y = Math.max(sy, by) + 12;
 
   // Items table
   doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor('#E5E5E5').lineWidth(1).stroke();
   y += 10;
 
-  const COL_ITEM   = LEFT;
-  const COL_HSN    = LEFT + 220;
-  const COL_QTY    = LEFT + 270;
-  const COL_PRICE  = LEFT + 310;
-  const COL_TAX    = LEFT + 380;
-  const COL_GST    = LEFT + 440;
-  const COL_TOTAL  = LEFT + 495;
-  const COL_WIDTHS = { item: 200, hsn: 45, qty: 30, price: 60, tax: 50, gst: 50, total: 50 };
+  // Columns sized to fit exactly in WIDTH (495 pt). All right-aligned numeric
+  // columns abut — text is short so the right-aligned content doesn't collide.
+  // ITEM holds the product name (wraps) with SKU + HSN as a small subtitle.
+  const COL_ITEM  = LEFT;            // width 220 — fits 2 lines of wrap comfortably
+  const COL_QTY   = LEFT + 220;      // width 40
+  const COL_PRICE = LEFT + 260;      // width 65
+  const COL_TAX   = LEFT + 325;      // width 65
+  const COL_GST   = LEFT + 390;      // width 50
+  const COL_TOTAL = LEFT + 440;      // width 55 — ends at 495 (right margin = 495 above LEFT)
+  const W = { item: 215, qty: 40, price: 65, tax: 65, gst: 50, total: 55 };
 
   doc.fontSize(8).font('Helvetica-Bold').fillColor(MUTED);
-  doc.text('ITEM',    COL_ITEM,  y, { width: COL_WIDTHS.item });
-  doc.text('HSN',     COL_HSN,   y, { width: COL_WIDTHS.hsn,   align: 'right' });
-  doc.text('QTY',     COL_QTY,   y, { width: COL_WIDTHS.qty,   align: 'right' });
-  doc.text('PRICE',   COL_PRICE, y, { width: COL_WIDTHS.price, align: 'right' });
-  doc.text('TAXABLE', COL_TAX,   y, { width: COL_WIDTHS.tax,   align: 'right' });
-  doc.text('GST',     COL_GST,   y, { width: COL_WIDTHS.gst,   align: 'right' });
-  doc.text('TOTAL',   COL_TOTAL, y, { width: COL_WIDTHS.total, align: 'right' });
+  doc.text('ITEM',    COL_ITEM,  y, { width: W.item });
+  doc.text('QTY',     COL_QTY,   y, { width: W.qty,   align: 'right' });
+  doc.text('PRICE',   COL_PRICE, y, { width: W.price, align: 'right' });
+  doc.text('TAXABLE', COL_TAX,   y, { width: W.tax,   align: 'right' });
+  doc.text('GST',     COL_GST,   y, { width: W.gst,   align: 'right' });
+  doc.text('TOTAL',   COL_TOTAL, y, { width: W.total, align: 'right' });
   y += 14;
   doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor('#E5E5E5').lineWidth(0.5).stroke();
   y += 8;
 
   for (const item of lineItems) {
     const { taxable, gst } = lineTax(item);
-    doc.fontSize(9).font('Helvetica').fillColor(DARK)
-       .text(item.name, COL_ITEM, y, { width: COL_WIDTHS.item });
+
+    // Measure the actual rendered height of the product name so the SKU
+    // subtitle doesn't overlap when the name wraps to 2+ lines.
+    doc.fontSize(9).font('Helvetica').fillColor(DARK);
+    const nameHeight = doc.heightOfString(item.name, { width: W.item });
+    doc.text(item.name, COL_ITEM, y, { width: W.item });
+
+    // SKU + HSN combined as a single subtitle (saves a column)
+    const subtitle = item.hsn_code
+      ? `${item.sku} · HSN ${item.hsn_code}`
+      : item.sku;
     doc.fontSize(8).fillColor(MUTED)
-       .text(item.sku, COL_ITEM, y + 11, { width: COL_WIDTHS.item });
+       .text(subtitle, COL_ITEM, y + nameHeight + 1, { width: W.item });
 
     doc.fontSize(9).fillColor(DARK)
-       .text(item.hsn_code ?? '—', COL_HSN,  y, { width: COL_WIDTHS.hsn,   align: 'right' })
-       .text(String(item.quantity), COL_QTY,  y, { width: COL_WIDTHS.qty,   align: 'right' })
-       .text(fmt(item.unit_price),  COL_PRICE,y, { width: COL_WIDTHS.price, align: 'right' })
-       .text(fmt(taxable),          COL_TAX,  y, { width: COL_WIDTHS.tax,   align: 'right' })
-       .text(`${fmt(gst)}`,         COL_GST,  y, { width: COL_WIDTHS.gst,   align: 'right' })
-       .text(fmt(item.line_total),  COL_TOTAL,y, { width: COL_WIDTHS.total, align: 'right' });
+       .text(String(item.quantity), COL_QTY,   y, { width: W.qty,   align: 'right' })
+       .text(fmt(item.unit_price),  COL_PRICE, y, { width: W.price, align: 'right' })
+       .text(fmt(taxable),          COL_TAX,   y, { width: W.tax,   align: 'right' })
+       .text(fmt(gst),              COL_GST,   y, { width: W.gst,   align: 'right' })
+       .text(fmt(item.line_total),  COL_TOTAL, y, { width: W.total, align: 'right' });
 
-    y += 24;
+    // Row height = name height + subtitle line + gap. Minimum keeps tight rows.
+    y += Math.max(nameHeight + 14, 22);
   }
 
   doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor('#E5E5E5').lineWidth(1).stroke();
@@ -203,31 +225,31 @@ export async function streamInvoicePdf(orderId: string, res: Response): Promise<
   const taxableSubtotal = Array.from(taxByRate.values()).reduce((s, b) => s + b.taxable, 0);
 
   const sumRows: Array<[string, string, boolean?]> = [];
-  sumRows.push(['Taxable value', `₹${fmt(taxableSubtotal)}`]);
+  sumRows.push(['Taxable value', `Rs. ${fmt(taxableSubtotal)}`]);
 
   const rates = Array.from(taxByRate.keys()).sort((a, b) => a - b);
   for (const rate of rates) {
     const { gst } = taxByRate.get(rate)!;
     if (isIntraState) {
       const half = gst / 2;
-      sumRows.push([`CGST @ ${rate / 2}%`, `₹${fmt(half)}`]);
-      sumRows.push([`SGST @ ${rate / 2}%`, `₹${fmt(half)}`]);
+      sumRows.push([`CGST @ ${rate / 2}%`, `Rs. ${fmt(half)}`]);
+      sumRows.push([`SGST @ ${rate / 2}%`, `Rs. ${fmt(half)}`]);
     } else {
-      sumRows.push([`IGST @ ${rate}%`, `₹${fmt(gst)}`]);
+      sumRows.push([`IGST @ ${rate}%`, `Rs. ${fmt(gst)}`]);
     }
   }
 
   if (parseFloat(order.discount_amount) > 0) {
     sumRows.push([
       `Discount${order.coupon_code ? ` (${order.coupon_code})` : ''}`,
-      `−₹${fmt(order.discount_amount)}`,
+      `-Rs. ${fmt(order.discount_amount)}`,
     ]);
   }
   sumRows.push([
     'Shipping',
-    parseFloat(order.shipping_amount) === 0 ? 'Free' : `₹${fmt(order.shipping_amount)}`,
+    parseFloat(order.shipping_amount) === 0 ? 'Free' : `Rs. ${fmt(order.shipping_amount)}`,
   ]);
-  sumRows.push(['Total', `₹${fmt(order.total)}`, true]);
+  sumRows.push(['Total', `Rs. ${fmt(order.total)}`, true]);
 
   for (const [label, value, bold] of sumRows) {
     if (bold) {
