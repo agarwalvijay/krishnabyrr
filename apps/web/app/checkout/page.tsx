@@ -265,6 +265,12 @@ export default function CheckoutPage() {
       const orderNumber = order.order_number;
       const emailSuffix = isLoggedIn ? '' : `?email=${encodeURIComponent(values.email!)}`;
 
+      // Cart was cleared server-side after the order was created — refresh the
+      // CartContext so the header icon and any cart drawer reflect the empty
+      // state. Otherwise the just-purchased item lingers as a 'ghost' until the
+      // user navigates and the cart refetches (or any cart op errors out).
+      refreshCart().catch(() => {});
+
       if (payment.method === 'razorpay' && payment.key_id && payment.razorpay_order_id) {
         // Load Razorpay script on demand (only when actually needed)
         await loadRazorpay();

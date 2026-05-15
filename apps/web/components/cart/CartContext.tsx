@@ -97,30 +97,37 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, loading: true }));
     try {
       await apiClient.post('/cart/items', { productId, quantity });
-      await refreshCart();
-    } finally {
-      setState(s => ({ ...s, loading: false }));
+    } catch {
+      // Server may have a different view than the local state — swallow and
+      // let the refresh below reconcile.
     }
+    await refreshCart();
+    setState(s => ({ ...s, loading: false }));
   }, [refreshCart]);
 
   const updateItem = useCallback(async (itemId: string, quantity: number) => {
     setState(s => ({ ...s, loading: true }));
     try {
       await apiClient.put(`/cart/items/${itemId}`, { quantity });
-      await refreshCart();
-    } finally {
-      setState(s => ({ ...s, loading: false }));
+    } catch {
+      // Same as above — likely the item or cart no longer exists server-side
+      // (e.g., after checkout cleared the cart). Refresh resolves the drift.
     }
+    await refreshCart();
+    setState(s => ({ ...s, loading: false }));
   }, [refreshCart]);
 
   const removeItem = useCallback(async (itemId: string) => {
     setState(s => ({ ...s, loading: true }));
     try {
       await apiClient.delete(`/cart/items/${itemId}`);
-      await refreshCart();
-    } finally {
-      setState(s => ({ ...s, loading: false }));
+    } catch {
+      // Most common case: the item was already gone server-side (post-checkout
+      // ghost row). Refreshing the cart drops it from the UI cleanly instead
+      // of leaving the user staring at an item they can't remove.
     }
+    await refreshCart();
+    setState(s => ({ ...s, loading: false }));
   }, [refreshCart]);
 
   const applyCoupon = useCallback(async (code: string, guestEmail?: string) => {

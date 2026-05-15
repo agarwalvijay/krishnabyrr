@@ -49,7 +49,8 @@
       "Bash(python3 -c \"from PIL import Image; print\\('PIL ok'\\)\")",
       "Bash(python3 *)",
       "Bash(awk 'NR==1023{print; print \"\"; print \"export default router;\"; in_dead=1; next} in_dead && /^export default router;$/{in_dead=0; next} !in_dead' /Users/vijayagarwal/vijay/vijay/krishnabyrr/api/src/routes/admin/orders.ts)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(grep -n \"refreshCart\\\\|const { order, payment }\" /Users/vijayagarwal/vijay/vijay/krishnabyrr/apps/web/app/checkout/page.tsx)"
     ]
   }
 }
