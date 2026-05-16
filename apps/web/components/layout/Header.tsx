@@ -5,13 +5,15 @@ interface CollectionRow {
   id: string;
   name: string;
   slug: string;
+  is_nav?: boolean;
 }
 
 interface CategoryRow {
   id: string;
   name: string;
   slug: string;
-  children?: Array<{ id: string; name: string; slug: string }>;
+  is_nav?: boolean;
+  children?: Array<{ id: string; name: string; slug: string; is_nav?: boolean }>;
 }
 
 interface TagGroupData {
@@ -29,10 +31,19 @@ export default async function Header() {
     serverFetch<BadgeItem[]>('/api/badges', { revalidate: 300 }).catch(() => []),
   ]);
 
+  // is_nav defaults to true server-side, so absent/undefined is treated as opt-in.
+  const collectionsList = Array.isArray(collections) ? collections : [];
+  const categoriesList  = Array.isArray(categories)  ? categories  : [];
+
   const navData: HeaderNavData = {
-    collections: Array.isArray(collections) ? collections : [],
+    collections: collectionsList.filter((c) => c.is_nav !== false),
     tagGroups:   tagGroups ?? {},
-    categories:  Array.isArray(categories) ? categories : [],
+    categories:  categoriesList
+      .filter((c) => c.is_nav !== false)
+      .map((c) => ({
+        ...c,
+        children: c.children?.filter((ch) => ch.is_nav !== false),
+      })),
     navBadges:   (Array.isArray(badgesRaw) ? badgesRaw : []).filter(
       (b) => (b as BadgeItem & { is_nav: boolean }).is_nav
     ) as (BadgeItem & { is_nav: boolean })[],

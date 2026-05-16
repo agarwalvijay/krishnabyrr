@@ -407,7 +407,7 @@ categoriesRouter.get('/', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT id, name, slug, parent_id, description, banner_img, banner_height,
-              meta_title, meta_desc, nav_order, is_active
+              meta_title, meta_desc, nav_order, is_active, is_nav
        FROM categories WHERE is_active = true ORDER BY nav_order`
     );
     const parents = rows.filter((r) => !r.parent_id);
@@ -454,7 +454,7 @@ export const collectionsRouter = Router();
 collectionsRouter.get('/', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, slug, description, banner_img, banner_height, tagline, is_homepage, homepage_order
+      `SELECT id, name, slug, description, banner_img, banner_height, tagline, is_homepage, homepage_order, is_nav
        FROM collections WHERE is_active = true ORDER BY homepage_order, name`
     );
     res.json({ data: rows });

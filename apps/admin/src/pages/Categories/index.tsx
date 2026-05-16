@@ -27,6 +27,7 @@ interface Category {
   banner_img: string | null;
   banner_height: BannerHeight;
   is_active: boolean;
+  is_nav: boolean;
   sort_order: number;
   product_count: number;
   children?: Category[];
@@ -41,6 +42,7 @@ const categorySchema = z.object({
   description: z.string().max(500).optional().or(z.literal('')),
   sort_order:  z.coerce.number().int().min(0).optional(),
   is_active:   z.boolean().optional(),
+  is_nav:      z.boolean().optional(),
 });
 
 type FormData = z.infer<typeof categorySchema>;
@@ -109,6 +111,7 @@ function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
       description: category?.description ?? '',
       sort_order:  category?.sort_order  ?? 0,
       is_active:   category?.is_active   ?? true,
+      is_nav:      category?.is_nav      ?? true,
     },
   });
 
@@ -262,6 +265,18 @@ function CategorySlideOver({ category, allFlat, onClose }: SlideOverProps) {
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" {...register('is_active')} className="sr-only peer" />
+                <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-kb-teal" />
+              </label>
+            </div>
+
+            {/* Show in site navigation menu */}
+            <div className="flex items-center justify-between py-2 border-t border-gray-100">
+              <div>
+                <p className="text-sm font-medium text-kb-charcoal">Show in site navigation menu</p>
+                <p className="text-xs text-kb-muted">When off, this category still works via direct link and the Shop page but doesn&apos;t appear in the top menu flyout</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" {...register('is_nav')} className="sr-only peer" />
                 <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-kb-teal" />
               </label>
             </div>

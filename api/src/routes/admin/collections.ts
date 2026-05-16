@@ -38,7 +38,7 @@ router.get('/', requireAuth, async (_req, res, next) => {
 // POST /api/admin/collections
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name, description, banner_img, banner_height = 'md', tagline, is_homepage = false, homepage_order = 0, is_active = true } =
+    const { name, description, banner_img, banner_height = 'md', tagline, is_homepage = false, homepage_order = 0, is_active = true, is_nav = true } =
       req.body as Record<string, unknown>;
 
     if (!name || typeof name !== 'string') {
@@ -48,10 +48,10 @@ router.post('/', requireAuth, async (req, res, next) => {
     const slug = await uniqueCollectionSlug(toSlug(name as string));
 
     const { rows: [col] } = await pool.query(
-      `INSERT INTO collections (name, slug, description, banner_img, banner_height, tagline, is_homepage, homepage_order, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      `INSERT INTO collections (name, slug, description, banner_img, banner_height, tagline, is_homepage, homepage_order, is_active, is_nav)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [name, slug, description ?? null, banner_img ?? null, banner_height, tagline ?? null,
-       is_homepage, homepage_order, is_active]
+       is_homepage, homepage_order, is_active, is_nav]
     );
     res.status(201).json({ data: col });
   } catch (err) { next(err); }
@@ -72,7 +72,7 @@ router.put('/:id', requireAuth, async (req, res, next) => {
       body.slug = await uniqueCollectionSlug(toSlug(body.name as string), id);
     }
 
-    const ALLOWED = ['name', 'slug', 'description', 'banner_img', 'banner_height', 'tagline', 'is_homepage', 'homepage_order', 'is_active'] as const;
+    const ALLOWED = ['name', 'slug', 'description', 'banner_img', 'banner_height', 'tagline', 'is_homepage', 'homepage_order', 'is_active', 'is_nav'] as const;
     const setClauses: string[] = [];
     const params: unknown[] = [];
     let i = 1;

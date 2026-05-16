@@ -38,7 +38,7 @@ router.get('/', requireAuth, async (_req, res, next) => {
 // POST /api/admin/categories
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name, parent_id, description, banner_img, banner_height = 'md', meta_title, meta_desc, nav_order = 0, is_active = true } =
+    const { name, parent_id, description, banner_img, banner_height = 'md', meta_title, meta_desc, nav_order = 0, is_active = true, is_nav = true } =
       req.body as Record<string, unknown>;
 
     if (!name || typeof name !== 'string') {
@@ -49,10 +49,10 @@ router.post('/', requireAuth, async (req, res, next) => {
     const slug = await uniqueCategorySlug(toSlug(name as string));
 
     const { rows: [cat] } = await pool.query(
-      `INSERT INTO categories (name, slug, parent_id, description, banner_img, banner_height, meta_title, meta_desc, nav_order, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      `INSERT INTO categories (name, slug, parent_id, description, banner_img, banner_height, meta_title, meta_desc, nav_order, is_active, is_nav)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [name, slug, parent_id ?? null, description ?? null, banner_img ?? null, banner_height,
-       meta_title ?? null, meta_desc ?? null, nav_order, is_active]
+       meta_title ?? null, meta_desc ?? null, nav_order, is_active, is_nav]
     );
     res.status(201).json({ data: cat });
   } catch (err) { next(err); }
@@ -69,7 +69,7 @@ router.put('/:id', requireAuth, async (req, res, next) => {
     }
 
     const body = req.body as Record<string, unknown>;
-    const ALLOWED = ['name', 'slug', 'parent_id', 'description', 'banner_img', 'banner_height', 'meta_title', 'meta_desc', 'nav_order', 'is_active'] as const;
+    const ALLOWED = ['name', 'slug', 'parent_id', 'description', 'banner_img', 'banner_height', 'meta_title', 'meta_desc', 'nav_order', 'is_active', 'is_nav'] as const;
     const setClauses: string[] = [];
     const params: unknown[] = [];
     let i = 1;
