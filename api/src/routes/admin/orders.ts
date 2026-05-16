@@ -468,9 +468,19 @@ router.get('/', requireAuth, async (req, res, next) => {
         o.coupon_code, o.courier_name, o.tracking_number, o.tracking_url,
         o.fulfilled_at, o.exchange_eligible_until,
         COALESCE(c.email, o.guest_email) AS customer_email,
-        COALESCE(c.name, (o.shipping_address->>'name')) AS customer_name
+        COALESCE(c.name, (o.shipping_address->>'name')) AS customer_name,
+        wa.status   AS whatsapp_status,
+        wa.updated_at AS whatsapp_status_at
       FROM orders o
       LEFT JOIN customers c ON c.id = o.customer_id
+      LEFT JOIN LATERAL (
+        SELECT status, updated_at
+        FROM whatsapp_notifications wn
+        WHERE wn.phone = COALESCE(o.shipping_address->>'phone', c.phone)
+          AND wn.metadata->>'order_number' = o.order_number
+        ORDER BY wn.created_at DESC
+        LIMIT 1
+      ) wa ON true
       ${where}
       ORDER BY o.created_at DESC
       LIMIT $${i} OFFSET $${i + 1}
@@ -503,9 +513,21 @@ router.get('/:id', requireAuth, async (req, res, next) => {
          o.*,
          COALESCE(c.email, o.guest_email) AS customer_email,
          c.name AS customer_name_db,
-         c.phone AS customer_phone
+         c.phone AS customer_phone,
+         wa.status     AS whatsapp_status,
+         wa.updated_at AS whatsapp_status_at,
+         wa.template_name AS whatsapp_last_template,
+         wa.error_msg  AS whatsapp_error_msg
        FROM orders o
        LEFT JOIN customers c ON c.id = o.customer_id
+       LEFT JOIN LATERAL (
+         SELECT status, updated_at, template_name, error_msg
+         FROM whatsapp_notifications wn
+         WHERE wn.phone = COALESCE(o.shipping_address->>'phone', c.phone)
+           AND wn.metadata->>'order_number' = o.order_number
+         ORDER BY wn.created_at DESC
+         LIMIT 1
+       ) wa ON true
        WHERE ${isUUID ? 'o.id = $1' : 'o.order_number = $1'}`,
       [id]
     );

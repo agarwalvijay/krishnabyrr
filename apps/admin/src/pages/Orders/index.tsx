@@ -7,6 +7,8 @@ import { useDebounce } from '../../lib/hooks';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type WhatsAppStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | null;
+
 interface OrderRow {
   id: string;
   order_number: string;
@@ -21,6 +23,8 @@ interface OrderRow {
   courier_name: string | null;
   tracking_number: string | null;
   tracking_url: string | null;
+  whatsapp_status: WhatsAppStatus;
+  whatsapp_status_at: string | null;
 }
 
 interface OrderDetail extends OrderRow {
@@ -40,6 +44,8 @@ interface OrderDetail extends OrderRow {
   phonepe_transaction_id: string | null;
   refunded_amount: string;
   captured_amount: string | null;
+  whatsapp_last_template: string | null;
+  whatsapp_error_msg: string | null;
 }
 
 interface ExchangeRow {
@@ -327,6 +333,26 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
                   order.shipping_address?.phone,
                 ].filter(Boolean).join('\n').split('\n').map((line, i) => <div key={i}>{line}</div>)}
               </div>
+              {order.whatsapp_status && (
+                <div className="mt-2 text-xs flex items-center gap-2">
+                  <span className="text-kb-muted">WhatsApp:</span>
+                  <span
+                    className={
+                      order.whatsapp_status === 'failed'  ? 'text-red-700 font-medium' :
+                      order.whatsapp_status === 'read'    ? 'text-emerald-700' :
+                      order.whatsapp_status === 'delivered' ? 'text-emerald-600' :
+                      'text-kb-muted'
+                    }
+                  >
+                    {order.whatsapp_status}
+                    {order.whatsapp_last_template ? ` · ${order.whatsapp_last_template}` : ''}
+                    {order.whatsapp_status_at ? ` · ${new Date(order.whatsapp_status_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
+                  </span>
+                  {order.whatsapp_status === 'failed' && order.whatsapp_error_msg && (
+                    <span className="text-red-700" title={order.whatsapp_error_msg}>· bounce reason</span>
+                  )}
+                </div>
+              )}
             </section>
 
             {/* Status controls */}
@@ -914,7 +940,17 @@ export default function OrdersPage() {
                 >
                   <td className="px-4 py-3 font-medium text-kb-teal">{order.order_number}</td>
                   <td className="px-4 py-3 text-kb-charcoal max-w-[180px] truncate">
-                    <div>{order.customer_name}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate">{order.customer_name}</span>
+                      {order.whatsapp_status === 'failed' && (
+                        <span
+                          title="WhatsApp message bounced — phone may be wrong. Call the customer."
+                          className="inline-flex items-center rounded-full bg-red-50 text-red-700 px-1.5 py-0.5 text-[10px] font-medium"
+                        >
+                          WA ✕
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-kb-muted truncate">{order.customer_email}</div>
                   </td>
                   <td className="px-4 py-3 text-kb-muted">
