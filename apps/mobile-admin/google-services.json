@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:29502815250:android:8efd8c552ad608806c6ccb",
+        "android_client_info": {
+          "package_name": "com.krishnasbliss.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1uUJnhDfsvcAtEEpPBWhZ0pH1aMxNHRQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:29502815250:android:0803fe66de582f846c6ccb",
         "android_client_info": {
           "package_name": "com.krishnasbliss.shop"
