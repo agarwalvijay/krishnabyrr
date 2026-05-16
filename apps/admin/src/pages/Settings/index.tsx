@@ -357,10 +357,38 @@ function PaymentsTab({ settings }: { settings: Record<string, unknown> }) {
 
 // ── Mobile App settings ───────────────────────────────────────────────────────
 
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) return null;
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          toast.error('Could not copy');
+        }
+      }}
+      className="text-xs underline text-kb-teal"
+    >
+      {copied ? 'Copied ✓' : 'Copy'}
+    </button>
+  );
+}
+
 function MobileAppTab({ settings }: { settings: Record<string, unknown> }) {
   const queryClient = useQueryClient();
+
+  // Customer app (public store listings — power the dlapp.krishnasbliss.com page)
   const [androidUrl, setAndroidUrl] = useState(String(settings.android_url ?? ''));
   const [iosUrl, setIosUrl]         = useState(String(settings.ios_url ?? ''));
+
+  // Admin app (internal builds — typically sideloaded APK + TestFlight for iOS)
+  const [adminApkUrl, setAdminApkUrl] = useState(String(settings.admin_apk_url ?? ''));
+  const [adminIosUrl, setAdminIosUrl] = useState(String(settings.admin_ios_url ?? ''));
 
   const saveMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.put('/admin/settings', data),
@@ -372,42 +400,112 @@ function MobileAppTab({ settings }: { settings: Record<string, unknown> }) {
   });
 
   return (
-    <div className="space-y-5 max-w-lg">
-      <p className="text-sm text-kb-muted">
-        These URLs power the smart download page at{' '}
-        <a href="https://dlapp.krishnasbliss.com" target="_blank" rel="noopener noreferrer"
-           className="text-kb-teal underline underline-offset-2">
-          dlapp.krishnasbliss.com
-        </a>.
-        Leave a field blank to hide that store button.
-      </p>
-      <Field
-        label="Google Play Store URL"
-        hint="Full URL, e.g. https://play.google.com/store/apps/details?id=com.krishnasbliss.shop"
-      >
-        <input
-          value={androidUrl}
-          onChange={(e) => setAndroidUrl(e.target.value.trim())}
-          className={inputCls}
-          placeholder="https://play.google.com/store/apps/details?id=…"
-        />
-      </Field>
-      <Field
-        label="Apple App Store URL"
-        hint="Full URL, e.g. https://apps.apple.com/app/krishnas-bliss/id123456789"
-      >
-        <input
-          value={iosUrl}
-          onChange={(e) => setIosUrl(e.target.value.trim())}
-          className={inputCls}
-          placeholder="https://apps.apple.com/app/…"
-        />
-      </Field>
+    <div className="space-y-8 max-w-lg">
+      {/* ── Customer app ─────────────────────────────────────────────────── */}
+      <section>
+        <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Customer app — store links</h3>
+        <p className="text-xs text-kb-muted mb-4">
+          These URLs power the smart download page at{' '}
+          <a href="https://dlapp.krishnasbliss.com" target="_blank" rel="noopener noreferrer"
+             className="text-kb-teal underline underline-offset-2">
+            dlapp.krishnasbliss.com
+          </a>. Leave a field blank to hide that store button.
+        </p>
+        <div className="space-y-4">
+          <Field
+            label="Google Play Store URL"
+            hint="Full URL, e.g. https://play.google.com/store/apps/details?id=com.krishnasbliss.shop"
+          >
+            <input
+              value={androidUrl}
+              onChange={(e) => setAndroidUrl(e.target.value.trim())}
+              className={inputCls}
+              placeholder="https://play.google.com/store/apps/details?id=…"
+            />
+          </Field>
+          <Field
+            label="Apple App Store URL"
+            hint="Full URL, e.g. https://apps.apple.com/app/krishnas-bliss/id123456789"
+          >
+            <input
+              value={iosUrl}
+              onChange={(e) => setIosUrl(e.target.value.trim())}
+              className={inputCls}
+              placeholder="https://apps.apple.com/app/…"
+            />
+          </Field>
+        </div>
+      </section>
+
+      {/* ── Admin app ────────────────────────────────────────────────────── */}
+      <section className="pt-6 border-t border-gray-100">
+        <h3 className="text-sm font-semibold text-kb-charcoal mb-1">Admin app — install links</h3>
+        <p className="text-xs text-kb-muted mb-4">
+          Internal builds of the KB Admin app. Typically a direct APK download
+          for Android (EAS build artifact or your own hosting) and a TestFlight
+          link for iOS. Share these only with team members.
+        </p>
+
+        <div className="space-y-4">
+          <Field
+            label="Android APK URL"
+            hint="EAS artifact URL after `npm run build:android`, or a permanent link if you host the APK yourself."
+          >
+            <input
+              value={adminApkUrl}
+              onChange={(e) => setAdminApkUrl(e.target.value.trim())}
+              className={inputCls}
+              placeholder="https://expo.dev/artifacts/eas/…apk"
+            />
+            {adminApkUrl && (
+              <div className="mt-1.5 flex items-center gap-3 text-xs">
+                <a
+                  href={adminApkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-kb-teal underline"
+                >
+                  Open
+                </a>
+                <CopyButton value={adminApkUrl} />
+              </div>
+            )}
+          </Field>
+
+          <Field
+            label="iOS install URL"
+            hint="TestFlight invite link (https://testflight.apple.com/join/…) or App Store URL if/when you publish."
+          >
+            <input
+              value={adminIosUrl}
+              onChange={(e) => setAdminIosUrl(e.target.value.trim())}
+              className={inputCls}
+              placeholder="https://testflight.apple.com/join/…"
+            />
+            {adminIosUrl && (
+              <div className="mt-1.5 flex items-center gap-3 text-xs">
+                <a
+                  href={adminIosUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-kb-teal underline"
+                >
+                  Open
+                </a>
+                <CopyButton value={adminIosUrl} />
+              </div>
+            )}
+          </Field>
+        </div>
+      </section>
+
       <div className="pt-2">
         <button
           onClick={() => saveMutation.mutate({
-            android_url: androidUrl || null,
-            ios_url:     iosUrl     || null,
+            android_url:    androidUrl   || null,
+            ios_url:        iosUrl       || null,
+            admin_apk_url:  adminApkUrl  || null,
+            admin_ios_url:  adminIosUrl  || null,
           })}
           disabled={saveMutation.isPending}
           className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
