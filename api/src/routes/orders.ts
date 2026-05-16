@@ -14,6 +14,7 @@ import { optionalCustomerAuth, requireCustomerAuth } from '../middleware/auth';
 import { notifyNewOrder } from '../services/notifications';
 import { pushToCustomer } from '../services/push';
 import { sendOrderConfirmed } from '../services/whatsapp';
+import { createClaimToken } from '../services/claim-token';
 
 // Razorpay client — only initialised when env vars are present
 function getRazorpay(): Razorpay | null {
@@ -719,12 +720,15 @@ router.post('/:orderNumber/verify-payment', optionalCustomerAuth, async (req: Re
       paymentMethod:   'razorpay',
     });
 
-    // WhatsApp order confirmed to customer
+    // WhatsApp order confirmed to customer (with one-time claim token —
+    // tapping the template button auto-creates/links their account).
+    const claimToken = await createClaimToken(updated.id, updated.shipping_address.phone);
     sendOrderConfirmed({
       phone:       updated.shipping_address.phone,
       name:        updated.shipping_address.name,
       orderNumber: updated.order_number,
       total:       parseFloat(updated.total),
+      claimToken,
     });
 
     res.json({ data: { order_number: updated.order_number, payment_status: 'authorized' } });

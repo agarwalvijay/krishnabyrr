@@ -314,11 +314,15 @@ export function sendOrderConfirmed(params: {
   name:        string;
   orderNumber: string;
   total:       number;
+  claimToken:  string;
 }): void {
   send(
     params.phone,
     'kb_order_conf',
-    [{ type: 'body', parameters: [txt(params.name), txt(params.orderNumber), txt(params.total.toLocaleString('en-IN'))] }],
+    [
+      { type: 'body',   parameters: [txt(params.name), txt(params.orderNumber), txt(params.total.toLocaleString('en-IN'))] },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [txt(params.claimToken)] },
+    ],
     { order_number: params.orderNumber },
   );
 }

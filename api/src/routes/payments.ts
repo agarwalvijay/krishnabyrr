@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import pool from '../db/client';
 import { notifyNewOrder } from '../services/notifications';
 import { sendOrderConfirmed, sendPaymentFailed } from '../services/whatsapp';
+import { createClaimToken } from '../services/claim-token';
 
 const router = Router();
 
@@ -61,6 +62,7 @@ router.post('/phonepe/callback', async (req, res) => {
 
     if (state === 'COMPLETED') {
       const { rows: [updated] } = await pool.query<{
+        id:               string;
         order_number:     string;
         total:            string;
         line_items:       Array<{ name: string; quantity: number }>;
@@ -73,7 +75,7 @@ router.post('/phonepe/callback', async (req, res) => {
                updated_at        = NOW()
          WHERE phonepe_transaction_id = $1
            AND payment_status NOT IN ('paid', 'refunded')
-         RETURNING order_number, total, line_items, shipping_address, guest_email`,
+         RETURNING id, order_number, total, line_items, shipping_address, guest_email`,
         [mtId, phonePePayId],
       );
 
@@ -89,12 +91,14 @@ router.post('/phonepe/callback', async (req, res) => {
           paymentMethod:   'phonepe',
         });
 
-        // WhatsApp order confirmed to customer
+        // WhatsApp order confirmed to customer (with one-time claim token).
+        const claimToken = await createClaimToken(updated.id, updated.shipping_address.phone);
         sendOrderConfirmed({
           phone:       updated.shipping_address.phone,
           name:        updated.shipping_address.name,
           orderNumber: updated.order_number,
           total:       parseFloat(updated.total),
+          claimToken,
         });
       }
     } else if (state === 'FAILED') {

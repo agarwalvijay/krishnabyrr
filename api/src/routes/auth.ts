@@ -6,6 +6,7 @@ import { requireCustomerAuth } from '../middleware/auth';
 import { createVerificationToken, createLoginToken, verifyToken } from '../services/otp';
 import { sendVerificationLink, sendLoginLink, sendPasswordChanged } from '../services/whatsapp';
 import { createPairing, markApproved, pollSession } from '../services/magic-session';
+import { lookupClaimToken, markClaimTokenUsed } from '../services/claim-token';
 
 const router = Router();
 
@@ -285,6 +286,122 @@ router.post('/link-order', async (req, res, next) => {
     );
 
     res.json({ data: { linked: true } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/auth/claim-order ────────────────────────────────────────────────
+// One-tap account creation from a WhatsApp order-confirmation magic link.
+// Body: { token }. Validates the token, finds-or-creates a customer using the
+// phone the token was issued for, links the order, issues a JWT.
+
+router.post('/claim-order', async (req, res, next) => {
+  try {
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: { message: 'token is required', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    const claim = await lookupClaimToken(token);
+    if (!claim) {
+      res.status(404).json({ error: { message: 'Invalid claim link', code: 'INVALID_TOKEN' } });
+      return;
+    }
+    if (claim.used_at) {
+      res.status(410).json({ error: { message: 'This claim link has already been used', code: 'TOKEN_USED' } });
+      return;
+    }
+    if (new Date(claim.expires_at).getTime() < Date.now()) {
+      res.status(410).json({ error: { message: 'This claim link has expired', code: 'TOKEN_EXPIRED' } });
+      return;
+    }
+
+    const { rows: [order] } = await pool.query<{
+      id: string; order_number: string; customer_id: string | null;
+      guest_email: string | null; total: string;
+      shipping_address: { name?: string };
+    }>(
+      `SELECT id, order_number, customer_id, guest_email, total::text, shipping_address
+         FROM orders WHERE id = $1`,
+      [claim.order_id],
+    );
+    if (!order) {
+      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    // Find-or-create customer by phone.
+    let customerId: string;
+    let customerEmail: string | null = null;
+    let customerName: string | null = null;
+    let customerPhone = claim.phone;
+
+    const { rows: [existing] } = await pool.query<{
+      id: string; email: string | null; name: string | null; phone: string;
+    }>(`SELECT id, email, name, phone FROM customers WHERE phone = $1`, [claim.phone]);
+
+    if (existing) {
+      customerId    = existing.id;
+      customerEmail = existing.email;
+      customerName  = existing.name;
+      customerPhone = existing.phone;
+    } else {
+      const displayName = order.shipping_address?.name?.trim() || 'Customer';
+      // If guest_email is already attached to a different customer, skip it on
+      // this new record — they can add it later from /account/profile.
+      let emailForInsert: string | null = order.guest_email;
+      if (emailForInsert) {
+        const { rows: clash } = await pool.query(
+          `SELECT 1 FROM customers WHERE email = $1 LIMIT 1`,
+          [emailForInsert],
+        );
+        if (clash.length > 0) emailForInsert = null;
+      }
+      const { rows: [created] } = await pool.query<{ id: string; email: string | null; name: string; phone: string }>(
+        `INSERT INTO customers (phone, name, email, phone_verified)
+         VALUES ($1, $2, $3, true)
+         RETURNING id, email, name, phone`,
+        [claim.phone, displayName, emailForInsert],
+      );
+      customerId    = created.id;
+      customerEmail = created.email;
+      customerName  = created.name;
+      customerPhone = created.phone;
+    }
+
+    // Link the order if not already linked, and bump customer counters.
+    if (!order.customer_id) {
+      await pool.query(
+        `UPDATE orders SET customer_id = $1, updated_at = NOW() WHERE id = $2 AND customer_id IS NULL`,
+        [customerId, order.id],
+      );
+      await pool.query(
+        `UPDATE customers
+            SET total_orders   = total_orders + 1,
+                lifetime_value = lifetime_value + $1,
+                updated_at     = NOW()
+          WHERE id = $2`,
+        [parseFloat(order.total), customerId],
+      );
+    }
+
+    await markClaimTokenUsed(token);
+
+    const jwtToken = jwt.sign(
+      { id: customerId, email: customerEmail, name: customerName, phone: customerPhone, sub: 'customer' },
+      JWT_SECRET(),
+      { expiresIn: JWT_EXPIRES },
+    );
+
+    res.json({
+      data: {
+        token: jwtToken,
+        customer: { id: customerId, email: customerEmail, name: customerName, phone: customerPhone },
+        order_number: order.order_number,
+      },
+    });
   } catch (err) {
     next(err);
   }
