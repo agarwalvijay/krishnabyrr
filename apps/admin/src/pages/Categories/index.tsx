@@ -415,6 +415,9 @@ function CategoryRow({ node, depth, onEdit, onToggleActive, toggling }: RowProps
           <span className={`text-sm ${depth === 0 ? 'font-medium text-kb-charcoal' : 'text-kb-muted'}`}>
             {node.name}
           </span>
+          {node.is_nav && (
+            <span className="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">nav</span>
+          )}
         </div>
       </td>
       <td className="py-3 px-4">

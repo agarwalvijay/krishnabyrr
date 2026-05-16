@@ -402,7 +402,12 @@ export default function CollectionsPage() {
               {collections.map(col => (
                 <tr key={col.id} className="hover:bg-gray-50 transition-colors">
                   <td className="py-3 pl-6 pr-4">
-                    <span className="text-sm font-medium text-kb-charcoal">{col.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-kb-charcoal">{col.name}</span>
+                      {col.is_nav && (
+                        <span className="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">nav</span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-3 px-4">
                     <code className="text-xs text-kb-muted bg-gray-50 px-1.5 py-0.5 rounded">{col.slug}</code>
