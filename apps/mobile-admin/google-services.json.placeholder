@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "29502815250",
+    "project_id": "krishna-s-bliss",
+    "storage_bucket": "krishna-s-bliss.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:29502815250:android:0803fe66de582f846c6ccb",
+        "android_client_info": {
+          "package_name": "com.krishnasbliss.shop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1uUJnhDfsvcAtEEpPBWhZ0pH1aMxNHRQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

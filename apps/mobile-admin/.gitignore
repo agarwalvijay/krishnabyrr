@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+dist/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# Firebase iOS credentials — never commit (contains signing keys)
+GoogleService-Info.plist
+
+# Firebase Admin SDK — never commit (contains private key)
+# krishna-s-bliss-firebase-adminsdk-*.json
