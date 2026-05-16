@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { ROLE_LABELS } from '../../lib/format';
@@ -81,6 +81,11 @@ const Icons = {
         d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
     </svg>
   ),
+  menu: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  ),
 };
 
 const NAV_ITEMS = [
@@ -108,6 +113,10 @@ export default function AdminLayout({ title, action, children }: AdminLayoutProp
   const { user, logout } = useAuth();
   const location = useLocation();
   const [cacheState, setCacheState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Auto-close the mobile drawer whenever the route changes.
+  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
 
   const handleRefreshCache = async () => {
     setCacheState('loading');
@@ -123,9 +132,20 @@ export default function AdminLayout({ title, action, children }: AdminLayoutProp
 
   return (
     <div className="flex h-screen overflow-hidden bg-kb-cream">
+      {/* ── Mobile backdrop ─────────────────────────────────────────────── */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          aria-hidden="true"
+        />
+      )}
+
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <aside
-        className="flex flex-col flex-shrink-0 bg-white scroll-y"
+        className={`flex flex-col flex-shrink-0 bg-white scroll-y fixed inset-y-0 left-0 z-40 transform transition-transform duration-200 md:static md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
         style={{ width: 240, borderRight: '1px solid #EBEBEB' }}
       >
         {/* Brand */}
@@ -225,15 +245,25 @@ export default function AdminLayout({ title, action, children }: AdminLayoutProp
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Top header */}
         <header
-          className="flex-shrink-0 flex items-center justify-between px-6 py-4 bg-white"
+          className="flex-shrink-0 flex items-center justify-between px-4 md:px-6 py-3 md:py-4 bg-white gap-2"
           style={{ borderBottom: '1px solid #EBEBEB', minHeight: 56 }}
         >
-          <h1 className="text-base font-semibold text-kb-charcoal">{title}</h1>
-          {action && <div>{action}</div>}
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="md:hidden p-1.5 -ml-1.5 text-kb-charcoal hover:bg-gray-100 rounded-md"
+              aria-label="Open menu"
+            >
+              {Icons.menu}
+            </button>
+            <h1 className="text-base font-semibold text-kb-charcoal truncate">{title}</h1>
+          </div>
+          {action && <div className="flex-shrink-0">{action}</div>}
         </header>
 
         {/* Scrollable content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-3 md:p-6">
           {children}
         </main>
       </div>
