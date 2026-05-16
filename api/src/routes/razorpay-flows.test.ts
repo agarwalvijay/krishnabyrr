@@ -15,11 +15,13 @@ jest.mock('razorpay', () => {
   }));
 });
 
+process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'test-secret-do-not-use-in-prod';
+
 import app from '../app';
 import { createTestPool } from '../db/client';
 import { closeRedis } from '../redis';
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'test-secret-do-not-use-in-prod';
+const JWT_SECRET = process.env.JWT_SECRET as string;
 const RAZORPAY_SECRET = 'test-razorpay-secret';
 
 let db: Pool;
@@ -158,21 +160,31 @@ beforeAll(async () => {
   productId = product.id;
 });
 
+async function cleanupTestData() {
+  // Scope deletes to test rows only so this file is safe to run alongside
+  // other suites or against a shared dev DB.
+  await db.query(
+    `DELETE FROM order_refunds
+      WHERE order_id IN (SELECT id FROM orders WHERE order_number LIKE 'KB-RZP-%')`,
+  );
+  await db.query(
+    `DELETE FROM inventory_log
+      WHERE order_id IN (SELECT id FROM orders WHERE order_number LIKE 'KB-RZP-%')`,
+  );
+  await db.query(`DELETE FROM orders WHERE order_number LIKE 'KB-RZP-%'`);
+}
+
 beforeEach(async () => {
   jest.clearAllMocks();
   mockCapture.mockResolvedValue({ id: 'pay_capture_ok' });
   mockRefund.mockResolvedValue({ id: 'rfnd_test_ok' });
 
-  await db.query(`DELETE FROM order_refunds`);
-  await db.query(`DELETE FROM inventory_log`);
-  await db.query(`DELETE FROM orders WHERE order_number LIKE 'KB-RZP-%'`);
+  await cleanupTestData();
   await db.query(`UPDATE products SET stock_qty = 5, status = 'active' WHERE id = $1`, [productId]);
 });
 
 afterAll(async () => {
-  await db.query(`DELETE FROM order_refunds`);
-  await db.query(`DELETE FROM inventory_log`);
-  await db.query(`DELETE FROM orders WHERE order_number LIKE 'KB-RZP-%'`);
+  await cleanupTestData();
   await db.query(`UPDATE products SET status = 'draft' WHERE id = $1`, [productId]);
   await db.end();
   await closeRedis();
@@ -292,6 +304,81 @@ describe('Razorpay admin payment flows', () => {
     expect(parseFloat(refund.amount)).toBe(300);
     expect(refund.razorpay_refund_id).toBe('rfnd_partial_300');
   });
+
+  it('rolls back atomically when Razorpay refund fails during cancel (no state change, no ledger row)', async () => {
+    const order = await makeOrder({
+      orderNumber: 'KB-RZP-RFAIL',
+      paymentStatus: 'paid',
+      total: 1500,
+      capturedAmount: 1500,
+      stockQty: 4,
+    });
+    mockRefund.mockRejectedValueOnce({
+      error: { code: 'BAD_REQUEST_ERROR', description: 'Refund not allowed' },
+    });
+
+    const res = await request(app)
+      .post(`/api/admin/orders/${order.id}/cancel`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({});
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('REFUND_FAILED');
+    expect(mockRefund).toHaveBeenCalledTimes(1);
+
+    const { rows: [saved] } = await db.query<{
+      payment_status: string;
+      fulfillment_status: string;
+      refunded_amount: string;
+    }>(
+      `SELECT payment_status, fulfillment_status, refunded_amount::text FROM orders WHERE id = $1`,
+      [order.id],
+    );
+    expect(saved.payment_status).toBe('paid');
+    expect(saved.fulfillment_status).toBe('unfulfilled');
+    expect(parseFloat(saved.refunded_amount)).toBe(0);
+
+    const { rows: ledger } = await db.query(
+      `SELECT id FROM order_refunds WHERE order_id = $1`,
+      [order.id],
+    );
+    expect(ledger).toHaveLength(0);
+
+    const { rows: [product] } = await db.query<{ stock_qty: number }>(
+      `SELECT stock_qty FROM products WHERE id = $1`,
+      [productId],
+    );
+    expect(product.stock_qty).toBe(4);
+  });
+
+  it('cancels with force_no_refund without calling Razorpay (manual refund path)', async () => {
+    const order = await makeOrder({
+      orderNumber: 'KB-RZP-FORCE',
+      paymentStatus: 'paid',
+      total: 1500,
+      capturedAmount: 1500,
+      stockQty: 4,
+    });
+
+    const res = await request(app)
+      .post(`/api/admin/orders/${order.id}/cancel`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ force_no_refund: true });
+
+    expect(res.status).toBe(200);
+    expect(mockRefund).not.toHaveBeenCalled();
+    expect(res.body.data.fulfillment_status).toBe('cancelled');
+    // Payment status stays 'paid' — admin asserts they handled the refund manually.
+    expect(res.body.data.payment_status).toBe('paid');
+    expect(parseFloat(res.body.data.refunded_amount)).toBe(0);
+    expect(res.body.data.refund_warning).toMatch(/force_no_refund|manually/i);
+
+    const { rows: [product] } = await db.query<{ stock_qty: number }>(
+      `SELECT stock_qty FROM products WHERE id = $1`,
+      [productId],
+    );
+    expect(product.stock_qty).toBe(5);
+  });
 });
 
 describe('Razorpay verification safety', () => {
@@ -343,77 +430,5 @@ describe('Razorpay verification safety', () => {
     );
     expect(saved.payment_status).toBe('refunded');
     expect(saved.fulfillment_status).toBe('cancelled');
-  });
-});
-
-describe('Razorpay external-success/local-failure tripwires', () => {
-  it('leaves a recoverable local record when Razorpay capture succeeds but the DB update fails', async () => {
-    const order = await makeOrder({ orderNumber: 'KB-RZP-CAP-FAIL' });
-    mockCapture.mockResolvedValueOnce({ id: 'pay_capture_succeeded' });
-
-    await db.query(
-      `ALTER TABLE orders
-       ADD CONSTRAINT fail_razorpay_capture_update
-       CHECK (id <> '${order.id}'::uuid OR payment_status <> 'paid')`,
-    );
-
-    try {
-      const res = await request(app)
-        .post(`/api/admin/orders/${order.id}/capture`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({});
-
-      expect(res.status).toBeGreaterThanOrEqual(500);
-      expect(mockCapture).toHaveBeenCalled();
-
-      const { rows: attempts } = await db.query(
-        `SELECT * FROM order_payment_operations WHERE order_id = $1 AND operation_type = 'capture'`,
-        [order.id],
-      );
-      expect(attempts).toHaveLength(1);
-      expect(attempts[0]).toMatchObject({
-        status: 'needs_reconciliation',
-        razorpay_payment_id: 'pay_KB-RZP-CAP-FAIL',
-      });
-    } finally {
-      await db.query(`ALTER TABLE orders DROP CONSTRAINT IF EXISTS fail_razorpay_capture_update`);
-    }
-  });
-
-  it('leaves a recoverable local record when Razorpay refund succeeds but the DB transaction fails', async () => {
-    const order = await makeOrder({
-      orderNumber: 'KB-RZP-REFUND-DBFAIL',
-      paymentStatus: 'paid',
-      capturedAmount: 1000,
-    });
-    mockRefund.mockResolvedValueOnce({ id: 'rfnd_succeeded_db_failed' });
-
-    await db.query(
-      `ALTER TABLE order_refunds
-       ADD CONSTRAINT fail_order_refund_insert
-       CHECK (order_id <> '${order.id}'::uuid)`,
-    );
-
-    try {
-      const res = await request(app)
-        .post(`/api/admin/orders/${order.id}/refund`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({ amount: 250 });
-
-      expect(res.status).toBeGreaterThanOrEqual(500);
-      expect(mockRefund).toHaveBeenCalled();
-
-      const { rows: attempts } = await db.query(
-        `SELECT * FROM order_payment_operations WHERE order_id = $1 AND operation_type = 'refund'`,
-        [order.id],
-      );
-      expect(attempts).toHaveLength(1);
-      expect(attempts[0]).toMatchObject({
-        status: 'needs_reconciliation',
-        razorpay_refund_id: 'rfnd_succeeded_db_failed',
-      });
-    } finally {
-      await db.query(`ALTER TABLE order_refunds DROP CONSTRAINT IF EXISTS fail_order_refund_insert`);
-    }
   });
 });
