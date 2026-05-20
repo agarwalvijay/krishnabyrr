@@ -143,6 +143,19 @@ const FABRIC_GUIDES: FabricGuide[] = [
     stylingNotes: ['Best when the fabric itself does the talking — keep jewelry restrained', 'Photographs beautifully under warm indoor lighting'],
   },
   {
+    slug: 'pure-cotton',
+    name: 'Pure Cotton',
+    tagline: 'Honest, breathable, and quietly luxurious — the everyday weave that never goes out of style.',
+    origin: 'Handloom traditions across India, from Bengal to Andhra Pradesh and Tamil Nadu',
+    feel: 'Soft and breathable with a comfortable, natural weight that becomes even nicer with wear.',
+    drape: 'Easy and grounded, with a relaxed fall that feels lived-in from day one.',
+    bestFor: ['Daily wear', 'Office and travel', 'Pooja and intimate gatherings'],
+    whyItStandsOut:
+      'Pure cotton is the fabric Indian summers were made for. It breathes when nothing else will, takes natural dyes beautifully, and ages gracefully — softer with every wash, stronger in character with every year.',
+    care: ['Hand wash or gentle machine wash in cold water', 'Line dry away from harsh sun', 'A light starch revives the crispness'],
+    stylingNotes: ['Looks effortless with silver or beaded jewelry', 'Solid colors with hand-printed borders are particularly striking'],
+  },
+  {
     slug: 'pure-silk',
     name: 'Pure Silk',
     tagline: 'The timeless choice — rich, lustrous, and forever the language of celebration.',
