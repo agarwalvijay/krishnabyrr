@@ -108,7 +108,7 @@ function FieldError({ msg }: { msg?: string }) {
 
 export default function CheckoutPage() {
   const router    = useRouter();
-  const { storeName } = useSiteSettings();
+  const { storeName, paymentDisclaimer } = useSiteSettings();
   const { cart: ctxCart, totals: ctxTotals, refreshCart, removeCoupon } = useCart();
   const { customer } = useCustomerAuth();
   const isLoggedIn = useIsLoggedIn();
@@ -703,6 +703,21 @@ export default function CheckoutPage() {
               </label>
               <FieldError msg={errors.exchange_acknowledged?.message} />
             </div>
+
+            {/* Payment disclaimer — admin-controlled, shown above the submit button */}
+            {paymentDisclaimer.enabled && paymentDisclaimer.text && (
+              <div
+                role="note"
+                className="rounded-xl border px-4 py-3 text-sm leading-relaxed"
+                style={{
+                  background:  'rgba(191, 155, 48, 0.06)',
+                  borderColor: 'rgba(191, 155, 48, 0.30)',
+                  color:       'var(--kb-charcoal)',
+                }}
+              >
+                {paymentDisclaimer.text}
+              </div>
+            )}
 
             {/* Submit */}
             <button

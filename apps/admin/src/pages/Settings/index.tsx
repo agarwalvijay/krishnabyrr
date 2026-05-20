@@ -297,9 +297,16 @@ const GATEWAYS = [
   },
 ];
 
+const DEFAULT_PAYMENT_DISCLAIMER =
+  "We're using a new payment processor. If you run into any issue during payment, please let us know and we'll resolve it for you.";
+
 function PaymentsTab({ settings }: { settings: Record<string, unknown> }) {
   const queryClient = useQueryClient();
-  const [gateway, setGateway] = useState(String(settings.payment_gateway ?? 'razorpay'));
+  const [gateway, setGateway]             = useState(String(settings.payment_gateway ?? 'razorpay'));
+  const [disclaimerOn, setDisclaimerOn]   = useState(Boolean(settings.payment_disclaimer_enabled ?? false));
+  const [disclaimerText, setDisclaimerText] = useState(
+    String(settings.payment_disclaimer_text ?? DEFAULT_PAYMENT_DISCLAIMER),
+  );
 
   const saveMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.put('/admin/settings', data),
@@ -342,9 +349,43 @@ function PaymentsTab({ settings }: { settings: Record<string, unknown> }) {
           ))}
         </div>
       </Field>
+
+      {/* ── Checkout disclaimer ────────────────────────────────────────── */}
+      <div className="pt-4 mt-4 border-t border-gray-100 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-kb-charcoal">Show checkout disclaimer</p>
+            <p className="text-xs text-kb-muted">A short note shown above the "Proceed to Payment" button on checkout. Useful during a gateway switchover.</p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-3">
+            <input
+              type="checkbox"
+              checked={disclaimerOn}
+              onChange={(e) => setDisclaimerOn(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-kb-teal" />
+          </label>
+        </div>
+        <Field label="Disclaimer text" hint="Plain text only. Leave the default if you're not sure.">
+          <textarea
+            value={disclaimerText}
+            onChange={(e) => setDisclaimerText(e.target.value)}
+            rows={3}
+            className={`${inputCls} resize-none ${disclaimerOn ? '' : 'opacity-60'}`}
+            disabled={!disclaimerOn}
+            maxLength={400}
+          />
+        </Field>
+      </div>
+
       <div className="pt-2">
         <button
-          onClick={() => saveMutation.mutate({ payment_gateway: gateway })}
+          onClick={() => saveMutation.mutate({
+            payment_gateway:             gateway,
+            payment_disclaimer_enabled:  disclaimerOn,
+            payment_disclaimer_text:     disclaimerText.trim() || DEFAULT_PAYMENT_DISCLAIMER,
+          })}
           disabled={saveMutation.isPending}
           className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
         >
