@@ -75,6 +75,7 @@ interface Meta { total: number; page: number; limit: number; pages: number }
 const PAYMENT_COLORS: Record<string, string> = {
   paid:                 'bg-green-50 text-green-700',
   authorized:           'bg-blue-50 text-blue-700',
+  pending:              'bg-amber-50 text-amber-700',
   pending_confirmation: 'bg-amber-50 text-amber-700',
   failed:               'bg-red-50 text-red-700',
   refunded:             'bg-gray-50 text-gray-600',
@@ -953,8 +954,9 @@ export default function OrdersPage() {
           className="select-inline border border-gray-200 rounded-md text-sm px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-kb-teal"
         >
           <option value="">All Payment</option>
+          <option value="pending">Pending (awaiting payment)</option>
+          <option value="pending_confirmation">Pending confirmation (manual)</option>
           <option value="authorized">Authorized</option>
-          <option value="pending_confirmation">Pending</option>
           <option value="paid">Paid</option>
           <option value="failed">Failed</option>
           <option value="refunded">Refunded</option>
