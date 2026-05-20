@@ -13,7 +13,18 @@ interface CategoryRow {
   name: string;
   slug: string;
   is_nav?: boolean;
-  children?: Array<{ id: string; name: string; slug: string; is_nav?: boolean }>;
+  children?: CategoryRow[];
+}
+
+// Recursively drop nodes whose is_nav is explicitly false, and recurse into
+// the rest. This keeps the tree shape but trims invisible branches at any depth.
+function filterByIsNav(nodes: CategoryRow[]): CategoryRow[] {
+  return nodes
+    .filter((n) => n.is_nav !== false)
+    .map((n) => ({
+      ...n,
+      children: n.children ? filterByIsNav(n.children) : undefined,
+    }));
 }
 
 interface TagGroupData {
@@ -38,12 +49,7 @@ export default async function Header() {
   const navData: HeaderNavData = {
     collections: collectionsList.filter((c) => c.is_nav !== false),
     tagGroups:   tagGroups ?? {},
-    categories:  categoriesList
-      .filter((c) => c.is_nav !== false)
-      .map((c) => ({
-        ...c,
-        children: c.children?.filter((ch) => ch.is_nav !== false),
-      })),
+    categories:  filterByIsNav(categoriesList),
     navBadges:   (Array.isArray(badgesRaw) ? badgesRaw : []).filter(
       (b) => (b as BadgeItem & { is_nav: boolean }).is_nav
     ) as (BadgeItem & { is_nav: boolean })[],

@@ -405,17 +405,39 @@ export const categoriesRouter = Router();
 
 categoriesRouter.get('/', async (_req, res, next) => {
   try {
-    const { rows } = await pool.query(
+    const { rows } = await pool.query<{
+      id: string;
+      name: string;
+      slug: string;
+      parent_id: string | null;
+      description: string | null;
+      banner_img: string | null;
+      banner_height: string | null;
+      meta_title: string | null;
+      meta_desc: string | null;
+      nav_order: number;
+      is_active: boolean;
+      is_nav: boolean;
+    }>(
       `SELECT id, name, slug, parent_id, description, banner_img, banner_height,
               meta_title, meta_desc, nav_order, is_active, is_nav
        FROM categories WHERE is_active = true ORDER BY nav_order`
     );
-    const parents = rows.filter((r) => !r.parent_id);
-    const children = rows.filter((r) => r.parent_id);
-    const tree = parents.map((p) => ({
-      ...p,
-      children: children.filter((c) => c.parent_id === p.id),
-    }));
+
+    // Build the tree recursively — supports unlimited depth so Departments,
+    // Families, and Types all flow through in one shape.
+    type Node = (typeof rows)[number] & { children: Node[] };
+    const byId = new Map<string, Node>();
+    rows.forEach((r) => byId.set(r.id, { ...r, children: [] }));
+    const tree: Node[] = [];
+    byId.forEach((node) => {
+      if (node.parent_id && byId.has(node.parent_id)) {
+        byId.get(node.parent_id)!.children.push(node);
+      } else {
+        tree.push(node);
+      }
+    });
+
     res.json({ data: tree });
   } catch (err) {
     next(err);

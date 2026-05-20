@@ -21,7 +21,8 @@ interface CategoryItem {
   id: string;
   name: string;
   slug: string;
-  children?: Array<{ id: string; name: string; slug: string }>;
+  // Recursive — supports Department -> Family -> Type (or deeper)
+  children?: CategoryItem[];
 }
 
 interface TagGroupData {
@@ -58,10 +59,21 @@ const mobileLinkBase =
 
 interface FlyoutItem { label: string; href: string; color?: string | null; infoHref?: string }
 
+interface FlyoutSection {
+  // Clickable section heading (links to a parent category). When the section
+  // has no items, the heading itself is the only thing rendered — useful for
+  // a Family with no Types beneath it.
+  heading:     string;
+  headingHref: string;
+  items:       FlyoutItem[];
+}
+
 interface FlyoutProps {
   id: string;
   label: string;
-  items: FlyoutItem[];
+  items?: FlyoutItem[];
+  sections?: FlyoutSection[];
+  wide?: boolean;
   browseHref: string;
   browseLabel: string;
   isOpen: boolean;
@@ -75,6 +87,8 @@ function FlyoutMenu({
   id,
   label,
   items,
+  sections,
+  wide,
   browseHref,
   browseLabel,
   isOpen,
@@ -83,6 +97,8 @@ function FlyoutMenu({
   onScheduleClose,
   onCancelClose,
 }: FlyoutProps) {
+  const totalItemCount =
+    sections ? sections.reduce((n, s) => n + s.items.length, 0) : items?.length ?? 0;
   const handleMouseEnter = () => {
     onCancelClose();
     onOpen(id);
@@ -115,47 +131,73 @@ function FlyoutMenu({
       {/* Panel — pt-3 bridges the gap so mouseleave doesn't fire mid-travel */}
       <div
         className={[
-          'absolute top-full left-1/2 -translate-x-1/2 pt-3 w-52 z-50',
+          'absolute top-full left-1/2 -translate-x-1/2 pt-3 z-50',
+          wide ? 'w-64' : 'w-52',
           'transition-all duration-150 origin-top',
           isOpen ? 'opacity-100 scale-y-100 pointer-events-auto' : 'opacity-0 scale-y-95 pointer-events-none',
         ].join(' ')}
       >
       <div className="bg-white rounded-xl shadow-lg ring-1 ring-black/5 py-2">
-        {items.map((item) => (
-          <div
-            key={item.href}
-            className="flex items-center justify-between gap-3 px-2 py-1"
-          >
-            <Link
-              href={item.href}
-              onClick={onCloseNow}
-              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1 text-sm text-gray-500 hover:text-kb-charcoal hover:bg-gray-50 transition-colors"
-            >
-              {item.color && (
-                <span
-                  className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-black/10"
-                  style={{ backgroundColor: item.color }}
-                />
-              )}
-              <span className="truncate">{item.label}</span>
-            </Link>
-            {item.infoHref ? (
+        {sections ? (
+          sections.map((section) => (
+            <div key={section.headingHref} className="px-1 pt-1.5 first:pt-0">
               <Link
-                href={item.infoHref}
+                href={section.headingHref}
                 onClick={onCloseNow}
-                aria-label={`Learn more about ${item.label}`}
-                className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-kb-teal hover:border-kb-teal/30 hover:bg-white flex-shrink-0"
+                className="block px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-kb-charcoal hover:text-kb-teal"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                {section.heading}
               </Link>
-            ) : (
-              <span className="w-6 h-6 flex-shrink-0" aria-hidden="true" />
-            )}
-          </div>
-        ))}
-        {items.length >= MAX_FLYOUT_ITEMS && (
+              {section.items.map((item) => (
+                <div key={item.href} className="flex items-center justify-between gap-3 px-2 py-0.5">
+                  <Link
+                    href={item.href}
+                    onClick={onCloseNow}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1 text-sm text-gray-500 hover:text-kb-charcoal hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                </div>
+              ))}
+            </div>
+          ))
+        ) : (
+          items?.map((item) => (
+            <div
+              key={item.href}
+              className="flex items-center justify-between gap-3 px-2 py-1"
+            >
+              <Link
+                href={item.href}
+                onClick={onCloseNow}
+                className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1 text-sm text-gray-500 hover:text-kb-charcoal hover:bg-gray-50 transition-colors"
+              >
+                {item.color && (
+                  <span
+                    className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-black/10"
+                    style={{ backgroundColor: item.color }}
+                  />
+                )}
+                <span className="truncate">{item.label}</span>
+              </Link>
+              {item.infoHref ? (
+                <Link
+                  href={item.infoHref}
+                  onClick={onCloseNow}
+                  aria-label={`Learn more about ${item.label}`}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-kb-teal hover:border-kb-teal/30 hover:bg-white flex-shrink-0"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </Link>
+              ) : (
+                <span className="w-6 h-6 flex-shrink-0" aria-hidden="true" />
+              )}
+            </div>
+          ))
+        )}
+        {totalItemCount >= MAX_FLYOUT_ITEMS && (
           <div className="border-t border-gray-100 mt-1 pt-1">
             <Link
               href={browseHref}
@@ -179,7 +221,8 @@ function FlyoutMenu({
 
 interface MobileAccordionProps {
   label: string;
-  items: FlyoutItem[];
+  items?: FlyoutItem[];
+  sections?: FlyoutSection[];
   browseHref: string;
   browseLabel?: string;
   isExpanded: boolean;
@@ -187,7 +230,7 @@ interface MobileAccordionProps {
   onNav: () => void;
 }
 
-function MobileAccordion({ label, items, browseHref, browseLabel = 'Browse all', isExpanded, onToggle, onNav }: MobileAccordionProps) {
+function MobileAccordion({ label, items, sections, browseHref, browseLabel = 'Browse all', isExpanded, onToggle, onNav }: MobileAccordionProps) {
   return (
     <div>
       <button
@@ -204,35 +247,59 @@ function MobileAccordion({ label, items, browseHref, browseLabel = 'Browse all',
       </button>
       {isExpanded && (
         <div className="ml-3 mt-0.5 border-l border-gray-100 pl-3 space-y-0.5">
-          {items.map((item) => (
-            <div key={item.href} className="flex items-center justify-between gap-2">
-              <Link
-                href={item.href}
-                onClick={onNav}
-                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-gray-400 hover:text-kb-charcoal transition-colors rounded-lg"
-              >
-                {item.color && (
-                  <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-black/10"
-                    style={{ backgroundColor: item.color }}
-                  />
-                )}
-                <span className="truncate">{item.label}</span>
-              </Link>
-              {item.infoHref && (
+          {sections ? (
+            sections.map((section) => (
+              <div key={section.headingHref} className="pt-1 first:pt-0">
                 <Link
-                  href={item.infoHref}
+                  href={section.headingHref}
                   onClick={onNav}
-                  aria-label={`Learn more about ${item.label}`}
-                  className="mr-1 flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-kb-teal hover:border-kb-teal/30 flex-shrink-0"
+                  className="block px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-kb-charcoal hover:text-kb-teal"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                  {section.heading}
                 </Link>
-              )}
-            </div>
-          ))}
+                {section.items.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onNav}
+                    className="block px-4 py-1.5 text-sm text-gray-400 hover:text-kb-charcoal transition-colors rounded-lg"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            ))
+          ) : (
+            items?.map((item) => (
+              <div key={item.href} className="flex items-center justify-between gap-2">
+                <Link
+                  href={item.href}
+                  onClick={onNav}
+                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-gray-400 hover:text-kb-charcoal transition-colors rounded-lg"
+                >
+                  {item.color && (
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-black/10"
+                      style={{ backgroundColor: item.color }}
+                    />
+                  )}
+                  <span className="truncate">{item.label}</span>
+                </Link>
+                {item.infoHref && (
+                  <Link
+                    href={item.infoHref}
+                    onClick={onNav}
+                    aria-label={`Learn more about ${item.label}`}
+                    className="mr-1 flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-kb-teal hover:border-kb-teal/30 flex-shrink-0"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </Link>
+                )}
+              </div>
+            ))
+          )}
           <Link
             href={browseHref}
             onClick={onNav}
@@ -464,14 +531,46 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
     href:  `/shop?collection=${c.slug}`,
   }));
 
-  // Flatten category tree for flyout (parents + children)
-  const categoryItems: FlyoutItem[] = categories.flatMap((cat) => [
-    { label: cat.name, href: `/shop?category=${cat.slug}` },
-    ...(cat.children ?? []).map((child) => ({
-      label: `↳ ${child.name}`,
-      href:  `/shop?category=${child.slug}`,
-    })),
-  ]);
+  // Build one flyout per top-level category (Department).
+  //
+  // Shape decisions per department:
+  //   - depth 1 (no children):       render as a plain Link
+  //   - depth 2 (children, no grandchildren): flat items
+  //   - depth 3 (children with their own children): grouped sections — each
+  //     Family is a clickable section heading with its Types listed beneath
+  type DeptFlyout = {
+    id:    string;
+    label: string;
+    href:  string;            // for the parent link / "Browse" link
+    items?: FlyoutItem[];     // depth-2 shape
+    sections?: FlyoutSection[]; // depth-3 shape
+  };
+
+  const departmentFlyouts: DeptFlyout[] = categories.map((dept) => {
+    const deptHref = `/shop?category=${dept.slug}`;
+    const families = dept.children ?? [];
+    if (families.length === 0) {
+      return { id: dept.id, label: dept.name, href: deptHref };
+    }
+    const hasGrandchildren = families.some((f) => (f.children?.length ?? 0) > 0);
+    if (hasGrandchildren) {
+      const sections: FlyoutSection[] = families.map((family) => ({
+        heading:     family.name,
+        headingHref: `/shop?category=${family.slug}`,
+        items: (family.children ?? []).map((type) => ({
+          label: type.name,
+          href:  `/shop?category=${type.slug}`,
+        })),
+      }));
+      return { id: dept.id, label: dept.name, href: deptHref, sections };
+    }
+    return {
+      id:    dept.id,
+      label: dept.name,
+      href:  deptHref,
+      items: families.map((f) => ({ label: f.name, href: `/shop?category=${f.slug}` })),
+    };
+  });
 
   return (
     <>
@@ -537,19 +636,28 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
               <Link href="/shop" className={linkBase}>Collections</Link>
             )}
 
-            {categoryItems.length > 0 && (
-              <FlyoutMenu
-                id="categories"
-                label="Categories"
-                items={categoryItems.slice(0, MAX_FLYOUT_ITEMS)}
-                browseHref="/shop"
-                browseLabel="Browse all categories"
-                isOpen={openMenu === 'categories'}
-                onOpen={setOpenMenu}
-                onCloseNow={closeMenu}
-                onScheduleClose={scheduleMenuClose}
-                onCancelClose={cancelScheduledClose}
-              />
+            {departmentFlyouts.map((dept) =>
+              dept.sections || dept.items ? (
+                <FlyoutMenu
+                  key={dept.id}
+                  id={`dept-${dept.id}`}
+                  label={dept.label}
+                  items={dept.items}
+                  sections={dept.sections}
+                  wide={!!dept.sections}
+                  browseHref={dept.href}
+                  browseLabel={`Browse all ${dept.label.toLowerCase()}`}
+                  isOpen={openMenu === `dept-${dept.id}`}
+                  onOpen={setOpenMenu}
+                  onCloseNow={closeMenu}
+                  onScheduleClose={scheduleMenuClose}
+                  onCancelClose={cancelScheduledClose}
+                />
+              ) : (
+                <Link key={dept.id} href={dept.href} className={linkBase}>
+                  {dept.label}
+                </Link>
+              )
             )}
 
             {filterGroups.map(([key, group]) => {
@@ -697,16 +805,29 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                 <Link href="/shop" className={mobileLinkBase} onClick={closeMobile}>Collections</Link>
               )}
 
-              {categoryItems.length > 0 && (
-                <MobileAccordion
-                  label="Categories"
-                  items={categoryItems}
-                  browseHref="/shop"
-                  browseLabel="Browse all categories"
-                  isExpanded={mobileExpanded === 'categories'}
-                  onToggle={() => toggleMobileSection('categories')}
-                  onNav={closeMobile}
-                />
+              {departmentFlyouts.map((dept) =>
+                dept.sections || dept.items ? (
+                  <MobileAccordion
+                    key={dept.id}
+                    label={dept.label}
+                    items={dept.items}
+                    sections={dept.sections}
+                    browseHref={dept.href}
+                    browseLabel={`Browse all ${dept.label.toLowerCase()}`}
+                    isExpanded={mobileExpanded === `dept-${dept.id}`}
+                    onToggle={() => toggleMobileSection(`dept-${dept.id}`)}
+                    onNav={closeMobile}
+                  />
+                ) : (
+                  <Link
+                    key={dept.id}
+                    href={dept.href}
+                    className={mobileLinkBase}
+                    onClick={closeMobile}
+                  >
+                    {dept.label}
+                  </Link>
+                )
               )}
 
               {filterGroups.map(([key, group]) => (
