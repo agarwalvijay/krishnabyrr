@@ -9,6 +9,15 @@ export interface FabricGuide {
   whyItStandsOut: string;
   care: string[];
   stylingNotes: string[];
+  /**
+   * Optional hero image — close-up of the fabric / weave. Path is relative to
+   * /apps/web/public, e.g. '/fabrics/banarasi.jpg'. Renders as a banner on the
+   * guide page and as the card cover on the /fabrics index. When absent, both
+   * surfaces fall back cleanly to text-only.
+   *
+   * Suggested specs: 1200x800 (3:2), JPEG, ~150KB, sharp focus on the weave.
+   */
+  image?: string;
 }
 
 const FABRIC_GUIDES: FabricGuide[] = [

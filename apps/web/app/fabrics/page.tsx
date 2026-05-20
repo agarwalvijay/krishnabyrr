@@ -34,20 +34,33 @@ export default function FabricsIndexPage() {
           <li key={guide.slug}>
             <Link
               href={`/fabrics/${guide.slug}`}
-              className="block h-full bg-white rounded-2xl border border-gray-100 p-6 shadow-sm transition-all hover:shadow-md hover:border-kb-teal/40"
+              className="group block h-full bg-white rounded-2xl border border-gray-100 shadow-sm transition-all hover:shadow-md hover:border-kb-teal/40 overflow-hidden"
             >
-              <h2 className="font-display text-xl font-semibold text-kb-charcoal">
-                {guide.name}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-kb-muted">
-                {guide.tagline}
-              </p>
-              <p className="mt-3 text-xs text-kb-muted">
-                <span className="font-semibold uppercase tracking-wide">Origin</span> · {guide.origin}
-              </p>
-              <p className="mt-4 text-sm font-medium text-kb-teal">
-                Read the guide →
-              </p>
+              {guide.image && (
+                <div className="aspect-[3/2] bg-gray-100 overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={guide.image}
+                    alt={`${guide.name} fabric`}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    loading="lazy"
+                  />
+                </div>
+              )}
+              <div className="p-6">
+                <h2 className="font-display text-xl font-semibold text-kb-charcoal">
+                  {guide.name}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-kb-muted">
+                  {guide.tagline}
+                </p>
+                <p className="mt-3 text-xs text-kb-muted">
+                  <span className="font-semibold uppercase tracking-wide">Origin</span> · {guide.origin}
+                </p>
+                <p className="mt-4 text-sm font-medium text-kb-teal">
+                  Read the guide →
+                </p>
+              </div>
             </Link>
           </li>
         ))}

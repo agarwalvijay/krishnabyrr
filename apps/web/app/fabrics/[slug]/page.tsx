@@ -36,6 +36,18 @@ export default function FabricGuidePage({ params }: { params: Params }) {
         <p className="mt-4 text-lg text-kb-muted max-w-3xl">{guide.tagline}</p>
       </div>
 
+      {guide.image && (
+        <div className="mb-8 overflow-hidden rounded-2xl bg-gray-100 aspect-[3/2] shadow-sm">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={guide.image}
+            alt={`${guide.name} fabric close-up`}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8 shadow-sm">
           <div className="grid gap-6 sm:grid-cols-2">
