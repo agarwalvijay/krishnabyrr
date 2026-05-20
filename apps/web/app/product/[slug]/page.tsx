@@ -8,7 +8,7 @@ import ProductGallery from './ProductGallery';
 import ProductActions from './ProductActions';
 import PincodeChecker from './PincodeChecker';
 import RecentlyViewed from './RecentlyViewed';
-import { getFabricGuideByValue } from '@/lib/fabric-guides';
+import { getFabricGuideByValue, getFabricGuideBySlug } from '@/lib/fabric-guides';
 
 export const revalidate = 3600;
 
@@ -64,14 +64,35 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
   const exchangeDays  = settings.exchange_window_days ?? '7';
 
   // Tags
-  const fabricTags   = product.tags?.fabric   ?? [];
+  const legacyFabricTags = product.tags?.fabric ?? [];
   const weaveTags    = product.tags?.weave    ?? [];
   const occasionTags = product.tags?.occasion ?? [];
   const includesTags = product.tags?.includes ?? [];
   const careTags     = product.care_instr;
-  const fabricGuides = fabricTags
-    .map((tag) => getFabricGuideByValue(tag.value))
-    .filter((guide, index, arr): guide is NonNullable<typeof guide> => Boolean(guide) && arr.findIndex((g) => g?.slug === guide?.slug) === index);
+
+  // Fabric is now a category (Department -> Family -> Type). Walk every
+  // category the product is in, plus any legacy fabric tags, and dedupe to
+  // a unique list of matching FabricGuide entries.
+  const productCategories = product.categories ?? [];
+  const fabricGuides = (() => {
+    const seen = new Set<string>();
+    const out: ReturnType<typeof getFabricGuideBySlug>[] = [];
+    for (const cat of productCategories) {
+      const g = getFabricGuideBySlug(cat.slug) ?? getFabricGuideByValue(cat.name);
+      if (g && !seen.has(g.slug)) { seen.add(g.slug); out.push(g); }
+    }
+    for (const tag of legacyFabricTags) {
+      const g = getFabricGuideByValue(tag.value);
+      if (g && !seen.has(g.slug)) { seen.add(g.slug); out.push(g); }
+    }
+    return out.filter((g): g is NonNullable<typeof g> => g != null);
+  })();
+
+  // Display labels — prefer the fabric guide name, fall back to legacy tags
+  // for products that haven't been re-categorized yet.
+  const fabricLabels = fabricGuides.length > 0
+    ? fabricGuides.map((g) => g.name)
+    : legacyFabricTags.map((t) => t.value);
 
   // First category for breadcrumb
   const firstCategory = product.categories?.[0];
@@ -155,11 +176,11 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
 
           {/* Feature bullets */}
           <ul className="space-y-1.5 mb-5 text-sm text-kb-charcoal">
-            {fabricTags.length > 0 && (
+            {fabricLabels.length > 0 && (
               <li className="flex gap-2">
                 <span className="text-kb-muted min-w-[80px]">Fabric</span>
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span>{fabricTags.map(t => t.value).join(', ')}</span>
+                  <span>{fabricLabels.join(', ')}</span>
                   {fabricGuides[0] && (
                     <Link
                       href={`/fabrics/${fabricGuides[0].slug}`}

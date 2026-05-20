@@ -157,6 +157,18 @@ function FlyoutMenu({
                   >
                     <span className="truncate">{item.label}</span>
                   </Link>
+                  {item.infoHref && (
+                    <Link
+                      href={item.infoHref}
+                      onClick={onCloseNow}
+                      aria-label={`Learn more about ${item.label}`}
+                      className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-kb-teal hover:border-kb-teal/30 hover:bg-white flex-shrink-0"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </Link>
+                  )}
                 </div>
               ))}
             </div>
@@ -197,7 +209,7 @@ function FlyoutMenu({
             </div>
           ))
         )}
-        {totalItemCount >= MAX_FLYOUT_ITEMS && (
+        {(wide || totalItemCount >= MAX_FLYOUT_ITEMS) && (
           <div className="border-t border-gray-100 mt-1 pt-1">
             <Link
               href={browseHref}
@@ -258,14 +270,27 @@ function MobileAccordion({ label, items, sections, browseHref, browseLabel = 'Br
                   {section.heading}
                 </Link>
                 {section.items.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={onNav}
-                    className="block px-4 py-1.5 text-sm text-gray-400 hover:text-kb-charcoal transition-colors rounded-lg"
-                  >
-                    {item.label}
-                  </Link>
+                  <div key={item.href} className="flex items-center justify-between gap-2">
+                    <Link
+                      href={item.href}
+                      onClick={onNav}
+                      className="flex-1 block px-4 py-1.5 text-sm text-gray-400 hover:text-kb-charcoal transition-colors rounded-lg"
+                    >
+                      {item.label}
+                    </Link>
+                    {item.infoHref && (
+                      <Link
+                        href={item.infoHref}
+                        onClick={onNav}
+                        aria-label={`Learn more about ${item.label}`}
+                        className="mr-1 flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-kb-teal hover:border-kb-teal/30 flex-shrink-0"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </Link>
+                    )}
+                  </div>
                 ))}
               </div>
             ))
@@ -546,6 +571,13 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
     sections?: FlyoutSection[]; // depth-3 shape
   };
 
+  // Lift a category slug into a fabric-guide infoHref if one exists, so the
+  // 'i' icon can deep-link to /fabrics/<slug> next to Banarasi, Chanderi, etc.
+  const fabricInfoHref = (slug: string): string | undefined => {
+    const g = getFabricGuideByValue(slug);
+    return g ? `/fabrics/${g.slug}` : undefined;
+  };
+
   const departmentFlyouts: DeptFlyout[] = categories.map((dept) => {
     const deptHref = `/shop?category=${dept.slug}`;
     const families = dept.children ?? [];
@@ -558,8 +590,9 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
         heading:     family.name,
         headingHref: `/shop?category=${family.slug}`,
         items: (family.children ?? []).map((type) => ({
-          label: type.name,
-          href:  `/shop?category=${type.slug}`,
+          label:    type.name,
+          href:     `/shop?category=${type.slug}`,
+          infoHref: fabricInfoHref(type.slug),
         })),
       }));
       return { id: dept.id, label: dept.name, href: deptHref, sections };
@@ -568,9 +601,22 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
       id:    dept.id,
       label: dept.name,
       href:  deptHref,
-      items: families.map((f) => ({ label: f.name, href: `/shop?category=${f.slug}` })),
+      items: families.map((f) => ({
+        label:    f.name,
+        href:     `/shop?category=${f.slug}`,
+        infoHref: fabricInfoHref(f.slug),
+      })),
     };
   });
+
+  // Does this department contain any fabric-guide-matched entries? If so we
+  // surface a 'Read fabric guides ->' link at the bottom of the flyout.
+  const hasFabricGuideEntries = (dept: DeptFlyout): boolean => {
+    if (dept.sections) {
+      return dept.sections.some((s) => s.items.some((i) => i.infoHref));
+    }
+    return (dept.items ?? []).some((i) => i.infoHref);
+  };
 
   return (
     <>
@@ -636,8 +682,16 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
               <Link href="/shop" className={linkBase}>Collections</Link>
             )}
 
-            {departmentFlyouts.map((dept) =>
-              dept.sections || dept.items ? (
+            {departmentFlyouts.map((dept) => {
+              if (!(dept.sections || dept.items)) {
+                return (
+                  <Link key={dept.id} href={dept.href} className={linkBase}>
+                    {dept.label}
+                  </Link>
+                );
+              }
+              const hasGuides = hasFabricGuideEntries(dept);
+              return (
                 <FlyoutMenu
                   key={dept.id}
                   id={`dept-${dept.id}`}
@@ -645,20 +699,16 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                   items={dept.items}
                   sections={dept.sections}
                   wide={!!dept.sections}
-                  browseHref={dept.href}
-                  browseLabel={`Browse all ${dept.label.toLowerCase()}`}
+                  browseHref={hasGuides ? '/fabrics' : dept.href}
+                  browseLabel={hasGuides ? 'Read fabric guides' : `Browse all ${dept.label.toLowerCase()}`}
                   isOpen={openMenu === `dept-${dept.id}`}
                   onOpen={setOpenMenu}
                   onCloseNow={closeMenu}
                   onScheduleClose={scheduleMenuClose}
                   onCancelClose={cancelScheduledClose}
                 />
-              ) : (
-                <Link key={dept.id} href={dept.href} className={linkBase}>
-                  {dept.label}
-                </Link>
-              )
-            )}
+              );
+            })}
 
             {filterGroups.map(([key, group]) => {
               const items: FlyoutItem[] = group.tags
@@ -805,30 +855,34 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                 <Link href="/shop" className={mobileLinkBase} onClick={closeMobile}>Collections</Link>
               )}
 
-              {departmentFlyouts.map((dept) =>
-                dept.sections || dept.items ? (
+              {departmentFlyouts.map((dept) => {
+                if (!(dept.sections || dept.items)) {
+                  return (
+                    <Link
+                      key={dept.id}
+                      href={dept.href}
+                      className={mobileLinkBase}
+                      onClick={closeMobile}
+                    >
+                      {dept.label}
+                    </Link>
+                  );
+                }
+                const hasGuides = hasFabricGuideEntries(dept);
+                return (
                   <MobileAccordion
                     key={dept.id}
                     label={dept.label}
                     items={dept.items}
                     sections={dept.sections}
-                    browseHref={dept.href}
-                    browseLabel={`Browse all ${dept.label.toLowerCase()}`}
+                    browseHref={hasGuides ? '/fabrics' : dept.href}
+                    browseLabel={hasGuides ? 'Read fabric guides' : `Browse all ${dept.label.toLowerCase()}`}
                     isExpanded={mobileExpanded === `dept-${dept.id}`}
                     onToggle={() => toggleMobileSection(`dept-${dept.id}`)}
                     onNav={closeMobile}
                   />
-                ) : (
-                  <Link
-                    key={dept.id}
-                    href={dept.href}
-                    className={mobileLinkBase}
-                    onClick={closeMobile}
-                  >
-                    {dept.label}
-                  </Link>
-                )
-              )}
+                );
+              })}
 
               {filterGroups.map(([key, group]) => (
                 <MobileAccordion
