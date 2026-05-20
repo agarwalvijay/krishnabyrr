@@ -25,6 +25,10 @@ interface OrderRow {
   tracking_url: string | null;
   whatsapp_status: WhatsAppStatus;
   whatsapp_status_at: string | null;
+  razorpay_payment_id: string | null;
+  razorpay_order_id: string | null;
+  phonepe_transaction_id: string | null;
+  phonepe_payment_id: string | null;
 }
 
 interface OrderDetail extends OrderRow {
@@ -39,9 +43,7 @@ interface OrderDetail extends OrderRow {
   exchange_eligible_until: string | null;
   exchanges: ExchangeRow[];
   refunds: RefundRow[];
-  razorpay_payment_id: string | null;
   razorpay_authorized_at: string | null;
-  phonepe_transaction_id: string | null;
   refunded_amount: string;
   captured_amount: string | null;
   whatsapp_last_template: string | null;
@@ -111,6 +113,44 @@ function Badge({ label, colorClass }: { label: string; colorClass: string }) {
 
 function fmt(amount: string | number) {
   return `₹${parseFloat(String(amount)).toLocaleString('en-IN')}`;
+}
+
+function IdRow({ label, value, href }: { label: string; value: string; href?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error('Could not copy');
+    }
+  };
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <span className="text-kb-muted w-32 flex-shrink-0">{label}</span>
+      <code className="font-mono text-kb-charcoal bg-gray-50 px-1.5 py-0.5 rounded truncate min-w-0 flex-1">
+        {value}
+      </code>
+      <button
+        type="button"
+        onClick={copy}
+        className="text-kb-teal underline flex-shrink-0"
+      >
+        {copied ? 'Copied ✓' : 'Copy'}
+      </button>
+      {href && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-kb-teal underline flex-shrink-0"
+        >
+          Open ↗
+        </a>
+      )}
+    </div>
+  );
 }
 
 // ── Order Detail Slide-Over ───────────────────────────────────────────────────
@@ -354,6 +394,35 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
                 </div>
               )}
             </section>
+
+            {/* Payment IDs — for cross-referencing the gateway dashboard */}
+            {(order.razorpay_payment_id || order.razorpay_order_id || order.phonepe_transaction_id || order.phonepe_payment_id) && (
+              <section>
+                <h3 className="text-sm font-semibold text-kb-charcoal mb-2">Payment IDs</h3>
+                <div className="space-y-1.5 text-xs">
+                  {order.razorpay_order_id && (
+                    <IdRow
+                      label="Razorpay order"
+                      value={order.razorpay_order_id}
+                      href={`https://dashboard.razorpay.com/app/orders/${order.razorpay_order_id}`}
+                    />
+                  )}
+                  {order.razorpay_payment_id && (
+                    <IdRow
+                      label="Razorpay payment"
+                      value={order.razorpay_payment_id}
+                      href={`https://dashboard.razorpay.com/app/payments/${order.razorpay_payment_id}`}
+                    />
+                  )}
+                  {order.phonepe_transaction_id && (
+                    <IdRow label="PhonePe transaction" value={order.phonepe_transaction_id} />
+                  )}
+                  {order.phonepe_payment_id && (
+                    <IdRow label="PhonePe payment" value={order.phonepe_payment_id} />
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Status controls */}
             <section>
@@ -939,7 +1008,17 @@ export default function OrdersPage() {
                   className="hover:bg-gray-50 cursor-pointer transition-colors"
                   onClick={() => setSelectedOrderId(order.id)}
                 >
-                  <td className="px-4 py-3 font-medium text-kb-teal">{order.order_number}</td>
+                  <td className="px-4 py-3 align-top">
+                    <div className="font-medium text-kb-teal">{order.order_number}</div>
+                    {(order.razorpay_payment_id || order.phonepe_payment_id || order.phonepe_transaction_id) && (
+                      <div
+                        className="text-[11px] text-kb-muted font-mono mt-0.5 truncate max-w-[160px]"
+                        title={order.razorpay_payment_id ?? order.phonepe_payment_id ?? order.phonepe_transaction_id ?? ''}
+                      >
+                        {order.razorpay_payment_id ?? order.phonepe_payment_id ?? order.phonepe_transaction_id}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-kb-charcoal max-w-[180px] truncate">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate">{order.customer_name}</span>

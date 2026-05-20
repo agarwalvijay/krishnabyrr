@@ -488,6 +488,8 @@ router.get('/', requireAuth, async (req, res, next) => {
         o.subtotal, o.discount_amount, o.shipping_amount, o.gst_amount, o.total,
         o.coupon_code, o.courier_name, o.tracking_number, o.tracking_url,
         o.fulfilled_at, o.exchange_eligible_until,
+        o.razorpay_payment_id, o.razorpay_order_id,
+        o.phonepe_transaction_id, o.phonepe_payment_id,
         COALESCE(c.email, o.guest_email) AS customer_email,
         COALESCE(c.name, (o.shipping_address->>'name')) AS customer_name,
         wa.status   AS whatsapp_status,
