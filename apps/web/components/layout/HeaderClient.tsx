@@ -563,7 +563,7 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                     ? `/fabrics/${getFabricGuideByValue(t.value)!.slug}`
                     : undefined,
                 }));
-              const browseHref = key === 'fabric' ? '/fabrics/maheshwari-silk' : `/shop`;
+              const browseHref = key === 'fabric' ? '/fabrics' : `/shop`;
               const browseLabel = key === 'fabric' ? 'Explore fabric guides' : `Browse all ${group.label.toLowerCase()}`;
               return (
                 <FlyoutMenu
@@ -721,7 +721,7 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
                       ? `/fabrics/${getFabricGuideByValue(t.value)!.slug}`
                       : undefined,
                   }))}
-                  browseHref={key === 'fabric' ? '/fabrics/maheshwari-silk' : '/shop'}
+                  browseHref={key === 'fabric' ? '/fabrics' : '/shop'}
                   browseLabel={key === 'fabric' ? 'Explore fabric guides' : `Browse all ${group.label.toLowerCase()}`}
                   isExpanded={mobileExpanded === key}
                   onToggle={() => toggleMobileSection(key)}
