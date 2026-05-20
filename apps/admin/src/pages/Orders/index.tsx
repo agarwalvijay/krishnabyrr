@@ -872,9 +872,10 @@ export default function OrdersPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Order # or email…"
+            placeholder="Order #, email, phone, or pay_…"
+            title="Search by KB order number, customer email, phone, or any Razorpay / PhonePe payment or order ID — paste straight from the gateway dashboard."
             autoComplete="off"
-            className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-md text-sm w-52 focus:outline-none focus:ring-2 focus:ring-kb-teal"
+            className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-md text-sm w-52 md:w-64 focus:outline-none focus:ring-2 focus:ring-kb-teal"
           />
         </div>
         <select

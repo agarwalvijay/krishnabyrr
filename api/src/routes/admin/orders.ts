@@ -442,12 +442,33 @@ router.get('/', requireAuth, async (req, res, next) => {
       conditions.push(`o.fulfillment_status = $${i}`); params.push(fulfillment_status); i++;
     }
     if (q) {
-      conditions.push(`(
-        o.order_number ILIKE $${i}
-        OR o.guest_email ILIKE $${i}
-        OR c.email ILIKE $${i}
-      )`);
-      params.push(`%${q}%`); i++;
+      // Accept anything an admin might be looking at in a payment gateway
+      // dashboard: KB order number, Razorpay payment/order id, PhonePe
+      // transaction/payment id, customer email, or customer phone (paste
+      // with or without +91 — we match against the stored value's suffix).
+      const trimmed     = q.trim();
+      const digitsOnly  = trimmed.replace(/\D/g, '');
+      const phoneSuffix = digitsOnly.length >= 6 ? digitsOnly.slice(-10) : null;
+
+      const clauses: string[] = [
+        `o.order_number ILIKE $${i}`,
+        `o.guest_email  ILIKE $${i}`,
+        `c.email        ILIKE $${i}`,
+        `o.razorpay_payment_id    ILIKE $${i}`,
+        `o.razorpay_order_id      ILIKE $${i}`,
+        `o.phonepe_transaction_id ILIKE $${i}`,
+        `o.phonepe_payment_id     ILIKE $${i}`,
+      ];
+      params.push(`%${trimmed}%`); i++;
+
+      if (phoneSuffix) {
+        clauses.push(`o.guest_phone                 LIKE $${i}`);
+        clauses.push(`c.phone                       LIKE $${i}`);
+        clauses.push(`(o.shipping_address->>'phone') LIKE $${i}`);
+        params.push(`%${phoneSuffix}`); i++;
+      }
+
+      conditions.push(`(${clauses.join(' OR ')})`);
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
