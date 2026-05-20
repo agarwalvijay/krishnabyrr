@@ -962,16 +962,29 @@ router.post('/:id/capture', requireAuth, async (req, res, next) => {
     }
 
     try {
+      console.log(`[capture ${order.order_number}] requesting:`, {
+        payment_id: order.razorpay_payment_id,
+        amount_paise: Math.round(captureAmount * 100),
+      });
       await (rzp.payments as unknown as {
         capture: (id: string, amount: number, currency: string) => Promise<unknown>;
       }).capture(order.razorpay_payment_id, Math.round(captureAmount * 100), 'INR');
     } catch (rzpErr: unknown) {
-      const desc = (rzpErr as { error?: { description?: string } })?.error?.description;
+      console.error(`[capture ${order.order_number}] Razorpay rejected:`, JSON.stringify(rzpErr, null, 2));
+      const e = rzpErr as {
+        error?: { code?: string; description?: string; reason?: string; step?: string };
+      };
+      const parts = [
+        e?.error?.reason && e.error.reason !== 'NA' ? e.error.reason : null,
+        e?.error?.description,
+        e?.error?.step ? `(step: ${e.error.step})` : null,
+        e?.error?.code ? `[${e.error.code}]` : null,
+      ].filter(Boolean);
+      const message = parts.length
+        ? `Razorpay rejected the capture: ${parts.join(' — ')}`
+        : 'Razorpay capture failed — the authorization may have expired.';
       res.status(422).json({
-        error: {
-          message: desc ?? 'Razorpay capture failed — the authorization may have expired.',
-          code: 'RAZORPAY_ERROR',
-        },
+        error: { message, code: 'RAZORPAY_ERROR', details: e?.error ?? null },
       });
       return;
     }
@@ -1164,18 +1177,42 @@ router.post('/:id/refund', requireAuth, async (req, res, next) => {
 
       let refundResp: { id: string };
       try {
-        refundResp = await rzp.payments.refund(order.razorpay_payment_id, {
+        const refundReq = {
           amount: Math.round(refundAmount * 100), // paise
           speed: 'normal',
           notes: { order_number: order.order_number },
-        } as Parameters<typeof rzp.payments.refund>[1]) as { id: string };
+        };
+        console.log(`[refund ${order.order_number}] requesting:`, {
+          payment_id: order.razorpay_payment_id,
+          ...refundReq,
+        });
+        refundResp = await rzp.payments.refund(
+          order.razorpay_payment_id,
+          refundReq as Parameters<typeof rzp.payments.refund>[1],
+        ) as { id: string };
       } catch (rzpErr: unknown) {
         await client.query('ROLLBACK');
-        const desc = (rzpErr as { error?: { description?: string } })?.error?.description;
+        // Razorpay's error envelope: { statusCode, error: { code, description, source, step, reason, metadata } }
+        // Generic 'description' is often "invalid request sent" — the actual cause is in 'reason'.
+        console.error(`[refund ${order.order_number}] Razorpay rejected:`, JSON.stringify(rzpErr, null, 2));
+        const e = rzpErr as {
+          statusCode?: number;
+          error?: { code?: string; description?: string; reason?: string; step?: string; source?: string };
+        };
+        const parts = [
+          e?.error?.reason && e.error.reason !== 'NA' ? e.error.reason : null,
+          e?.error?.description,
+          e?.error?.step ? `(step: ${e.error.step})` : null,
+          e?.error?.code ? `[${e.error.code}]` : null,
+        ].filter(Boolean);
+        const message = parts.length
+          ? `Razorpay rejected the refund: ${parts.join(' — ')}`
+          : 'Razorpay refund was rejected. Check the server logs for the full error envelope.';
         res.status(422).json({
           error: {
-            message: desc ?? 'Razorpay refund was rejected — please try a different amount or refund from the Razorpay dashboard.',
+            message,
             code: 'RAZORPAY_ERROR',
+            details: e?.error ?? null,
           },
         });
         return;
