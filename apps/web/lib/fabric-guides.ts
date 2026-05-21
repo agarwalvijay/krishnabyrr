@@ -23,6 +23,7 @@ export interface FabricGuide {
 const FABRIC_GUIDES: FabricGuide[] = [
   {
     slug: 'maheshwari-silk',
+    image: '/fabrics/maheshwari-silk.jpg',
     name: 'Maheshwari Silk',
     tagline: 'Light, lustrous, and easy to wear from day celebrations to elegant evenings.',
     origin: 'Maheshwar, Madhya Pradesh',
@@ -36,6 +37,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'banarasi',
+    image: '/fabrics/banarasi.jpg',
     name: 'Banarasi',
     tagline: 'Rich, ceremonial, and unmistakably luxurious with woven detail that catches the light.',
     origin: 'Varanasi, Uttar Pradesh',
@@ -49,6 +51,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'chanderi',
+    image: '/fabrics/chanderi.jpg',
     name: 'Chanderi',
     tagline: 'Airy, luminous, and refined for elegant daytime and transitional dressing.',
     origin: 'Chanderi, Madhya Pradesh',
@@ -62,6 +65,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'pure-chanderi',
+    image: '/fabrics/pure-chanderi.jpg',
     name: 'Pure Chanderi',
     tagline: 'All-silk Chanderi — fuller, more lustrous, with a quiet richness for evening occasions.',
     origin: 'Chanderi, Madhya Pradesh',
@@ -75,6 +79,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'linen-silk',
+    image: '/fabrics/linen-silk.jpg',
     name: 'Linen Silk',
     tagline: 'The breezy nonchalance of linen with a silk-kissed glow — modern, polished, and easy to wear.',
     origin: 'Woven across Bengal and South India',
@@ -88,6 +93,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'linen-cotton',
+    image: '/fabrics/linen-cotton.jpg',
     name: 'Linen Cotton',
     tagline: 'Breathable, textured, and confidently understated — everyday luxury for warm-weather living.',
     origin: 'Woven across India, with strong traditions in Bengal and Bhagalpur',
@@ -101,6 +107,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'kota',
+    image: '/fabrics/kota.jpg',
     name: 'Kota',
     tagline: 'Featherlight check-weave from Rajasthan — sheer, graceful, and made for summer celebrations.',
     origin: 'Kota, Rajasthan',
@@ -114,6 +121,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'pure-mul',
+    image: '/fabrics/pure-mul.jpg',
     name: 'Pure Mul',
     tagline: 'Whisper-soft muslin cotton — the gentlest weave, made for the warmest days.',
     origin: 'Bengal, with a long Mughal-era tradition',
@@ -127,6 +135,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'pure-organza',
+    image: '/fabrics/pure-organza.jpg',
     name: 'Pure Organza',
     tagline: 'Sheer, structured, and quietly dramatic — the fabric that holds its own without trying.',
     origin: 'Strong traditions in Bangalore, Mysore, and Varanasi',
@@ -140,6 +149,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'pure-tissue',
+    image: '/fabrics/pure-tissue.jpg',
     name: 'Pure Tissue',
     tagline: 'A shimmering, gossamer weave — pure occasion fabric for moments that deserve a little magic.',
     origin: 'Varanasi, with regional variants from Chanderi and South India',
@@ -153,6 +163,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'pure-cotton',
+    image: '/fabrics/pure-cotton.jpg',
     name: 'Pure Cotton',
     tagline: 'Honest, breathable, and quietly luxurious — the everyday weave that never goes out of style.',
     origin: 'Handloom traditions across India, from Bengal to Andhra Pradesh and Tamil Nadu',
@@ -166,6 +177,7 @@ const FABRIC_GUIDES: FabricGuide[] = [
   },
   {
     slug: 'pure-silk',
+    image: '/fabrics/pure-silk.jpg',
     name: 'Pure Silk',
     tagline: 'The timeless choice — rich, lustrous, and forever the language of celebration.',
     origin: 'Mulberry silk traditions span Karnataka, Tamil Nadu, Bengal, and beyond',
