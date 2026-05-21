@@ -90,10 +90,10 @@ export default function FabricGuidePage({ params }: { params: Params }) {
             <p className="text-sm uppercase tracking-[0.18em] text-white/70">Ready to explore?</p>
             <h3 className="mt-2 font-display text-2xl">Shop {guide.name}</h3>
             <p className="mt-2 text-sm text-white/80">
-              Browse pieces tagged with {guide.name} and see how the fabric shows up across the collection.
+              Browse pieces in {guide.name} and see how the fabric shows up across the collection.
             </p>
             <Link
-              href={`/shop?fabric=${encodeURIComponent(guide.name)}`}
+              href={`/shop?category=${guide.slug}`}
               className="inline-flex items-center gap-2 mt-5 rounded-full bg-white px-5 py-3 text-sm font-semibold text-kb-teal"
             >
               View Products
