@@ -137,8 +137,18 @@ router.get('/', requireAuth, async (req, res, next) => {
       params
     );
 
+    // Per product, pick the deepest assigned category name (most specific —
+    // e.g., 'Banarasi' beats 'Silks' beats 'Fabrics'). Empty when the product
+    // has no category assigned. Uses a recursive depth CTE so it scales with
+    // arbitrary tree depth.
     const { rows } = await pool.query(
-      `SELECT
+      `WITH RECURSIVE cat_depth AS (
+         SELECT id, name, parent_id, 0 AS depth FROM categories WHERE parent_id IS NULL
+         UNION ALL
+         SELECT c.id, c.name, c.parent_id, cd.depth + 1
+           FROM categories c JOIN cat_depth cd ON c.parent_id = cd.id
+       )
+       SELECT
          p.id, p.name, p.slug, p.sku, p.short_desc,
          p.mrp, p.sale_price, p.cost_price, p.gst_rate, p.hsn_code,
          p.track_inventory, p.stock_qty, p.low_stock_threshold, p.oos_behavior,
@@ -147,7 +157,14 @@ router.get('/', requireAuth, async (req, res, next) => {
          (SELECT row_to_json(pi)
           FROM (SELECT id, gcs_path, alt_text FROM product_images
                 WHERE product_id = p.id AND is_primary = true LIMIT 1) pi
-         ) AS primary_image
+         ) AS primary_image,
+         (SELECT cd.name
+            FROM cat_depth cd
+            JOIN product_categories pc ON pc.category_id = cd.id
+           WHERE pc.product_id = p.id
+           ORDER BY cd.depth DESC, cd.name
+           LIMIT 1
+         ) AS first_category
        FROM products p
        ${where}
        ORDER BY ${orderBy}
