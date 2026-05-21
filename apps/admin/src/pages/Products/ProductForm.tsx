@@ -712,52 +712,42 @@ export default function ProductForm() {
           <div className={activeTab === 4 ? '' : 'hidden'}>
             <div className="card p-6 space-y-6">
 
-              {/* Categories */}
+              {/* Categories — recursive renderer (Department -> Family -> Type) */}
               <div>
                 <h3 className="text-sm font-semibold text-kb-charcoal mb-2">Categories</h3>
                 {!Array.isArray(categoriesData) || categoriesData.length === 0 ? (
                   <p className="text-sm text-kb-muted">No categories configured.</p>
                 ) : (
-                  <div className="space-y-2">
-                    {(categoriesData as Array<{ id: string; name: string; children?: Array<{ id: string; name: string }> }>).map((parent) => (
-                      <div key={parent.id}>
-                        <div className="mb-1.5">
+                  <div className="space-y-1.5">
+                    {(function renderCategoryTree(
+                      nodes: Array<{ id: string; name: string; children?: typeof nodes }>,
+                      depth: number,
+                    ): React.ReactNode {
+                      return nodes.map((node) => (
+                        <div key={node.id} style={{ paddingLeft: depth * 16 }}>
                           <button
                             type="button"
                             onClick={() => setSelCategories((prev) =>
-                              prev.includes(parent.id) ? prev.filter((x) => x !== parent.id) : [...prev, parent.id]
+                              prev.includes(node.id) ? prev.filter((x) => x !== node.id) : [...prev, node.id]
                             )}
-                            className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-colors ${
-                              selCategories.includes(parent.id)
+                            className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                              depth === 0 ? 'font-medium' : ''
+                            } ${
+                              selCategories.includes(node.id)
                                 ? 'bg-kb-teal text-white border-kb-teal'
                                 : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
                             }`}
                           >
-                            {parent.name}
+                            {depth > 0 ? '↳ ' : ''}{node.name}
                           </button>
+                          {node.children && node.children.length > 0 && (
+                            <div className="mt-1 space-y-1">
+                              {renderCategoryTree(node.children, depth + 1)}
+                            </div>
+                          )}
                         </div>
-                        {parent.children && parent.children.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pl-4">
-                            {parent.children.map((child) => (
-                              <button
-                                key={child.id}
-                                type="button"
-                                onClick={() => setSelCategories((prev) =>
-                                  prev.includes(child.id) ? prev.filter((x) => x !== child.id) : [...prev, child.id]
-                                )}
-                                className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
-                                  selCategories.includes(child.id)
-                                    ? 'bg-kb-teal text-white border-kb-teal'
-                                    : 'bg-white text-kb-muted border-gray-200 hover:border-kb-teal hover:text-kb-teal'
-                                }`}
-                              >
-                                ↳ {child.name}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      ));
+                    })(categoriesData as Array<{ id: string; name: string; children?: typeof categoriesData }>, 0)}
                   </div>
                 )}
               </div>

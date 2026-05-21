@@ -212,22 +212,32 @@ export default function ShopClient({
         />
       </div>
 
-      {/* Category (only when not locked) */}
+      {/* Category (only when not locked) — recursive tree with indentation */}
       {!lockedCategory && categories.length > 0 && (
         <FilterGroup title="Category">
-          {categories.map(cat => (
-            <label key={cat.id} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="category"
-                value={cat.slug}
-                checked={currentFilters.category === cat.slug}
-                onChange={() => updateFilter('category', cat.slug)}
-                className="accent-kb-teal"
-              />
-              <span className="text-kb-charcoal">{cat.name}</span>
-            </label>
-          ))}
+          {(function renderTree(nodes: CategoryItem[], depth: number): React.ReactNode {
+            return nodes.map((cat) => (
+              <div key={cat.id}>
+                <label
+                  className="flex items-center gap-2 cursor-pointer"
+                  style={{ paddingLeft: depth * 14 }}
+                >
+                  <input
+                    type="radio"
+                    name="category"
+                    value={cat.slug}
+                    checked={currentFilters.category === cat.slug}
+                    onChange={() => updateFilter('category', cat.slug)}
+                    className="accent-kb-teal"
+                  />
+                  <span className={depth === 0 ? 'text-kb-charcoal font-medium' : 'text-kb-charcoal'}>
+                    {cat.name}
+                  </span>
+                </label>
+                {cat.children && cat.children.length > 0 && renderTree(cat.children, depth + 1)}
+              </div>
+            ));
+          })(categories, 0)}
           {currentFilters.category && (
             <button
               onClick={() => updateFilter('category', undefined)}

@@ -123,12 +123,20 @@ router.get('/', async (req, res, next) => {
     }
 
     if (category) {
+      // Recursive descendant match — a product in any subcategory of the
+      // requested slug satisfies the filter. Lets /shop?category=fabrics
+      // include products tagged Banarasi (Fabrics -> Silks -> Banarasi),
+      // not just direct children. Depth-unbounded.
       conditions.push(`EXISTS (
+        WITH RECURSIVE descendants AS (
+          SELECT id FROM categories WHERE slug = $${i}
+          UNION ALL
+          SELECT c.id FROM categories c
+            JOIN descendants d ON c.parent_id = d.id
+        )
         SELECT 1 FROM product_categories pc2
-        JOIN categories c ON c.id = pc2.category_id
-        LEFT JOIN categories parent ON parent.id = c.parent_id
         WHERE pc2.product_id = p.id
-          AND (c.slug = $${i} OR parent.slug = $${i})
+          AND pc2.category_id IN (SELECT id FROM descendants)
       )`);
       params.push(category); i++;
     }
