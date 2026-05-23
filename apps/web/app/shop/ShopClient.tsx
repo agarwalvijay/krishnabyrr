@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import ProductCard from '@/components/ui/ProductCard';
 import { apiClient, imageUrl, BANNER_HEIGHT_PX, type BannerHeight, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem, type ApiMeta } from '@/lib/api';
 
@@ -32,8 +33,16 @@ interface Props {
   filterBadges: BadgeItem[];
   currentFilters: Filters;
   /** When set, the category filter is locked to this slug (category page).
-   *  Optional banner/description render like the locked-collection header. */
-  lockedCategory?: { name: string; slug: string; description?: string | null; banner_img?: string | null; banner_height?: string };
+   *  Optional banner/description render like the locked-collection header.
+   *  Optional children render as a sub-category drill-down list. */
+  lockedCategory?: {
+    name: string;
+    slug: string;
+    description?:   string | null;
+    banner_img?:    string | null;
+    banner_height?: string;
+    children?: Array<{ id: string; name: string; slug: string }>;
+  };
   /** When set, show a collection heading and treat collection as a removable filter */
   lockedCollection?: { name: string; slug: string; description?: string | null; banner_img?: string | null; banner_height?: string };
 }
@@ -234,6 +243,23 @@ export default function ShopClient({
               Clear
             </button>
           )}
+        </FilterGroup>
+      )}
+
+      {/* Locked category drill-down — when on a parent category, show its
+          children as nav links so the user can narrow further. Each link
+          goes to the child's dedicated landing page. */}
+      {lockedCategory?.children && lockedCategory.children.length > 0 && (
+        <FilterGroup title={lockedCategory.name}>
+          {lockedCategory.children.map((child) => (
+            <Link
+              key={child.id}
+              href={`/shop/${child.slug}`}
+              className="block py-0.5 text-kb-charcoal hover:text-kb-teal transition-colors"
+            >
+              {child.name}
+            </Link>
+          ))}
         </FilterGroup>
       )}
 

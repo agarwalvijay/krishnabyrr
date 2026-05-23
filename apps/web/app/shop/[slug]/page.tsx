@@ -127,6 +127,7 @@ export default async function CategoryPage({
             description:    category.description,
             banner_img:     category.banner_img,
             banner_height:  category.banner_height,
+            children:       category.children?.map(c => ({ id: c.id, name: c.name, slug: c.slug })),
           }}
         />
       </Suspense>
