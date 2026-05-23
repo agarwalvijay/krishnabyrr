@@ -5,7 +5,10 @@ import { serverFetch, serverFetchList, imageUrl, BANNER_HEIGHT_PX, type BannerHe
 import Breadcrumb from '@/components/ui/Breadcrumb';
 import ShopClient from '../ShopClient';
 
-export const revalidate = 3600;
+// Filters + pagination make this page inherently per-request dynamic.
+// Matches the /shop sibling page. Individual /api/* fetches inside still
+// get their own revalidate caching.
+export const dynamic = 'force-dynamic';
 
 interface CategoryDetail extends CategoryItem {
   product_count: number;
