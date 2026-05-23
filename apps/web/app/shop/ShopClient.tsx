@@ -475,7 +475,7 @@ export default function ShopClient({
       <div className="flex gap-8">
         {/* Desktop filter sidebar */}
         <aside className="hidden md:block w-60 flex-shrink-0">
-          <div className="sticky top-24">
+          <div className="sticky top-40">
             <h2 className="font-semibold text-kb-charcoal mb-4 text-sm uppercase tracking-wider">Filters</h2>
             {filterContent}
           </div>
