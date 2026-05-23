@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import { redirect } from 'next/navigation';
 import { serverFetchList, serverFetch, type ProductListItem, type CategoryItem, type BadgeItem } from '@/lib/api';
 import ShopClient from './ShopClient';
 
@@ -59,6 +60,20 @@ function buildQuery(sp: SearchParams, tagGroupNames: string[]): string {
 }
 
 export default async function ShopPage({ searchParams }: PageProps) {
+  // Legacy URL consolidation — /shop?category=X redirects to /shop/X.
+  // Categories now live as path segments (better SEO + dedicated landing).
+  // Other filters (color, occasion, etc.) stay as query params and ride
+  // along to the dedicated category page.
+  if (searchParams.category) {
+    const { category, ...rest } = searchParams;
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(rest)) {
+      if (v !== undefined) qs.set(k, v);
+    }
+    const queryString = qs.toString();
+    redirect(`/shop/${category}${queryString ? `?${queryString}` : ''}`);
+  }
+
   // Fetch tag groups first so we know which URL params to forward
   const tagsResult = await serverFetch<Record<string, TagGroupData>>('/api/tags', { revalidate: 3600 }).catch(() => ({} as Record<string, TagGroupData>));
   const tagGroupNames = Object.keys(tagsResult ?? {});

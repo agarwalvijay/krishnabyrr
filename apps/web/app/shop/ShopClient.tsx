@@ -214,7 +214,7 @@ export default function ShopClient({
                     name="category"
                     value={cat.slug}
                     checked={currentFilters.category === cat.slug}
-                    onChange={() => updateFilter('category', cat.slug)}
+                    onChange={() => router.push(`/shop/${cat.slug}`)}
                     className="accent-kb-teal"
                   />
                   <span className={depth === 0 ? 'text-kb-charcoal font-medium' : 'text-kb-charcoal'}>

@@ -93,7 +93,7 @@ export default function FabricGuidePage({ params }: { params: Params }) {
               Browse pieces in {guide.name} and see how the fabric shows up across the collection.
             </p>
             <Link
-              href={`/shop?category=${guide.slug}`}
+              href={`/shop/${guide.slug}`}
               className="inline-flex items-center gap-2 mt-5 rounded-full bg-white px-5 py-3 text-sm font-semibold text-kb-teal"
             >
               View Products

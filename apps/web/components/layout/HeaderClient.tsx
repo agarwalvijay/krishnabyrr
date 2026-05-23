@@ -585,7 +585,7 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
   };
 
   const departmentFlyouts: DeptFlyout[] = categories.map((dept) => {
-    const deptHref = `/shop?category=${dept.slug}`;
+    const deptHref = `/shop/${dept.slug}`;
     const families = dept.children ?? [];
     if (families.length === 0) {
       return { id: dept.id, label: dept.name, href: deptHref };
@@ -594,10 +594,10 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
     if (hasGrandchildren) {
       const sections: FlyoutSection[] = families.map((family) => ({
         heading:     family.name,
-        headingHref: `/shop?category=${family.slug}`,
+        headingHref: `/shop/${family.slug}`,
         items: (family.children ?? []).map((type) => ({
           label:    type.name,
-          href:     `/shop?category=${type.slug}`,
+          href:     `/shop/${type.slug}`,
           infoHref: fabricInfoHref(type.slug),
         })),
       }));
@@ -609,7 +609,7 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
       href:  deptHref,
       items: families.map((f) => ({
         label:    f.name,
-        href:     `/shop?category=${f.slug}`,
+        href:     `/shop/${f.slug}`,
         infoHref: fabricInfoHref(f.slug),
       })),
     };
