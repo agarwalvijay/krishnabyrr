@@ -644,7 +644,7 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
               className={`flex rounded-full items-center justify-center transition-[width,height] duration-500 ease-out ${
                 isBrandPage
                   ? 'w-[100px] h-[100px] sm:w-[131px] sm:h-[131px]'
-                  : 'w-[60px] h-[60px] sm:w-[76px] sm:h-[76px]'
+                  : 'w-[65px] h-[65px]'
               }`}
               style={{
                 background: 'linear-gradient(145deg, #01327a 0%, #012169 55%, #010d3d 100%)',
