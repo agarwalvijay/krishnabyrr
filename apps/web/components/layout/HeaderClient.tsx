@@ -522,10 +522,11 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
 
   const router    = useRouter();
   const pathname  = usePathname();
-  // Homepage gets the big "breakthrough" medallion as a brand statement.
-  // Every other page uses a compact in-header medallion so it doesn't
-  // cover filter sidebars, breadcrumbs, or any other left-aligned content.
-  const isHomepage = pathname === '/';
+  // Brand-statement pages get the big "breakthrough" medallion: the home
+  // page itself, plus the static policy pages (terms / privacy / refund /
+  // shipping / exchanges / returns) where there's no shopping content to
+  // overlap. Everywhere else uses the compact in-header medallion.
+  const isBrandPage = pathname === '/' || pathname.startsWith('/pages/');
   const itemCount = cart?.items.reduce((s, i) => s + i.quantity, 0) ?? 0;
 
   const handleSearchSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
@@ -628,17 +629,20 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
       <header className="sticky top-0 z-30 bg-white border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-6">
 
-          {/* Medallion seal. Big "breakthrough" variant on the homepage
-              as a brand statement; compact in-header variant everywhere
-              else so it never covers filters or breadcrumbs. */}
+          {/* Medallion seal. Big "breakthrough" variant on brand pages,
+              compact in-header variant on shopping/utility pages. Both
+              size and translate animate, so navigating between page
+              types morphs the medallion smoothly rather than snapping. */}
           <Link
             href="/"
             aria-label="Krishna's Bliss — home"
-            className={`flex-shrink-0 ${isHomepage ? 'translate-y-6 sm:translate-y-8' : ''}`}
+            className={`flex-shrink-0 transition-transform duration-500 ease-out ${
+              isBrandPage ? 'translate-y-6 sm:translate-y-8' : ''
+            }`}
           >
             <span
-              className={`flex rounded-full items-center justify-center ${
-                isHomepage
+              className={`flex rounded-full items-center justify-center transition-[width,height] duration-500 ease-out ${
+                isBrandPage
                   ? 'w-[100px] h-[100px] sm:w-[131px] sm:h-[131px]'
                   : 'w-[48px] h-[48px] sm:w-[60px] sm:h-[60px]'
               }`}
