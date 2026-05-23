@@ -440,34 +440,17 @@ export default function ShopClient({
             {lockedCollection.description && (
               <p className="text-white/80 text-sm max-w-xl">{lockedCollection.description}</p>
             )}
-            <button
-              onClick={() => updateFilter('collection', undefined)}
-              className="mt-3 text-xs text-white/60 hover:text-white underline transition-colors"
-            >
-              View all products
-            </button>
           </div>
         ) : (
           <div className="mb-6 pb-5 border-b border-gray-100">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="font-display text-3xl font-semibold" style={{ color: 'var(--kb-charcoal)' }}>
-                  {lockedCollection.name}
-                </h1>
-                {lockedCollection.description && (
-                  <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>
-                    {lockedCollection.description}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => updateFilter('collection', undefined)}
-                className="flex-shrink-0 text-xs underline mt-1"
-                style={{ color: 'var(--kb-muted)' }}
-              >
-                View all products
-              </button>
-            </div>
+            <h1 className="font-display text-3xl font-semibold" style={{ color: 'var(--kb-charcoal)' }}>
+              {lockedCollection.name}
+            </h1>
+            {lockedCollection.description && (
+              <p className="mt-1 text-sm" style={{ color: 'var(--kb-muted)' }}>
+                {lockedCollection.description}
+              </p>
+            )}
           </div>
         );
       })()}
