@@ -180,22 +180,9 @@ export default function ShopClient({
 
   const filterContent = (
     <div className="text-sm">
-      {/* Sort By */}
-      <FilterGroup title="Sort By">
-        {SORT_OPTIONS.map(opt => (
-          <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="sort"
-              value={opt.value}
-              checked={(currentFilters.sort ?? 'newest') === opt.value}
-              onChange={() => updateFilter('sort', opt.value === 'newest' ? undefined : opt.value)}
-              className="accent-kb-teal"
-            />
-            <span className="text-kb-charcoal">{opt.label}</span>
-          </label>
-        ))}
-      </FilterGroup>
+      {/* Sort By lives as a dropdown above the grid (desktop) and at the
+          top of the mobile filter bar — not duplicated here in the
+          sidebar. */}
 
       {/* Search */}
       <div className="pb-4 border-b border-gray-100">

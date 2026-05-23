@@ -637,14 +637,14 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
             href="/"
             aria-label="Krishna's Bliss — home"
             className={`flex-shrink-0 transition-transform duration-500 ease-out ${
-              isBrandPage ? 'translate-y-6 sm:translate-y-8' : ''
+              isBrandPage ? 'translate-y-6 sm:translate-y-8' : 'translate-y-1 sm:translate-y-2'
             }`}
           >
             <span
               className={`flex rounded-full items-center justify-center transition-[width,height] duration-500 ease-out ${
                 isBrandPage
                   ? 'w-[100px] h-[100px] sm:w-[131px] sm:h-[131px]'
-                  : 'w-[48px] h-[48px] sm:w-[60px] sm:h-[60px]'
+                  : 'w-[60px] h-[60px] sm:w-[76px] sm:h-[76px]'
               }`}
               style={{
                 background: 'linear-gradient(145deg, #01327a 0%, #012169 55%, #010d3d 100%)',
