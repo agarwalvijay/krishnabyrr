@@ -122,21 +122,24 @@ router.get('/', async (req, res, next) => {
       params.push(`%${q}%`); i++;
     }
 
+    // Category filter — recursive descendant match. The CTE is declared at
+    // the top of the final query (see `cte` assembly below) rather than
+    // nested inside the EXISTS clause, which avoids any subtleties with
+    // recursive CTEs inside correlated subqueries.
+    let cte = '';
     if (category) {
-      // Recursive descendant match — a product in any subcategory of the
-      // requested slug satisfies the filter. Lets /shop?category=fabrics
-      // include products tagged Banarasi (Fabrics -> Silks -> Banarasi),
-      // not just direct children. Depth-unbounded.
-      conditions.push(`EXISTS (
-        WITH RECURSIVE descendants AS (
+      cte = `
+        WITH RECURSIVE category_descendants AS (
           SELECT id FROM categories WHERE slug = $${i}
           UNION ALL
           SELECT c.id FROM categories c
-            JOIN descendants d ON c.parent_id = d.id
+            JOIN category_descendants cd ON c.parent_id = cd.id
         )
+      `;
+      conditions.push(`EXISTS (
         SELECT 1 FROM product_categories pc2
         WHERE pc2.product_id = p.id
-          AND pc2.category_id IN (SELECT id FROM descendants)
+          AND pc2.category_id IN (SELECT id FROM category_descendants)
       )`);
       params.push(category); i++;
     }
@@ -206,12 +209,13 @@ router.get('/', async (req, res, next) => {
     const where = conditions.join(' AND ');
 
     // Count total for pagination
-    const countSql = `SELECT COUNT(*) AS total FROM products p WHERE ${where}`;
+    const countSql = `${cte} SELECT COUNT(*) AS total FROM products p WHERE ${where}`;
     const { rows: countRows } = await pool.query<{ total: string }>(countSql, params);
     const total = parseInt(countRows[0].total, 10);
 
     // Fetch page
     const dataSql = `
+      ${cte}
       SELECT
         p.id, p.name, p.slug, p.sku, p.short_desc,
         p.mrp, p.sale_price, p.gst_rate,

@@ -30,11 +30,16 @@ interface SearchParams {
 export async function generateStaticParams(): Promise<Params[]> {
   try {
     const cats = await serverFetch<CategoryItem[]>('/api/categories', { revalidate: 3600 });
+    // Walk the tree recursively so grandchildren (Department -> Family ->
+    // Type, e.g. Fabrics > Cottons > Kota) also get pre-rendered.
     const all: CategoryItem[] = [];
-    (Array.isArray(cats) ? cats : []).forEach(c => {
-      all.push(c);
-      (c.children ?? []).forEach(ch => all.push(ch));
-    });
+    const walk = (nodes: CategoryItem[]) => {
+      for (const n of nodes) {
+        all.push(n);
+        if (n.children?.length) walk(n.children);
+      }
+    };
+    walk(Array.isArray(cats) ? cats : []);
     return all.map(c => ({ slug: c.slug }));
   } catch {
     return [];
@@ -91,7 +96,7 @@ export default async function CategoryPage({
     serverFetchList<ProductListItem>(
       `/api/products?${buildQuery(params.slug, searchParams, tagGroupNames)}`,
       { noStore: true }
-    ),
+    ).catch(() => ({ data: [] as ProductListItem[], meta: { total: 0, page: 1, limit: 24, pages: 0 } })),
   ]);
 
   if (!category) notFound();
