@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useCart } from '@/components/cart/CartContext';
 import CartDrawer from '@/components/cart/CartDrawer';
 import { useCustomerAuth } from '@/contexts/AuthContext';
@@ -521,6 +521,11 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
   const navCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const router    = useRouter();
+  const pathname  = usePathname();
+  // Homepage gets the big "breakthrough" medallion as a brand statement.
+  // Every other page uses a compact in-header medallion so it doesn't
+  // cover filter sidebars, breadcrumbs, or any other left-aligned content.
+  const isHomepage = pathname === '/';
   const itemCount = cart?.items.reduce((s, i) => s + i.quantity, 0) ?? 0;
 
   const handleSearchSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
@@ -623,14 +628,20 @@ export default function HeaderClient({ collections, tagGroups, categories, navBa
       <header className="sticky top-0 z-30 bg-white border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-6">
 
-          {/* Embossed medallion seal — breaks through the header bottom edge */}
+          {/* Medallion seal. Big "breakthrough" variant on the homepage
+              as a brand statement; compact in-header variant everywhere
+              else so it never covers filters or breadcrumbs. */}
           <Link
             href="/"
             aria-label="Krishna's Bliss — home"
-            className="flex-shrink-0 translate-y-6 sm:translate-y-8"
+            className={`flex-shrink-0 ${isHomepage ? 'translate-y-6 sm:translate-y-8' : ''}`}
           >
             <span
-              className="flex w-[100px] h-[100px] sm:w-[131px] sm:h-[131px] rounded-full items-center justify-center"
+              className={`flex rounded-full items-center justify-center ${
+                isHomepage
+                  ? 'w-[100px] h-[100px] sm:w-[131px] sm:h-[131px]'
+                  : 'w-[48px] h-[48px] sm:w-[60px] sm:h-[60px]'
+              }`}
               style={{
                 background: 'linear-gradient(145deg, #01327a 0%, #012169 55%, #010d3d 100%)',
                 border: '1px solid #BF9B30',

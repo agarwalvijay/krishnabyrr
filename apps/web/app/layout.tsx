@@ -80,13 +80,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <CartProvider>
               <WishlistProvider>
                 <Header />
-                {/* pt-11 sm:pt-16 reserves a small empty band below the
-                    header so the medallion logo, which deliberately
-                    overflows the header by ~58px on desktop / 42px on
-                    mobile, breaks into empty space rather than sitting
-                    on top of page content (shop filters, breadcrumbs,
-                    etc.). */}
-                <main className="flex-1 pt-11 sm:pt-16">{children}</main>
+                <main className="flex-1">{children}</main>
                 <Footer />
               </WishlistProvider>
             </CartProvider>
