@@ -31,8 +31,9 @@ interface Props {
   tags: Record<string, TagGroupData>;
   filterBadges: BadgeItem[];
   currentFilters: Filters;
-  /** When set, the category filter is locked to this slug (category page) */
-  lockedCategory?: { name: string; slug: string };
+  /** When set, the category filter is locked to this slug (category page).
+   *  Optional banner/description render like the locked-collection header. */
+  lockedCategory?: { name: string; slug: string; description?: string | null; banner_img?: string | null; banner_height?: string };
   /** When set, show a collection heading and treat collection as a removable filter */
   lockedCollection?: { name: string; slug: string; description?: string | null; banner_img?: string | null; banner_height?: string };
 }
@@ -214,7 +215,7 @@ export default function ShopClient({
                     name="category"
                     value={cat.slug}
                     checked={currentFilters.category === cat.slug}
-                    onChange={() => router.push(`/shop/${cat.slug}`)}
+                    onChange={() => updateFilter('category', cat.slug)}
                     className="accent-kb-teal"
                   />
                   <span className={depth === 0 ? 'text-kb-charcoal font-medium' : 'text-kb-charcoal'}>
@@ -383,6 +384,23 @@ export default function ShopClient({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      {/* Category header — same banner-or-text style as collection */}
+      {lockedCategory && (() => {
+        const bannerUrl   = lockedCategory.banner_img ? imageUrl(lockedCategory.banner_img) : null;
+        const minHeight   = BANNER_HEIGHT_PX[(lockedCategory.banner_height as BannerHeight) ?? 'md'];
+        return bannerUrl ? (
+          <div
+            className="relative flex flex-col items-center justify-center text-center px-4 mb-6 rounded-xl overflow-hidden"
+            style={{ minHeight, background: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)), url('${bannerUrl}') center/cover no-repeat` }}
+          >
+            <h1 className="font-display text-3xl sm:text-4xl font-semibold text-white mb-2">{lockedCategory.name}</h1>
+            {lockedCategory.description && (
+              <p className="text-white/80 text-sm max-w-xl">{lockedCategory.description}</p>
+            )}
+          </div>
+        ) : null;
+      })()}
+
       {/* Collection header — full banner if image set, text-only otherwise */}
       {lockedCollection && (() => {
         const bannerUrl   = lockedCollection.banner_img ? imageUrl(lockedCollection.banner_img) : null;

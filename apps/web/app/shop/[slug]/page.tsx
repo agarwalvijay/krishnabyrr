@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { serverFetch, serverFetchList, imageUrl, BANNER_HEIGHT_PX, type BannerHeight, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem } from '@/lib/api';
+import { serverFetch, serverFetchList, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem } from '@/lib/api';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 import ShopClient from '../ShopClient';
 
@@ -104,35 +104,15 @@ export default async function CategoryPage({
 
   if (!category) notFound();
 
-  const bannerUrl   = category.banner_img ? imageUrl(category.banner_img) : null;
-  const minHeight   = BANNER_HEIGHT_PX[(category.banner_height as BannerHeight) ?? 'md'];
-
   return (
     <>
-      {/* Category header */}
-      <div
-        className="relative flex flex-col items-center justify-center text-center px-4 py-16"
-        style={
-          bannerUrl
-            ? { minHeight, background: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)), url('${bannerUrl}') center/cover no-repeat` }
-            : { minHeight, backgroundColor: 'var(--kb-teal)' }
-        }
-      >
-        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-white mb-2">
-          {category.name}
-        </h1>
-        {category.description && (
-          <p className="text-white/80 text-sm max-w-xl">{category.description}</p>
-        )}
-        <p className="text-white/60 text-xs mt-2">{category.product_count} products</p>
-      </div>
-
       {/* Breadcrumb */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5">
         <Breadcrumb items={[{ label: category.name }]} />
       </div>
 
-      {/* Products */}
+      {/* Products — banner (if any) + grid all render inside ShopClient
+          so the styling matches a locked-collection page exactly. */}
       <Suspense>
         <ShopClient
           initialProducts={productsResult.data}
@@ -141,7 +121,13 @@ export default async function CategoryPage({
           tags={tagsResult}
           filterBadges={filterBadges}
           currentFilters={{ ...searchParams, category: params.slug }}
-          lockedCategory={{ name: category.name, slug: params.slug }}
+          lockedCategory={{
+            name:           category.name,
+            slug:           params.slug,
+            description:    category.description,
+            banner_img:     category.banner_img,
+            banner_height:  category.banner_height,
+          }}
         />
       </Suspense>
     </>
