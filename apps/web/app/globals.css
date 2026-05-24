@@ -3,8 +3,10 @@
 @tailwind utilities;
 
 :root {
-  --font-inter:      'Inter', system-ui, sans-serif;
-  --font-cormorant:  'Cormorant Garamond', Georgia, serif;
+  /* --font-inter and --font-cormorant are set on <html> by next/font/google
+     in app/layout.tsx. We deliberately don't redefine them here so the
+     next/font values (with self-hosted font files + automatic fallbacks)
+     take effect. */
 
   --kb-teal:       #1A6B6B;
   --kb-blue:       #1E3F8B;
