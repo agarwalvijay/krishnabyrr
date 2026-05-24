@@ -54,8 +54,12 @@ export function WebSiteJsonLd() {
 // ── Product (render inside /product/[slug]) ──────────────────────────────────
 
 export function ProductJsonLd({ product }: { product: ProductDetail }) {
-  const price = (product.sale_price ?? product.mrp).toFixed(2);
-  const availability = product.stock_qty > 0
+  // Postgres NUMERIC columns arrive as strings via node-pg; coerce before
+  // calling .toFixed() (which only exists on numbers).
+  const rawPrice  = product.sale_price ?? product.mrp;
+  const price     = Number(rawPrice ?? 0).toFixed(2);
+  const stockQty  = Number(product.stock_qty ?? 0);
+  const availability = stockQty > 0
     ? 'https://schema.org/InStock'
     : 'https://schema.org/OutOfStock';
 
@@ -64,7 +68,7 @@ export function ProductJsonLd({ product }: { product: ProductDetail }) {
     '@type':      'Product',
     name:         product.name,
     description:  product.short_desc || product.description || product.name,
-    image:        product.images.map((i) => imageUrl(i.gcs_path)),
+    image:        (product.images ?? []).map((i) => imageUrl(i.gcs_path)),
     sku:          product.sku,
     brand:        { '@type': 'Brand', name: BRAND },
     offers: {
