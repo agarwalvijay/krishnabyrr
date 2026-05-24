@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import './globals.css';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
+import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/seo/JsonLd';
 import Analytics from '@/components/Analytics';
 import { CartProvider } from '@/components/cart/CartContext';
 import { CustomerAuthProvider } from '@/contexts/AuthContext';
@@ -79,6 +80,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <CustomerAuthProvider>
             <CartProvider>
               <WishlistProvider>
+                <OrganizationJsonLd />
+                <WebSiteJsonLd />
                 <Header />
                 <main className="flex-1">{children}</main>
                 <Footer />

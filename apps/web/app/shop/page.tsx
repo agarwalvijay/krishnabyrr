@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import type { Metadata } from 'next';
 import { serverFetchList, serverFetch, type ProductListItem, type CategoryItem, type BadgeItem } from '@/lib/api';
 import ShopClient from './ShopClient';
 
@@ -6,10 +7,22 @@ interface CollectionSummary { name: string; slug: string; description?: string |
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = {
-  title: 'Shop — Handcrafted Indian Ethnic Wear',
-  description: 'Browse our full collection of handcrafted Indian ethnic wear.',
-};
+const SITE = 'https://krishnasbliss.com';
+
+// When the user lands on /shop?category=<slug>, the dedicated landing at
+// /shop/<slug> is the canonical URL. Same for /shop?collection=<slug> -> the
+// collection's natural home. Otherwise /shop is canonical to itself.
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+  let canonical = `${SITE}/shop`;
+  if (searchParams.category) {
+    canonical = `${SITE}/shop/${searchParams.category}`;
+  }
+  return {
+    title:       'Shop — Handcrafted Indian Ethnic Wear',
+    description: 'Browse our full collection of handcrafted Indian ethnic wear.',
+    alternates:  { canonical },
+  };
+}
 
 // SearchParams can include any tag group name as a filter key
 interface SearchParams {

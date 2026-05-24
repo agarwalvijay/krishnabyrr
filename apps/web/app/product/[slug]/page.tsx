@@ -9,6 +9,7 @@ import ProductActions from './ProductActions';
 import PincodeChecker from './PincodeChecker';
 import RecentlyViewed from './RecentlyViewed';
 import { getFabricGuideByValue, getFabricGuideBySlug } from '@/lib/fabric-guides';
+import { ProductJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 
 export const revalidate = 3600;
 
@@ -111,8 +112,17 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
   const relatedSimilar = castRelated(product.related_similar);
   const relatedLook    = castRelated(product.related_look);
 
+  const SITE = 'https://krishnasbliss.com';
+  const breadcrumbItems = [
+    { label: 'Home', url: `${SITE}/` },
+    ...(firstCategory ? [{ label: firstCategory.name, url: `${SITE}/shop/${firstCategory.slug}` }] : []),
+    { label: product.name, url: `${SITE}/product/${product.slug}` },
+  ];
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <ProductJsonLd product={product} />
+      <BreadcrumbJsonLd items={breadcrumbItems} />
       {/* Breadcrumb */}
       <div className="mb-6">
         <Breadcrumb

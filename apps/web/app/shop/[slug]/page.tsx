@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import { serverFetch, serverFetchList, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem } from '@/lib/api';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 import ShopClient from '../ShopClient';
+import { CollectionPageJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 
 // Filters + pagination make this page inherently per-request dynamic.
 // Matches the /shop sibling page. Individual /api/* fetches inside still
@@ -53,8 +54,9 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   try {
     const cat = await serverFetch<CategoryDetail>(`/api/categories/${params.slug}`);
     return {
-      title: cat.name,
+      title:       cat.name,
       description: cat.description ?? `Shop ${cat.name}.`,
+      alternates:  { canonical: `https://krishnasbliss.com/shop/${params.slug}` },
     };
   } catch {
     return { title: 'Category' };
@@ -104,8 +106,19 @@ export default async function CategoryPage({
 
   if (!category) notFound();
 
+  const SITE = 'https://krishnasbliss.com';
+
   return (
     <>
+      <CollectionPageJsonLd category={category} />
+      <BreadcrumbJsonLd
+        items={[
+          { label: 'Home',     url: `${SITE}/` },
+          { label: 'Shop',     url: `${SITE}/shop` },
+          { label: category.name, url: `${SITE}/shop/${params.slug}` },
+        ]}
+      />
+
       {/* Breadcrumb */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5">
         <Breadcrumb items={[{ label: category.name }]} />
