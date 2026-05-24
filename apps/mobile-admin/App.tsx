@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  BackHandler,
   Dimensions,
   Easing,
   Platform,
@@ -84,6 +85,10 @@ async function unregisterDeviceToken(jwt: string, fcmToken: string): Promise<voi
 export default function App() {
   const webViewRef = useRef<WebView>(null);
   const fcmToken   = useRef<string | null>(null);
+  // Tracks whether the WebView's internal history has a previous page.
+  // Driven by onNavigationStateChange; consumed by the Android hardware
+  // back-button handler below.
+  const canGoBack  = useRef(false);
 
   // ── Splash animation state ─────────────────────────────────────────────────
   // Start at 1.0 so the overlay is pixel-identical to the native splash on reveal
@@ -129,6 +134,22 @@ export default function App() {
     return () => tapSub.remove();
   }, [runSplashAnimation]);
 
+  // ── Android hardware back button ─────────────────────────────────────────
+  // If the WebView has a previous page in its history, navigate back inside
+  // it instead of letting the OS exit the app. Returning true tells Android
+  // we've handled the event.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (canGoBack.current && webViewRef.current) {
+        webViewRef.current.goBack();
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, []);
+
   // Receive messages from the website (login / logout bridge)
   const handleMessage = (event: WebViewMessageEvent) => {
     let msg: { type: string; token?: string };
@@ -152,6 +173,7 @@ export default function App() {
         style={styles.webview}
         userAgent={USER_AGENT}
         onMessage={handleMessage}
+        onNavigationStateChange={(state) => { canGoBack.current = state.canGoBack; }}
         javaScriptEnabled
         domStorageEnabled
         sharedCookiesEnabled
