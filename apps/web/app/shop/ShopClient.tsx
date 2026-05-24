@@ -2,7 +2,6 @@
 
 import { useState, useRef, useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import ProductCard from '@/components/ui/ProductCard';
 import { apiClient, imageUrl, BANNER_HEIGHT_PX, type BannerHeight, type ProductListItem, type CategoryItem, type TagItem, type BadgeItem, type ApiMeta } from '@/lib/api';
 
@@ -246,19 +245,37 @@ export default function ShopClient({
         </FilterGroup>
       )}
 
-      {/* Locked category drill-down — when on a parent category, show its
-          children as nav links so the user can narrow further. Each link
-          goes to the child's dedicated landing page. */}
+      {/* Locked category drill-down — when on a parent category, render
+          its children as radio options so they read as filters (matching
+          the rest of the filter UI) rather than plain links. Selecting a
+          child navigates to that child's dedicated landing page. */}
       {lockedCategory?.children && lockedCategory.children.length > 0 && (
         <FilterGroup title={lockedCategory.name}>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="subcategory"
+              checked
+              readOnly
+              className="accent-kb-teal"
+            />
+            <span className="text-kb-charcoal font-medium">All {lockedCategory.name}</span>
+          </label>
           {lockedCategory.children.map((child) => (
-            <Link
+            <label
               key={child.id}
-              href={`/shop/${child.slug}`}
-              className="block py-0.5 text-kb-charcoal hover:text-kb-teal transition-colors"
+              className="flex items-center gap-2 cursor-pointer"
+              style={{ paddingLeft: 14 }}
             >
-              {child.name}
-            </Link>
+              <input
+                type="radio"
+                name="subcategory"
+                checked={false}
+                onChange={() => router.push(`/shop/${child.slug}`)}
+                className="accent-kb-teal"
+              />
+              <span className="text-kb-charcoal">{child.name}</span>
+            </label>
           ))}
         </FilterGroup>
       )}
