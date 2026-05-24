@@ -245,18 +245,18 @@ export default function ShopClient({
         </FilterGroup>
       )}
 
-      {/* Locked category drill-down — when on a parent category, render
-          its children as radio options so they read as filters (matching
-          the rest of the filter UI) rather than plain links. Selecting a
-          child navigates to that child's dedicated landing page. */}
+      {/* Locked category drill-down — children of the parent render as a
+          radio filter that toggles ?subcategory=<slug> in the URL, the
+          same way other filters work on /shop. The page stays put; the
+          products grid narrows. Selecting 'All <parent>' clears it. */}
       {lockedCategory?.children && lockedCategory.children.length > 0 && (
         <FilterGroup title={lockedCategory.name}>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="radio"
               name="subcategory"
-              checked
-              readOnly
+              checked={!currentFilters.subcategory}
+              onChange={() => updateFilter('subcategory', undefined)}
               className="accent-kb-teal"
             />
             <span className="text-kb-charcoal font-medium">All {lockedCategory.name}</span>
@@ -270,8 +270,8 @@ export default function ShopClient({
               <input
                 type="radio"
                 name="subcategory"
-                checked={false}
-                onChange={() => router.push(`/shop/${child.slug}`)}
+                checked={currentFilters.subcategory === child.slug}
+                onChange={() => updateFilter('subcategory', child.slug)}
                 className="accent-kb-teal"
               />
               <span className="text-kb-charcoal">{child.name}</span>

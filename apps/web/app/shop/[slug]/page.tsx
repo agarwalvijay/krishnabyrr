@@ -63,11 +63,14 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   }
 }
 
-const RESERVED_PARAMS = new Set(['price_min', 'price_max', 'in_stock', 'sort', 'page', 'q', 'category', 'collection', 'badge']);
+const RESERVED_PARAMS = new Set(['price_min', 'price_max', 'in_stock', 'sort', 'page', 'q', 'category', 'subcategory', 'collection', 'badge']);
 
 function buildQuery(slug: string, sp: SearchParams, tagGroupNames: string[]): string {
   const params = new URLSearchParams();
-  params.set('category', slug);
+  // Sub-category filter narrows within the locked parent. The recursive
+  // descendant CTE on the API side handles the rest — passing the child
+  // slug as category= filters down to just that branch of the tree.
+  params.set('category', sp.subcategory || slug);
   if (sp.price_min) params.set('price_min', sp.price_min);
   if (sp.price_max) params.set('price_max', sp.price_max);
   if (sp.in_stock)  params.set('in_stock', sp.in_stock);
