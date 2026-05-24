@@ -127,12 +127,12 @@ router.post('/:id/banner', requireAuth, upload.single('image'), async (req, res,
       return;
     }
 
-    const outputFilename = `${randomUUID()}.jpg`;
+    const outputFilename = `${randomUUID()}.webp`;
     const outputPath = path.join(UPLOAD_DIR, outputFilename);
     await sharp(file.buffer)
       .rotate()
       .resize({ width: 1920, withoutEnlargement: true })
-      .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+      .webp({ quality: 85, effort: 5 })
       .toFile(outputPath);
 
     const { rows: [updated] } = await pool.query(

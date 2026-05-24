@@ -1,7 +1,24 @@
 import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
+import { Inter, Cormorant_Garamond } from 'next/font/google';
 import { Suspense } from 'react';
 import './globals.css';
+
+// Self-hosted Google Fonts via next/font — no render-blocking
+// external stylesheet request, no FOIT/FOUT, full preloading.
+const inter = Inter({
+  subsets:  ['latin'],
+  weight:   ['400', '500'],
+  variable: '--font-inter',
+  display:  'swap',
+});
+const cormorant = Cormorant_Garamond({
+  subsets:  ['latin'],
+  weight:   ['400', '600'],
+  style:    ['normal', 'italic'],
+  variable: '--font-cormorant',
+  display:  'swap',
+});
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/seo/JsonLd';
@@ -42,23 +59,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const gaId = settings.ga_tag ?? null;
 
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en" className={`${inter.variable} ${cormorant.variable}`}>
+      <head />
+
       {/* Google Analytics — only rendered when ga_tag is configured in Settings */}
       {gaId && (
         <>
           <Script
             src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
-            strategy="afterInteractive"
+            strategy="lazyOnload"
           />
-          <Script id="ga-init" strategy="afterInteractive">
+          <Script id="ga-init" strategy="lazyOnload">
             {`
               window.dataLayer = window.dataLayer || [];
               function gtag(){dataLayer.push(arguments);}

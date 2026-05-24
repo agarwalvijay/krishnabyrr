@@ -135,13 +135,13 @@ router.post('/blocks/:id/image', requireAuth, upload.single('image'), async (req
       return;
     }
 
-    // Banners are wide — cap at 1920px wide, 85% JPEG quality.
-    const outputFilename = `${randomUUID()}.jpg`;
+    // Banners are wide — cap at 1920px wide, WebP at quality 85.
+    const outputFilename = `${randomUUID()}.webp`;
     const outputPath = path.join(UPLOAD_DIR, outputFilename);
     await sharp(file.buffer)
       .rotate()
       .resize({ width: 1920, withoutEnlargement: true })
-      .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+      .webp({ quality: 85, effort: 5 })
       .toFile(outputPath);
 
     const gcsPath = outputPath;

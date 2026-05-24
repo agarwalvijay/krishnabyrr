@@ -352,13 +352,15 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     const displayOrder = max_order ? parseInt(max_order, 10) + 1 : 0;
 
     // Compress and resize with sharp before saving to disk.
-    // Output is always JPEG (80% quality, max 1920px on longest side).
-    const outputFilename = `${randomUUID()}.jpg`;
+    // Output: WebP at quality 82, max 1200px on the longest side. Storefront
+    // displays products at ~300-400px, so 1200px is plenty for 3x retina
+    // and 4x the storage savings vs the previous 1920px / JPEG defaults.
+    const outputFilename = `${randomUUID()}.webp`;
     const outputPath = path.join(UPLOAD_DIR, outputFilename);
     await sharp(file.buffer)
       .rotate()                    // auto-rotate based on EXIF orientation
-      .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 80, progressive: true, mozjpeg: true })
+      .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 82, effort: 5 })
       .toFile(outputPath);
 
     const gcsPath = outputPath;
