@@ -435,7 +435,7 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     await sharp(file.buffer)
       .rotate()                    // auto-rotate based on EXIF orientation
       .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 82, effort: 5 })
+      .webp({ quality: 75, effort: 5 })
       .toFile(outputPath);
 
     const gcsPath = outputPath;
