@@ -300,19 +300,94 @@ router.put('/:id', requireAuth, async (req, res, next) => {
 });
 
 // ── DELETE /api/admin/products/:id ────────────────────────────────────────────
+//
+// Two modes, controlled by query params:
+//   default:        soft-delete (status -> 'archived'). Any logged-in admin.
+//   ?hard=true:     HARD delete — wipes the row, every cascaded relation
+//                   (product_images, _categories, _tags, _badges, etc.),
+//                   AND the actual image files on disk. super_admin only.
+//   ?hard=true&force=true:
+//                   same as hard, but ALSO removes order_items rows that
+//                   reference this product (no cascade on that table by
+//                   design — protects real order history). Use only for
+//                   test data cleanup; destroys auditable order lines.
+//
+// On FK conflict (orders reference this product), returns 409
+// PRODUCT_HAS_ORDERS so the UI can offer the force option.
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { rows: [product] } = await pool.query(
-      `UPDATE products SET status = 'archived', updated_at = NOW()
-       WHERE id = $1 RETURNING id, name, status`,
-      [id]
-    );
-    if (!product) {
-      res.status(404).json({ error: { message: 'Product not found', code: 'NOT_FOUND' } });
+    const hard  = req.query.hard  === 'true';
+    const force = req.query.force === 'true';
+
+    if (hard && req.user?.role !== 'super_admin') {
+      res.status(403).json({
+        error: { message: 'Hard delete requires super_admin role', code: 'FORBIDDEN' },
+      });
       return;
     }
-    res.json({ data: product });
+
+    if (!hard) {
+      const { rows: [product] } = await pool.query(
+        `UPDATE products SET status = 'archived', updated_at = NOW()
+         WHERE id = $1 RETURNING id, name, status`,
+        [id]
+      );
+      if (!product) {
+        res.status(404).json({ error: { message: 'Product not found', code: 'NOT_FOUND' } });
+        return;
+      }
+      res.json({ data: product });
+      return;
+    }
+
+    // Hard delete path
+    const { rows: images } = await pool.query<{ gcs_path: string }>(
+      'SELECT gcs_path FROM product_images WHERE product_id = $1',
+      [id]
+    );
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (force) {
+        await client.query('DELETE FROM order_items WHERE product_id = $1', [id]);
+      }
+      const { rows: [product] } = await client.query<{ id: string; name: string }>(
+        'DELETE FROM products WHERE id = $1 RETURNING id, name',
+        [id]
+      );
+      if (!product) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ error: { message: 'Product not found', code: 'NOT_FOUND' } });
+        return;
+      }
+      await client.query('COMMIT');
+
+      // Best-effort filesystem cleanup. If a file is already gone or the
+      // path is malformed, log and continue — the DB state is authoritative.
+      let filesDeleted = 0;
+      for (const img of images) {
+        try { fs.unlinkSync(img.gcs_path); filesDeleted++; } catch { /* ignore */ }
+      }
+
+      res.json({ data: { ...product, files_deleted: filesDeleted } });
+    } catch (err: unknown) {
+      await client.query('ROLLBACK');
+      const errCode = (err as { code?: string }).code;
+      if (errCode === '23503') {
+        res.status(409).json({
+          error: {
+            message: 'Product is referenced by orders. Re-run with ?force=true to also remove the order line items (only safe for test data — destroys order history).',
+            code: 'PRODUCT_HAS_ORDERS',
+          },
+        });
+        return;
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     next(err);
   }

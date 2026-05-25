@@ -5,6 +5,7 @@ import type { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import StockAdjustModal from '../../components/StockAdjustModal';
+import { useAuth } from '../../contexts/AuthContext';
 import { api, imageUrl } from '../../lib/api';
 import { formatINR, discountPct, stockColorClass, stockLabel } from '../../lib/format';
 import { useDebounce } from '../../lib/hooks';
@@ -41,7 +42,7 @@ interface ProductsResponse {
 }
 
 interface ApiErrorBody {
-  error?: { message?: string };
+  error?: { message?: string; code?: string };
 }
 
 function StatusBadge({ status }: { status: Product['status'] }) {
@@ -404,6 +405,8 @@ function BulkOrgModal({
 export default function ProductList() {
   const navigate      = useNavigate();
   const queryClient   = useQueryClient();
+  const { user }      = useAuth();
+  const isSuperAdmin  = user?.role === 'super_admin';
 
   // Filters
   const [search, setSearch]           = useState('');
@@ -490,6 +493,62 @@ export default function ProductList() {
     },
     onError: () => toast.error('Bulk update failed'),
   });
+
+  // Hard-delete (super_admin only) — wipes the product, every cascaded
+  // relation, and image files from disk. Optional force=true cleans up
+  // order_items references (destroys order history; test-data only).
+  const deleteMutation = useMutation({
+    mutationFn: async ({ id, force }: { id: string; force: boolean }) => {
+      const qs = force ? '?hard=true&force=true' : '?hard=true';
+      const res = await api.delete(`/admin/products/${id}${qs}`);
+      return res.data.data as { id: string; name: string; files_deleted: number };
+    },
+    onSuccess: (data) => {
+      toast.success(`Deleted "${data.name}" (+${data.files_deleted} file${data.files_deleted === 1 ? '' : 's'})`);
+      queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+    },
+    onError: (err: AxiosError<ApiErrorBody>) => {
+      const code = err.response?.data?.error?.code;
+      const msg  = err.response?.data?.error?.message ?? 'Delete failed.';
+      if (code === 'PRODUCT_HAS_ORDERS') {
+        // Let the caller (the delete button) decide whether to force.
+        throw err;
+      }
+      toast.error(msg);
+    },
+  });
+
+  const handleDelete = async (product: Product) => {
+    const confirmed = window.confirm(
+      `Hard delete "${product.name}"?\n\n` +
+      `This permanently removes:\n` +
+      `  • the product row and all cascaded relations\n` +
+      `  • image files on disk\n\n` +
+      `Cannot be undone. Continue?`
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteMutation.mutateAsync({ id: product.id, force: false });
+    } catch (err: unknown) {
+      const e = err as AxiosError<ApiErrorBody>;
+      if (e.response?.data?.error?.code === 'PRODUCT_HAS_ORDERS') {
+        const forceConfirm = window.confirm(
+          `${e.response.data.error.message}\n\n` +
+          `Proceed and also remove the order line items?`
+        );
+        if (forceConfirm) {
+          try {
+            await deleteMutation.mutateAsync({ id: product.id, force: true });
+          } catch {
+            // toast already shown by onError for non-PRODUCT_HAS_ORDERS
+          }
+        }
+      } else {
+        toast.error(e.response?.data?.error?.message ?? 'Delete failed.');
+      }
+    }
+  };
 
   const products: Product[] = data?.data ?? [];
   const meta = data?.meta ?? { total: 0, pages: 1 };
@@ -766,6 +825,16 @@ export default function ProductList() {
                       >
                         Stock
                       </button>
+                      {isSuperAdmin && (
+                        <button
+                          onClick={() => handleDelete(p)}
+                          disabled={deleteMutation.isPending}
+                          title="Hard delete (super_admin only)"
+                          className="text-xs px-2.5 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
