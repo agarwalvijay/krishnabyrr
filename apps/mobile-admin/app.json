@@ -41,6 +41,10 @@
         "expo-build-properties",
         {
           "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "35.0.0",
             "ndkVersion": "27.0.12077973",
             "packagingOptions": {
               "jniLibs": {
@@ -53,7 +57,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "REPLACE_WITH_NEW_EAS_PROJECT_ID"
+        "projectId": "51da542c-cffa-4841-b67a-69a9801c6c73"
       }
     },
     "owner": "krishnasbliss"
