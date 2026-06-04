@@ -1,8 +1,8 @@
 'use client';
 
-const PHONE = '8076664500';
-const PHONE_DISPLAY = '+91 80766 64500';
-const WA_URL = `https://wa.me/91${PHONE}`;
+import ExchangePolicyContent, { EXCHANGE_WA_URL } from './ExchangePolicyContent';
+
+const WA_URL = EXCHANGE_WA_URL;
 
 export default function ExchangePolicyModal({ onClose }: { onClose: () => void }) {
   return (
@@ -24,59 +24,10 @@ export default function ExchangePolicyModal({ onClose }: { onClose: () => void }
             </button>
           </div>
 
-          {/* Body */}
+          {/* Body — content is the single source of truth shared with
+              the /pages/exchanges page so they can't drift. */}
           <div className="overflow-y-auto px-6 py-5 space-y-4 text-sm text-kb-charcoal/80 leading-relaxed">
-            <p className="text-kb-muted text-xs uppercase tracking-widest font-medium">Last updated January 2025</p>
-
-            <p>
-              At Krishna&apos;s Bliss, every piece is handcrafted with care. We want you to love what you receive,
-              and we offer exchanges to make sure you do.
-            </p>
-
-            <div>
-              <h3 className="font-semibold text-kb-charcoal mb-1">What we accept for exchange</h3>
-              <ul className="list-disc pl-4 space-y-1">
-                <li>Items exchanged within <strong>7 days</strong> of delivery.</li>
-                <li>Products must be unworn, unwashed, and in original condition with all tags attached.</li>
-                <li>Exchange is for a different size or colour of the same product, or store credit.</li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-semibold text-kb-charcoal mb-1">What we do not accept</h3>
-              <ul className="list-disc pl-4 space-y-1">
-                <li>Items that have been worn, washed, or altered.</li>
-                <li>Products purchased during a sale or with a discount coupon.</li>
-                <li>Custom or made-to-order pieces.</li>
-                <li>Items without original packaging or tags.</li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-semibold text-kb-charcoal mb-1">How to initiate an exchange</h3>
-              <p>
-                WhatsApp us at{' '}
-                <a href={WA_URL} target="_blank" rel="noopener noreferrer" className="text-kb-teal underline">
-                  {PHONE_DISPLAY}
-                </a>{' '}
-                within 7 days of receiving your order. Please share your order number and photos of the item.
-                We will guide you through the next steps.
-              </p>
-            </div>
-
-            <div>
-              <h3 className="font-semibold text-kb-charcoal mb-1">Shipping for exchanges</h3>
-              <p>
-                Return shipping charges are borne by the customer. We will ship the exchanged item to you free of charge.
-              </p>
-            </div>
-
-            <div className="pt-2 border-t border-gray-100">
-              <p className="text-xs text-kb-muted">
-                For any questions, reach us on WhatsApp at{' '}
-                <a href={WA_URL} target="_blank" rel="noopener noreferrer" className="underline">{PHONE_DISPLAY}</a>.
-              </p>
-            </div>
+            <ExchangePolicyContent />
           </div>
 
           {/* Footer CTA */}
