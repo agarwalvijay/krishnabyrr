@@ -381,7 +381,7 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
                 </p>
                 <p className="mt-2">
                   Exchange within {exchangeDays} days of delivery. Please read our full{' '}
-                  <a href="/exchange-policy" className="text-kb-teal underline">Exchange Policy</a>.
+                  <a href="/pages/exchanges" className="text-kb-teal underline">Exchange Policy</a>.
                 </p>
               </div>
             </details>

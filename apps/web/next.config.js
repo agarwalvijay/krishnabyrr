@@ -21,6 +21,12 @@ const nextConfig = {
         destination: '/shop?collection=:slug',
         permanent: true,
       },
+      // Legacy URL — Exchange Policy page lives at /pages/exchanges now.
+      {
+        source: '/exchange-policy',
+        destination: '/pages/exchanges',
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

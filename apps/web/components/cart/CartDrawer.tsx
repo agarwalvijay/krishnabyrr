@@ -208,7 +208,7 @@ export default function CartDrawer() {
             </Link>
             <p className="text-xs text-kb-muted text-center">
               Inclusive of all taxes. Free exchanges within {' '}
-              <Link href="/exchange-policy" className="underline" onClick={closeCart}>7 days</Link>.
+              <Link href="/pages/exchanges" className="underline" onClick={closeCart}>7 days</Link>.
             </p>
           </div>
         )}
