@@ -59,9 +59,9 @@ const MAPPING = [
 
 // ── Watermark settings ────────────────────────────────────────────────────────
 
-const LOGO_SIZE    = 80;        // pixels
-const LOGO_OPACITY = 0.35;      // 0-1, how visible the silhouette is
-const LOGO_PADDING = 28;        // distance from image's bottom-right corner
+const LOGO_SIZE    = 110;       // pixels
+const LOGO_OPACITY = 0.65;      // 0-1, how visible the silhouette is
+const LOGO_PADDING = 32;        // distance from image's bottom-right corner
 
 // ── Inpaint settings ──────────────────────────────────────────────────────────
 // Square covering the Gemini sparkle. Kept small so it fits inside the

@@ -19,9 +19,9 @@ import path from 'node:path';
 
 export type SparkleCorner = 'southeast' | 'southwest' | 'northeast' | 'northwest';
 
-const LOGO_SIZE    = 80;
-const LOGO_OPACITY = 0.35;
-const LOGO_PADDING = 28;
+const LOGO_SIZE    = 110;
+const LOGO_OPACITY = 0.65;
+const LOGO_PADDING = 32;
 
 const PATCH_SIZE  = 60;
 const PATCH_INSET = 6;

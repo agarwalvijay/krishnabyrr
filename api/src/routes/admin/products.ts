@@ -433,6 +433,7 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     const processGemini = req.body.process_gemini === 'true' || req.body.process_gemini === true;
     let imageBuffer: Buffer = file.buffer;
     if (processGemini) {
+      console.log(`[images] running Gemini cleanup for product ${id} (${file.size} bytes)`);
       imageBuffer = await processGeminiImage(file.buffer);
     }
 
