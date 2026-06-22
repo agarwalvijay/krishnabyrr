@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -118,18 +118,49 @@ interface ImageRecord {
   is_primary: boolean;
 }
 
+interface PendingUpload {
+  id: string;
+  file: File;
+  previewUrl: string;
+  progress: number;         // 0-100 (network upload); server processing shown as 100
+  status: 'uploading' | 'processing' | 'failed';
+  error?: string;
+}
+
+const PROCESS_GEMINI_LS_KEY = 'kb-admin:product-image-process-gemini';
+
 function ImageGrid({
   productId,
+  ensureProductId,
   images,
   onRefresh,
 }: {
-  productId: string;
+  productId: string | null;
+  ensureProductId: () => Promise<string>;
   images: ImageRecord[];
   onRefresh: () => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [failedImageIds, setFailedImageIds] = useState<Set<string>>(new Set());
-  const queryClient = useQueryClient();
+  const [pending, setPending] = useState<PendingUpload[]>([]);
+  const pendingRef = useRef<PendingUpload[]>([]);
+  useEffect(() => { pendingRef.current = pending; }, [pending]);
+  const [processGemini, setProcessGemini] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(PROCESS_GEMINI_LS_KEY) === '1';
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(PROCESS_GEMINI_LS_KEY, processGemini ? '1' : '0');
+  }, [processGemini]);
+
+  // Revoke object URLs on unmount to avoid leaks
+  useEffect(() => {
+    return () => {
+      pendingRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+    };
+  }, []);
 
   const deleteMutation = useMutation({
     mutationFn: (imgId: string) =>
@@ -144,20 +175,70 @@ function ImageGrid({
   });
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    for (const file of acceptedFiles) {
+    if (acceptedFiles.length === 0) return;
+
+    // Resolve the product ID (auto-saves draft if this is a brand-new product).
+    let pid: string;
+    try {
+      pid = await ensureProductId();
+    } catch {
+      return; // ensureProductId surfaces its own user-facing error
+    }
+
+    // Seed pending tiles immediately so the user sees feedback before any
+    // network activity begins.
+    const newPending: PendingUpload[] = acceptedFiles.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+      progress: 0,
+      status: 'uploading',
+    }));
+    setPending((prev) => [...prev, ...newPending]);
+
+    // Upload sequentially — keeps server CPU/RAM predictable on free tier
+    // and matches the existing behaviour.
+    let successCount = 0;
+    let failCount    = 0;
+    for (const item of newPending) {
       const fd = new FormData();
-      fd.append('image', file);
+      fd.append('image', item.file);
+      if (processGemini) fd.append('process_gemini', 'true');
       try {
-        await api.post(`/admin/products/${productId}/images`, fd, {
+        await api.post(`/admin/products/${pid}/images`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            const total = e.total ?? item.file.size;
+            const pct = total ? Math.min(99, Math.round((e.loaded / total) * 100)) : 0;
+            setPending((prev) => prev.map((p) =>
+              p.id === item.id
+                ? { ...p, progress: pct, status: pct >= 99 ? 'processing' : 'uploading' }
+                : p,
+            ));
+          },
         });
-      } catch {
-        toast.error(`Failed to upload ${file.name}`);
+        // Success — drop this entry from pending and free its preview URL.
+        URL.revokeObjectURL(item.previewUrl);
+        setPending((prev) => prev.filter((p) => p.id !== item.id));
+        successCount++;
+      } catch (err) {
+        const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message ?? 'Upload failed';
+        setPending((prev) => prev.map((p) =>
+          p.id === item.id ? { ...p, status: 'failed', error: msg } : p,
+        ));
+        failCount++;
       }
     }
+
     onRefresh();
-    toast.success(`${acceptedFiles.length} image${acceptedFiles.length > 1 ? 's' : ''} uploaded`);
-  }, [productId, onRefresh]);
+    if (successCount > 0) {
+      toast.success(`${successCount} image${successCount === 1 ? '' : 's'} uploaded`);
+    }
+    if (failCount > 0) {
+      toast.error(`${failCount} upload${failCount === 1 ? '' : 's'} failed`);
+    }
+  }, [ensureProductId, onRefresh, processGemini]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -165,6 +246,14 @@ function ImageGrid({
     maxSize: 5 * 1024 * 1024,
     multiple: true,
   });
+
+  const dismissFailed = (uploadId: string) => {
+    setPending((prev) => {
+      const item = prev.find((p) => p.id === uploadId);
+      if (item) URL.revokeObjectURL(item.previewUrl);
+      return prev.filter((p) => p.id !== uploadId);
+    });
+  };
 
   const handleDragStart = (id: string) => setDragId(id);
   const handleDrop = (targetId: string) => {
@@ -182,6 +271,22 @@ function ImageGrid({
 
   return (
     <div className="space-y-4">
+      {/* Gemini cleanup toggle */}
+      <label className="flex items-start gap-2 text-sm text-kb-charcoal cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={processGemini}
+          onChange={(e) => setProcessGemini(e.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          These are Gemini-generated images — clean up the sparkle watermark and add the Krishna's Bliss mark.
+          <span className="block text-xs text-kb-muted mt-0.5">
+            Adds ~1s of server processing per image. Leave unchecked for phone-shot photos.
+          </span>
+        </span>
+      </label>
+
       {/* Dropzone */}
       <div
         {...getRootProps()}
@@ -199,9 +304,56 @@ function ImageGrid({
         <p className="text-xs text-kb-muted mt-1">JPG, PNG, WebP · Max 5MB per file · Up to 10 images</p>
       </div>
 
-      {/* Image grid */}
-      {images.length > 0 && (
+      {/* Image grid (pending uploads first, then saved images) */}
+      {(pending.length > 0 || images.length > 0) && (
         <div className="grid grid-cols-5 gap-3">
+          {pending.map((p) => (
+            <div
+              key={p.id}
+              className={`relative rounded-lg overflow-hidden border-2 aspect-square bg-gray-100
+                ${p.status === 'failed' ? 'border-kb-error' : 'border-gray-200'}`}
+            >
+              <img
+                src={p.previewUrl}
+                alt={p.file.name}
+                className="absolute inset-0 w-full h-full object-cover opacity-60"
+              />
+              {/* Progress / status overlay */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
+                {p.status === 'failed' ? (
+                  <>
+                    <span className="text-xs font-semibold text-white px-2 text-center leading-tight">
+                      Failed
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => dismissFailed(p.id)}
+                      className="mt-1 text-[10px] text-white underline"
+                    >
+                      Dismiss
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {/* Circular progress */}
+                    <svg className="w-10 h-10" viewBox="0 0 36 36">
+                      <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="3" />
+                      <circle
+                        cx="18" cy="18" r="15" fill="none" stroke="white" strokeWidth="3"
+                        strokeDasharray={`${(p.progress / 100) * 94.25} 94.25`}
+                        strokeLinecap="round"
+                        transform="rotate(-90 18 18)"
+                        style={{ transition: 'stroke-dasharray 0.2s linear' }}
+                      />
+                    </svg>
+                    <span className="text-[10px] mt-1 text-white font-medium">
+                      {p.status === 'processing' ? 'Processing…' : `${p.progress}%`}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
           {[...images].sort((a, b) => a.display_order - b.display_order).map((img) => (
             <div
               key={img.id}
@@ -265,7 +417,12 @@ export default function ProductForm() {
   const { id }      = useParams<{ id: string }>();
   const navigate    = useNavigate();
   const queryClient = useQueryClient();
-  const isNew       = !id;
+  // localProductId holds the ID assigned when an unsaved product is implicitly
+  // saved as part of dropping the first image. Lets us continue rendering the
+  // current form (and its pending-upload state) without a route remount.
+  const [localProductId, setLocalProductId] = useState<string | null>(null);
+  const effectiveProductId = id ?? localProductId;
+  const isNew       = !effectiveProductId;
   const [searchParams] = useSearchParams();
   const cloneFromId    = isNew ? (searchParams.get('cloneFrom') ?? undefined) : undefined;
 
@@ -283,6 +440,8 @@ export default function ProductForm() {
     watch,
     setValue,
     reset,
+    getValues,
+    trigger,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -295,9 +454,9 @@ export default function ProductForm() {
 
   // ── Load existing product ─────────────────────────────────────────────────
   const { data: productData, refetch: refetchProduct } = useQuery({
-    queryKey: ['admin-product', id],
-    queryFn: () => api.get(`/admin/products/${id}`).then((r) => r.data.data),
-    enabled: !isNew,
+    queryKey: ['admin-product', effectiveProductId],
+    queryFn: () => api.get(`/admin/products/${effectiveProductId}`).then((r) => r.data.data),
+    enabled: !!effectiveProductId,
   });
 
   // ── Load clone source (new product only, when ?cloneFrom= is set) ─────────
@@ -415,34 +574,34 @@ export default function ProductForm() {
   const allTagItems = tagGroupEntries.flatMap((g) => g.tags);
 
   // ── Save ─────────────────────────────────────────────────────────────────
+  // Core save logic — reused by manual submit and by the auto-save that fires
+  // when the admin drops images onto an unsaved product.
+  const saveProductCore = useCallback(async (data: FormData): Promise<string> => {
+    let productId = effectiveProductId;
+    if (!productId) {
+      const res = await api.post('/admin/products', data);
+      productId = res.data.data.id as string;
+    } else {
+      await api.put(`/admin/products/${productId}`, data);
+    }
+    await Promise.all([
+      api.put(`/admin/products/${productId}/categories`,  { category_ids: selCategories }),
+      api.put(`/admin/products/${productId}/tags`,        { tag_ids: selTags }),
+      api.put(`/admin/products/${productId}/collections`, { collection_ids: selCollections }),
+      api.put(`/admin/products/${productId}/badges`,      { badge_ids: selBadges }),
+    ]);
+    return productId!;
+  }, [effectiveProductId, selCategories, selTags, selCollections, selBadges]);
+
   const saveMutation = useMutation({
-    mutationFn: async (data: FormData) => {
-      let productId = id;
-
-      if (isNew) {
-        const res = await api.post('/admin/products', data);
-        productId = res.data.data.id;
-      } else {
-        await api.put(`/admin/products/${id}`, data);
-      }
-
-      // Sync associations
-      await Promise.all([
-        api.put(`/admin/products/${productId}/categories`,  { category_ids: selCategories }),
-        api.put(`/admin/products/${productId}/tags`,        { tag_ids: selTags }),
-        api.put(`/admin/products/${productId}/collections`, { collection_ids: selCollections }),
-        api.put(`/admin/products/${productId}/badges`,      { badge_ids: selBadges }),
-      ]);
-
-      return productId!;
-    },
+    mutationFn: saveProductCore,
     onSuccess: (productId) => {
       toast.success('Product saved!');
       queryClient.invalidateQueries({ queryKey: ['admin-products'] });
-      if (isNew) navigate(`/products/${productId}/edit`);
-      else {
-        queryClient.invalidateQueries({ queryKey: ['admin-product', id] });
-      }
+      queryClient.invalidateQueries({ queryKey: ['admin-product', productId] });
+      // If we got here via the very first manual save of a brand-new product
+      // (no URL id, no local id yet), promote the URL so refresh works.
+      if (!id && !localProductId) navigate(`/products/${productId}/edit`);
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })
@@ -450,6 +609,34 @@ export default function ProductForm() {
       toast.error(msg);
     },
   });
+
+  // ── Implicit save when dropping images onto an unsaved product ──────────
+  const ensureProductId = useCallback(async (): Promise<string> => {
+    if (effectiveProductId) return effectiveProductId;
+    // Validate the minimum required fields before persisting a draft.
+    const ok = await trigger(['name', 'mrp']);
+    if (!ok) {
+      toast.error('Add product name and MRP before uploading images');
+      throw new Error('VALIDATION_FAILED');
+    }
+    const data = getValues();
+    try {
+      const newId = await saveProductCore(data);
+      setLocalProductId(newId);
+      // Update URL silently so a refresh lands on the edit route. We avoid
+      // navigate() here because it would remount this component and lose the
+      // in-flight upload state.
+      window.history.replaceState(null, '', `/products/${newId}/edit`);
+      queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+      toast.success('Draft saved — starting upload…');
+      return newId;
+    } catch (err) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message ?? 'Failed to save product';
+      toast.error(msg);
+      throw err;
+    }
+  }, [effectiveProductId, trigger, getValues, saveProductCore, queryClient]);
 
   const currentStatus = watch('status');
   const shortDesc     = watch('short_desc') ?? '';
@@ -560,24 +747,23 @@ export default function ProductForm() {
           {/* ── Tab 2: Media ─────────────────────────────────────────── */}
           <div className={activeTab === 1 ? '' : 'hidden'}>
             <div className="card p-6 space-y-4">
-              {isNew ? (
+              {isNew && (
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200">
                   <svg className="w-5 h-5 text-kb-amber flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
                       d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <p className="text-sm text-kb-charcoal">
-                    <strong>Save the product first</strong> to enable image uploads.
-                    Fill in the Basic Info and Pricing tabs, then click Save.
+                    Drop images to save the product as a draft and start uploading. Name and MRP are required first.
                   </p>
                 </div>
-              ) : (
-                <ImageGrid
-                  productId={id!}
-                  images={productData?.images ?? []}
-                  onRefresh={() => queryClient.invalidateQueries({ queryKey: ['admin-product', id] })}
-                />
               )}
+              <ImageGrid
+                productId={effectiveProductId}
+                ensureProductId={ensureProductId}
+                images={productData?.images ?? []}
+                onRefresh={() => queryClient.invalidateQueries({ queryKey: ['admin-product', effectiveProductId] })}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-kb-charcoal mb-1">

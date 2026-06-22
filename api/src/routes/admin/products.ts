@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { toSlug, uniqueProductSlug, autoSku } from '../../utils/slug';
+import { processGeminiImage } from '../../utils/gemini-cleanup';
 import { ProductSchema } from '@krishnabyrr/shared';
 
 const router = Router();
@@ -426,13 +427,22 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     );
     const displayOrder = max_order ? parseInt(max_order, 10) + 1 : 0;
 
+    // Optional Gemini cleanup: inpaint the AI sparkle watermark and stamp
+    // our brand mark. Runs before the resize/webp step so the cleanup
+    // operates at the original resolution.
+    const processGemini = req.body.process_gemini === 'true' || req.body.process_gemini === true;
+    let imageBuffer: Buffer = file.buffer;
+    if (processGemini) {
+      imageBuffer = await processGeminiImage(file.buffer);
+    }
+
     // Compress and resize with sharp before saving to disk.
     // Output: WebP at quality 82, max 1200px on the longest side. Storefront
     // displays products at ~300-400px, so 1200px is plenty for 3x retina
     // and 4x the storage savings vs the previous 1920px / JPEG defaults.
     const outputFilename = `${randomUUID()}.webp`;
     const outputPath = path.join(UPLOAD_DIR, outputFilename);
-    await sharp(file.buffer)
+    await sharp(imageBuffer)
       .rotate()                    // auto-rotate based on EXIF orientation
       .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 75, effort: 5 })
