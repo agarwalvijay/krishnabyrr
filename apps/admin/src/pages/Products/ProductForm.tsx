@@ -146,8 +146,9 @@ function ImageGrid({
   const pendingRef = useRef<PendingUpload[]>([]);
   useEffect(() => { pendingRef.current = pending; }, [pending]);
   const [processGemini, setProcessGemini] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem(PROCESS_GEMINI_LS_KEY) === '1';
+    if (typeof window === 'undefined') return true;
+    // Default on; respect explicit opt-out only.
+    return window.localStorage.getItem(PROCESS_GEMINI_LS_KEY) !== '0';
   });
 
   useEffect(() => {
@@ -271,20 +272,14 @@ function ImageGrid({
 
   return (
     <div className="space-y-4">
-      {/* Gemini cleanup toggle */}
-      <label className="flex items-start gap-2 text-sm text-kb-charcoal cursor-pointer select-none">
+      {/* Krishna's Bliss stamp toggle */}
+      <label className="flex items-center gap-2 text-sm text-kb-charcoal cursor-pointer select-none">
         <input
           type="checkbox"
           checked={processGemini}
           onChange={(e) => setProcessGemini(e.target.checked)}
-          className="mt-0.5"
         />
-        <span>
-          These are Gemini-generated images — clean up the sparkle watermark and add the Krishna's Bliss mark.
-          <span className="block text-xs text-kb-muted mt-0.5">
-            Adds ~1s of server processing per image. Leave unchecked for phone-shot photos.
-          </span>
-        </span>
+        <span>Add Krishna's Bliss Stamp</span>
       </label>
 
       {/* Dropzone */}
