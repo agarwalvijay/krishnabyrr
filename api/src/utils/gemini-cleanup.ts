@@ -28,13 +28,32 @@ const LOGO_PADDING = 32;
 const PATCH_SIZE  = 60;
 const PATCH_INSET = 6;
 
-// Sparkle detection threshold — Gemini's sparkle has near-white center pixels
-// (RGB > 240). Backdrop linen tops out around RGB ~245 on highlights, so the
-// threshold trades a small risk of false negatives for very low false positives.
+// Sparkle detection — two-tier.
+//
+// Gemini's sparkle is a soft anti-aliased 4-point star whose peak brightness
+// barely clears the linen backdrop's highlights (often ~230 vs backdrop ~225),
+// so absolute-brightness detection is too noisy. We instead check two known
+// candidate locations using LOCAL contrast: does the brightest pixel in the
+// candidate's small ROI stand out from that ROI's mean? If yes, sparkle there.
+//
+// Observed candidate positions across all Gemini outputs we've seen:
+//
+//   A (corner-tight): ~50px in from the right edge, ~100px up from the bottom
+//   B (offset):      ~130px in from the right edge, ~100px up from the bottom
+//
+const SPARKLE_CANDIDATES_PX: Array<{ dxRight: number; dyBottom: number }> = [
+  { dxRight: 50,  dyBottom: 100 },
+  { dxRight: 130, dyBottom: 100 },
+];
+const SPARKLE_ROI_HALF        = 30;    // 60x60 patch around each candidate
+const SPARKLE_CONTRAST_MIN    = 18;    // brightest pixel must beat ROI mean by this much
+const SPARKLE_BRIGHT_NEIGHBOURS = 4;   // # of near-peak pixels within 10px to confirm star shape
+const SPARKLE_INPAINT_PAD     = 24;    // half-size of patch we inpaint around the sparkle
+
+// Fallback (wider) detection — used when neither candidate hits.
 const SPARKLE_BRIGHT       = 245;
 const SPARKLE_MIN_PX       = 8;
 const SPARKLE_MAX_PX       = 600;
-const SPARKLE_INPAINT_PAD  = 12;  // extra px around detected sparkle to inpaint
 
 const CREAM = { r: 0xFA, g: 0xF7, b: 0xF2 };
 const TEAL  = { r: 0x1A, g: 0x6B, b: 0x6B };
@@ -185,6 +204,77 @@ async function buildCornerLogo(): Promise<Buffer> {
 }
 
 /**
+ * Local-contrast probe of one candidate ROI. Returns the location of the
+ * brightest pixel + its contrast over the ROI mean, plus how many other
+ * near-peak pixels surround it (the sparkle's arms). Caller decides whether
+ * to accept the hit.
+ */
+function probeCandidate(
+  data: Buffer,
+  w: number,
+  h: number,
+  cx: number,
+  cy: number,
+  half: number,
+): { x: number; y: number; contrast: number; neighbours: number } | null {
+  const x0 = Math.max(0, cx - half);
+  const y0 = Math.max(0, cy - half);
+  const x1 = Math.min(w - 1, cx + half);
+  const y1 = Math.min(h - 1, cy + half);
+  if (x1 <= x0 || y1 <= y0) return null;
+
+  let sum = 0, count = 0, maxLum = -1, mx = cx, my = cy;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const i = (y * w + x) * 4;
+      const lum = data[i] + data[i + 1] + data[i + 2];
+      sum += lum;
+      count++;
+      if (lum > maxLum) { maxLum = lum; mx = x; my = y; }
+    }
+  }
+  const mean = sum / count;
+  const contrast = (maxLum - mean) / 3;  // back to per-channel scale
+  if (contrast < SPARKLE_CONTRAST_MIN) return null;
+
+  // Count how many pixels within 10px of the peak are within 80% of the
+  // peak's brightness above the local mean — that's the sparkle's arms.
+  const armThreshold = maxLum - (maxLum - mean) * 0.2;
+  let neighbours = 0;
+  const nr = 10;
+  for (let y = Math.max(y0, my - nr); y <= Math.min(y1, my + nr); y++) {
+    for (let x = Math.max(x0, mx - nr); x <= Math.min(x1, mx + nr); x++) {
+      const i = (y * w + x) * 4;
+      const lum = data[i] + data[i + 1] + data[i + 2];
+      if (lum >= armThreshold) neighbours++;
+    }
+  }
+  if (neighbours < SPARKLE_BRIGHT_NEIGHBOURS) return null;
+
+  return { x: mx, y: my, contrast, neighbours };
+}
+
+/**
+ * Try the two known candidate locations first. Returns the better hit.
+ */
+function detectSparkleAtCandidates(
+  data: Buffer,
+  w: number,
+  h: number,
+): { cx: number; cy: number } | null {
+  let best: { x: number; y: number; contrast: number } | null = null;
+  for (const c of SPARKLE_CANDIDATES_PX) {
+    const cx = w - c.dxRight;
+    const cy = h - c.dyBottom;
+    const hit = probeCandidate(data, w, h, cx, cy, SPARKLE_ROI_HALF);
+    if (hit && (!best || hit.contrast > best.contrast)) {
+      best = { x: hit.x, y: hit.y, contrast: hit.contrast };
+    }
+  }
+  return best ? { cx: best.x, cy: best.y } : null;
+}
+
+/**
  * Scan the bottom half of the image for a tight cluster of near-white pixels —
  * Gemini's sparkle decoration. Returns the bounding box and centroid of the
  * brightest, smallest-compact such cluster, or null if nothing qualifies.
@@ -326,10 +416,28 @@ export async function processGeminiImage(
   const h = info.height;
   const buf = Buffer.from(data);
 
-  // 1. Locate the Gemini sparkle. If found, inpaint a tight patch around it
-  //    and put the watermark exactly there — visually replacing the sparkle.
-  //    If not found, fall back to a small corner patch + corner watermark.
-  const sparkle = detectSparkle(data, w, h);
+  // 1. Locate the Gemini sparkle. Tries the two known candidate locations
+  //    first (cheap, deterministic); falls back to a broad bottom-half scan
+  //    only if neither candidate hits. If detected, inpaint a tight patch
+  //    around it and put the watermark exactly there — visually replacing
+  //    the sparkle. If not found, fall back to a small corner patch + corner
+  //    watermark.
+  const candidate = detectSparkleAtCandidates(data, w, h);
+
+  let sparkle: { left: number; top: number; width: number; height: number; cx: number; cy: number } | null = null;
+  if (candidate) {
+    const pad = SPARKLE_INPAINT_PAD;
+    sparkle = {
+      left:   Math.max(0, candidate.cx - pad),
+      top:    Math.max(0, candidate.cy - pad),
+      width:  Math.min(w - 1, candidate.cx + pad) - Math.max(0, candidate.cx - pad),
+      height: Math.min(h - 1, candidate.cy + pad) - Math.max(0, candidate.cy - pad),
+      cx:     candidate.cx,
+      cy:     candidate.cy,
+    };
+  } else {
+    sparkle = detectSparkle(data, w, h);
+  }
 
   if (sparkle) {
     const pad = SPARKLE_INPAINT_PAD;
