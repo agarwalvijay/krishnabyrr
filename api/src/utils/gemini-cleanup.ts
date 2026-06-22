@@ -23,8 +23,12 @@ const LOGO_SIZE    = 110;
 const LOGO_OPACITY = 0.65;
 const LOGO_PADDING = 32;
 
-const PATCH_SIZE  = 60;
-const PATCH_INSET = 6;
+// Patch is generously sized — Gemini's sparkle is often 100–150px in from the
+// corner, well outside any small fixed-corner patch. On flat-lay backdrops this
+// inpaints harmlessly; on busy compositions where the subject extends to the
+// corner it can erase real content.
+const PATCH_SIZE  = 160;
+const PATCH_INSET = 8;
 
 const CREAM = { r: 0xFA, g: 0xF7, b: 0xF2 };
 const TEAL  = { r: 0x1A, g: 0x6B, b: 0x6B };

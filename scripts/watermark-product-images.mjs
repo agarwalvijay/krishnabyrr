@@ -68,8 +68,8 @@ const LOGO_PADDING = 32;        // distance from image's bottom-right corner
 // corner backdrop area even on images where the subject extends close to
 // the edges (e.g. flat-lay borders that touch the corner).
 
-const PATCH_SIZE  = 60;
-const PATCH_INSET = 6;
+const PATCH_SIZE  = 160;
+const PATCH_INSET = 8;
 
 // ── Brand colors ──────────────────────────────────────────────────────────────
 
