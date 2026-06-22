@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { imageUrl, formatINR, discountPct, getStockStatus, type ProductListItem } from '@/lib/api';
+import { getFabricGuideByValue } from '@/lib/fabric-guides';
 import AddToCartButton from '@/components/cart/AddToCartButton';
 import { useSiteSettings } from '@/contexts/SiteSettingsContext';
 import { useWishlist } from '@/contexts/WishlistContext';
@@ -18,6 +19,13 @@ interface QuickViewProps {
 function QuickViewModal({ product, onClose }: QuickViewProps) {
   const hasSale = product.sale_price != null && product.sale_price < product.mrp;
   const pct = hasSale ? discountPct(product.mrp, product.sale_price!) : 0;
+
+  // Feature facets — match the product detail page's "Know your fabric" list.
+  const fabricTags   = product.tags.filter((t) => t.group_name === 'fabric');
+  const weaveTags    = product.tags.filter((t) => t.group_name === 'weave');
+  const occasionTags = product.tags.filter((t) => t.group_name === 'occasion');
+  const includesTags = product.tags.filter((t) => t.group_name === 'includes');
+  const fabricGuide  = fabricTags.length > 0 ? getFabricGuideByValue(fabricTags[0].value) : null;
 
   return (
     <>
@@ -68,14 +76,6 @@ function QuickViewModal({ product, onClose }: QuickViewProps) {
 
             {/* Info */}
             <div className="flex flex-col p-5 overflow-y-auto flex-1">
-              {/* Tags */}
-              {product.tags.length > 0 && (
-                <p className="text-xs text-kb-muted uppercase tracking-widest mb-2">
-                  {product.tags.filter(t => t.group_name === 'fabric').map(t => t.value).join(', ')}
-                  {product.tags.filter(t => t.group_name === 'color').map(t => t.value).join(', ')}
-                </p>
-              )}
-
               {/* Price */}
               <div className="flex items-baseline gap-2 mb-3">
                 {hasSale ? (
@@ -99,7 +99,51 @@ function QuickViewModal({ product, onClose }: QuickViewProps) {
                 <p className="text-sm text-kb-amber font-medium mb-2">Only {product.stock_qty} left!</p>
               )}
 
-              {/* Short desc */}
+              {/* Feature list — fabric / weave / occasion / includes */}
+              {(fabricTags.length > 0 || weaveTags.length > 0 || occasionTags.length > 0 || includesTags.length > 0) && (
+                <ul className="space-y-1.5 mb-4 text-sm text-kb-charcoal">
+                  {fabricTags.length > 0 && (
+                    <li className="flex gap-2">
+                      <span className="text-kb-muted min-w-[70px]">Fabric</span>
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span>{fabricTags.map((t) => t.value).join(', ')}</span>
+                        {fabricGuide && (
+                          <Link
+                            href={`/fabrics/${fabricGuide.slug}`}
+                            onClick={onClose}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-kb-teal hover:underline"
+                          >
+                            Know your fabric
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </Link>
+                        )}
+                      </span>
+                    </li>
+                  )}
+                  {weaveTags.length > 0 && (
+                    <li className="flex gap-2">
+                      <span className="text-kb-muted min-w-[70px]">Weave</span>
+                      <span>{weaveTags.map((t) => t.value).join(', ')}</span>
+                    </li>
+                  )}
+                  {occasionTags.length > 0 && (
+                    <li className="flex gap-2">
+                      <span className="text-kb-muted min-w-[70px]">Occasion</span>
+                      <span>{occasionTags.map((t) => t.value).join(', ')}</span>
+                    </li>
+                  )}
+                  {includesTags.length > 0 && (
+                    <li className="flex gap-2">
+                      <span className="text-kb-muted min-w-[70px]">Includes</span>
+                      <span>{includesTags.map((t) => t.value).join(', ')}</span>
+                    </li>
+                  )}
+                </ul>
+              )}
+
+              {/* Short desc (only if present) */}
               {product.short_desc && (
                 <p className="text-sm text-kb-muted mb-4 line-clamp-3">{product.short_desc}</p>
               )}
