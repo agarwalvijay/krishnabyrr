@@ -36,9 +36,10 @@ const USER_AGENT =
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge:  true,
+    shouldShowBanner: true,
+    shouldShowList:   true,
+    shouldPlaySound:  true,
+    shouldSetBadge:   true,
   }),
 });
 
@@ -159,7 +160,7 @@ export default function App() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style="dark" backgroundColor={CREAM} />
+      <StatusBar style="dark" />
 
       {/* WebView — loads in background; visible once splash fades */}
       <WebView
@@ -203,7 +204,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   splash: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: CREAM,
     alignItems:      'center',
     justifyContent:  'center',
