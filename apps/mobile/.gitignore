@@ -2,6 +2,7 @@ node_modules/
 .expo/
 dist/
 *.jks
+android/keystore.properties
 *.p8
 *.p12
 *.key
