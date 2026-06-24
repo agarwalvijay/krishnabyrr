@@ -15,9 +15,9 @@ const schema = z.object({
   name:            z.string().min(1, 'Name is required').max(100),
   email:           z.union([z.string().email('Enter a valid email address'), z.literal('')]).optional(),
   phone:           z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number'),
-  password:        z.string().min(8, 'Password must be at least 8 characters'),
-  confirmPassword: z.string().min(1, 'Please confirm your password'),
-}).refine(d => d.password === d.confirmPassword, {
+  password:        z.union([z.string().min(8, 'Password must be at least 8 characters'), z.literal('')]).optional(),
+  confirmPassword: z.string().optional(),
+}).refine(d => !d.password || d.password === d.confirmPassword, {
   message: 'Passwords do not match',
   path:    ['confirmPassword'],
 });
@@ -35,6 +35,7 @@ function RegisterPage() {
   const [linkToast, setLinkToast]     = useState(false);
   const [verifySession, setVerifySession] = useState<string | null>(null);
   const [customerName, setCustomerName]   = useState('');
+  const [showPassword, setShowPassword]   = useState(false);
 
   const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -48,8 +49,9 @@ function RegisterPage() {
   const onSubmit = async (values: FormValues) => {
     setApiError(null);
     try {
-      const emailVal = values.email?.trim() || '';
-      const result   = await registerCustomer(values.name, emailVal, values.phone, values.password);
+      const emailVal    = values.email?.trim() || '';
+      const passwordVal = (showPassword ? values.password : '') || '';
+      const result      = await registerCustomer(values.name, emailVal, values.phone, passwordVal);
 
       // Link the guest order if we came from the confirmation page
       if (linkedOrder && emailVal) {
@@ -163,29 +165,56 @@ function RegisterPage() {
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Password</label>
-            <input
-              {...register('password')}
-              type="password"
-              autoComplete="new-password"
-              placeholder="At least 8 characters"
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-            />
-            {errors.password && <p className="mt-1 text-xs" style={{ color: 'var(--kb-error)' }}>{errors.password.message}</p>}
-          </div>
+          {/* Password — optional, behind a toggle. WhatsApp is the default
+              sign-in method; password is for users who want a backup. */}
+          {!showPassword ? (
+            <button
+              type="button"
+              onClick={() => setShowPassword(true)}
+              className="w-full text-xs text-center underline hover:no-underline py-1"
+              style={{ color: 'var(--kb-muted)' }}
+            >
+              Add a password (optional — for sign-in without WhatsApp)
+            </button>
+          ) : (
+            <div className="space-y-4 p-4 rounded-xl border border-gray-100" style={{ background: 'rgba(0,0,0,0.015)' }}>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium" style={{ color: 'var(--kb-muted)' }}>Password (optional)</p>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(false)}
+                  className="text-xs underline hover:no-underline"
+                  style={{ color: 'var(--kb-muted)' }}
+                >
+                  Skip
+                </button>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Confirm Password</label>
-            <input
-              {...register('confirmPassword')}
-              type="password"
-              autoComplete="new-password"
-              placeholder="••••••••"
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-            />
-            {errors.confirmPassword && <p className="mt-1 text-xs" style={{ color: 'var(--kb-error)' }}>{errors.confirmPassword.message}</p>}
-          </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Password</label>
+                <input
+                  {...register('password')}
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="At least 8 characters"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                />
+                {errors.password && <p className="mt-1 text-xs" style={{ color: 'var(--kb-error)' }}>{errors.password.message}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Confirm Password</label>
+                <input
+                  {...register('confirmPassword')}
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                />
+                {errors.confirmPassword && <p className="mt-1 text-xs" style={{ color: 'var(--kb-error)' }}>{errors.confirmPassword.message}</p>}
+              </div>
+            </div>
+          )}
 
           {apiError && (
             <p className="text-sm text-center py-2 px-3 rounded-lg" style={{ background: 'rgba(192,57,43,0.08)', color: 'var(--kb-error)' }}>

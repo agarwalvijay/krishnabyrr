@@ -44,15 +44,14 @@ router.post('/register', async (req, res, next) => {
       res.status(400).json({ error: { message: 'Name is required', code: 'VALIDATION_ERROR' } });
       return;
     }
-    if (!password) {
-      res.status(400).json({ error: { message: 'Password is required', code: 'VALIDATION_ERROR' } });
-      return;
-    }
     if (!email && !phone) {
       res.status(400).json({ error: { message: 'Phone number or email is required', code: 'VALIDATION_ERROR' } });
       return;
     }
-    if (password.length < 8) {
+    // Password is optional. When omitted, the account is WhatsApp-only and can
+    // set a password later from the profile page. When provided, enforce the
+    // min length.
+    if (password && password.length < 8) {
       res.status(400).json({ error: { message: 'Password must be at least 8 characters', code: 'VALIDATION_ERROR' } });
       return;
     }
@@ -85,7 +84,7 @@ router.post('/register', async (req, res, next) => {
       }
     }
 
-    const password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const password_hash = password ? await bcrypt.hash(password, BCRYPT_ROUNDS) : null;
 
     const { rows: [customer] } = await pool.query<{
       id: string; email: string | null; name: string; phone: string | null;
@@ -208,12 +207,14 @@ router.get('/me', requireCustomerAuth, async (req, res, next) => {
     // reflected in the dashboard count.
     const { rows: [customer] } = await pool.query<{
       id: string; email: string | null; name: string; phone: string | null;
-      phone_verified: boolean; total_orders: number; lifetime_value: string; created_at: Date;
+      phone_verified: boolean; total_orders: number; lifetime_value: string;
+      has_password: boolean; created_at: Date;
     }>(
       `SELECT
          c.id, c.email, c.name, c.phone, c.phone_verified,
          COUNT(o.id)::int               AS total_orders,
          COALESCE(SUM(o.total), 0)::text AS lifetime_value,
+         (c.password_hash IS NOT NULL) AS has_password,
          c.created_at
        FROM customers c
        LEFT JOIN orders o ON o.customer_id = c.id
@@ -411,13 +412,17 @@ router.post('/claim-order', async (req, res, next) => {
 
 router.post('/change-password', requireCustomerAuth, async (req, res, next) => {
   try {
-    const { currentPassword, newPassword } = req.body as {
-      currentPassword?: string;
-      newPassword?:     string;
+    // Accept either camelCase or snake_case for compatibility with both
+    // the web profile page and any older clients.
+    const body = req.body as {
+      currentPassword?: string; newPassword?: string;
+      current_password?: string; new_password?: string;
     };
+    const currentPassword = body.currentPassword ?? body.current_password ?? '';
+    const newPassword     = body.newPassword     ?? body.new_password     ?? '';
 
-    if (!currentPassword || !newPassword) {
-      res.status(400).json({ error: { message: 'currentPassword and newPassword are required', code: 'VALIDATION_ERROR' } });
+    if (!newPassword) {
+      res.status(400).json({ error: { message: 'newPassword is required', code: 'VALIDATION_ERROR' } });
       return;
     }
     if (newPassword.length < 8) {
@@ -430,15 +435,20 @@ router.post('/change-password', requireCustomerAuth, async (req, res, next) => {
       [req.customer!.id],
     );
 
-    if (!customer?.password_hash) {
-      res.status(400).json({ error: { message: 'No password set for this account', code: 'NO_PASSWORD' } });
-      return;
-    }
-
-    const valid = await bcrypt.compare(currentPassword, customer.password_hash);
-    if (!valid) {
-      res.status(401).json({ error: { message: 'Current password is incorrect', code: 'INVALID_CREDENTIALS' } });
-      return;
+    // If a password is already set, the current password must match. If the
+    // account has no password (WhatsApp-only signup), the customer can set
+    // one without proving they know an existing password — the authenticated
+    // session is the authorisation.
+    if (customer?.password_hash) {
+      if (!currentPassword) {
+        res.status(400).json({ error: { message: 'currentPassword is required', code: 'VALIDATION_ERROR' } });
+        return;
+      }
+      const valid = await bcrypt.compare(currentPassword, customer.password_hash);
+      if (!valid) {
+        res.status(401).json({ error: { message: 'Current password is incorrect', code: 'INVALID_CREDENTIALS' } });
+        return;
+      }
     }
 
     const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);

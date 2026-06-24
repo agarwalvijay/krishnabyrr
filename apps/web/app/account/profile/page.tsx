@@ -9,7 +9,7 @@ import PhoneInput from '@/components/ui/PhoneInput';
 
 export default function ProfilePage() {
   const customer = useCustomer();
-  const { logout } = useCustomerAuth();
+  const { logout, refreshCustomer } = useCustomerAuth();
   const router = useRouter();
 
   // Profile edit
@@ -44,16 +44,19 @@ export default function ProfilePage() {
     }
   }, [name, phone]);
 
+  const hasPassword = customer?.has_password === true;
+
   const handleChangePassword = useCallback(async () => {
-    if (!currentPw) { setPwError('Enter your current password.'); return; }
+    if (hasPassword && !currentPw) { setPwError('Enter your current password.'); return; }
     if (newPw.length < 8) { setPwError('New password must be at least 8 characters.'); return; }
     if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return; }
     setPwError(null);
     setSavingPw(true);
     try {
-      await apiClient.post('/auth/change-password', { current_password: currentPw, new_password: newPw });
+      await apiClient.post('/auth/change-password', { currentPassword: currentPw, newPassword: newPw });
       setPwSuccess(true);
       setCurrentPw(''); setNewPw(''); setConfirmPw('');
+      await refreshCustomer();
       setTimeout(() => setPwSuccess(false), 3000);
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { error?: { message?: string } } } };
@@ -61,7 +64,7 @@ export default function ProfilePage() {
     } finally {
       setSavingPw(false);
     }
-  }, [currentPw, newPw, confirmPw]);
+  }, [currentPw, newPw, confirmPw, hasPassword, refreshCustomer]);
 
   const handleSignOut = () => {
     logout();
@@ -128,20 +131,31 @@ export default function ProfilePage() {
           </button>
         </div>
 
-        {/* Change password */}
+        {/* Change / set password */}
         <div className="bg-white rounded-2xl p-6 shadow-sm space-y-4">
-          <h2 className="font-semibold text-sm" style={{ color: 'var(--kb-charcoal)' }}>Change Password</h2>
-
           <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Current Password</label>
-            <input
-              type="password"
-              value={currentPw}
-              onChange={e => setCurrentPw(e.target.value)}
-              autoComplete="current-password"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none"
-            />
+            <h2 className="font-semibold text-sm" style={{ color: 'var(--kb-charcoal)' }}>
+              {hasPassword ? 'Change Password' : 'Set a Password'}
+            </h2>
+            {!hasPassword && (
+              <p className="text-xs mt-1" style={{ color: 'var(--kb-muted)' }}>
+                Optional. You can sign in with WhatsApp without it.
+              </p>
+            )}
           </div>
+
+          {hasPassword && (
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>Current Password</label>
+              <input
+                type="password"
+                value={currentPw}
+                onChange={e => setCurrentPw(e.target.value)}
+                autoComplete="current-password"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--kb-charcoal)' }}>New Password</label>
@@ -173,7 +187,7 @@ export default function ProfilePage() {
           )}
           {pwSuccess && (
             <p className="text-sm px-3 py-2 rounded-lg" style={{ background: 'rgba(39,174,96,0.08)', color: 'var(--kb-success)' }}>
-              Password changed successfully.
+              {hasPassword ? 'Password changed successfully.' : 'Password set successfully.'}
             </p>
           )}
 
@@ -183,7 +197,7 @@ export default function ProfilePage() {
             className="px-6 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-60 transition-opacity"
             style={{ background: 'var(--kb-teal)' }}
           >
-            {savingPw ? 'Updating…' : 'Update Password'}
+            {savingPw ? (hasPassword ? 'Updating…' : 'Saving…') : (hasPassword ? 'Update Password' : 'Set Password')}
           </button>
         </div>
 

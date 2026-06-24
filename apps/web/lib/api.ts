@@ -163,6 +163,7 @@ export interface Customer {
   phone_verified: boolean;
   total_orders:   number;
   lifetime_value: string;
+  has_password?:  boolean;
   created_at:     string;
 }
 
