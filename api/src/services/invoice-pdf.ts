@@ -22,6 +22,7 @@
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import pool from '../db/client';
+import { drawLogo } from './pdf-logo';
 
 interface LineItem {
   name:           string;
@@ -113,10 +114,13 @@ export async function streamInvoicePdf(orderId: string, res: Response): Promise<
   const fmt    = (n: number | string) =>
     parseFloat(String(n)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Header
-  doc.fontSize(22).font('Helvetica-Bold').fillColor(TEAL).text(merchantName, LEFT, 50);
+  // Header. drawLogo returns 0 when the asset is missing, so the wordmark
+  // slides back to the margin instead of leaving a hole.
+  const logoW    = drawLogo(doc, LEFT, 44, 46);
+  const headLeft = LEFT + logoW;
+  doc.fontSize(22).font('Helvetica-Bold').fillColor(TEAL).text(merchantName, headLeft, 50);
   doc.fontSize(9).font('Helvetica').fillColor(MUTED)
-    .text('Handcrafted with love in India', LEFT, 76);
+    .text('Handcrafted with love in India', headLeft, 76);
 
   doc.fontSize(20).font('Helvetica-Bold').fillColor(DARK)
     .text('TAX INVOICE', RIGHT - 200, 50, { width: 200, align: 'right' });

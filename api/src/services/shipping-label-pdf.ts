@@ -28,6 +28,7 @@
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import pool from '../db/client';
+import { drawLogo } from './pdf-logo';
 
 interface LineItem {
   name:       string;
@@ -144,10 +145,12 @@ function drawLabelPage(
   // ── Label block (top half) ─────────────────────────────────────────────────
   let y = 50;
 
-  doc.fontSize(16).font('Helvetica-Bold').fillColor(TEAL).text(merchantName, LEFT, y);
+  // Logo sits in the cut-out block so the parcel label carries the brand.
+  const logoW = drawLogo(doc, LEFT, y - 5, 34, 8);
+  doc.fontSize(16).font('Helvetica-Bold').fillColor(TEAL).text(merchantName, LEFT + logoW, y);
   doc.fontSize(16).font('Helvetica-Bold').fillColor(DARK)
     .text(order.order_number, LEFT, y, { width: WIDTH, align: 'right' });
-  y += 26;
+  y += Math.max(26, logoW ? 32 : 26);
 
   doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(TEAL).lineWidth(1.5).stroke();
   y += 16;
