@@ -4,6 +4,7 @@ import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { pushToCustomer } from '../../services/push';
 import { streamInvoicePdf } from '../../services/invoice-pdf';
+import { streamShippingLabelPdf } from '../../services/shipping-label-pdf';
 import {
   sendOrderShipped,
   sendOrderCancelled,
@@ -406,6 +407,37 @@ router.patch('/exchanges/:id', requireAuth, async (req, res, next) => {
         body:  bodyMap[status as string],
         data:  { url: '/account/orders' },
       }).catch(() => {});
+    }
+  } catch (err) { next(err); }
+});
+
+// ── Shipping labels (bulk) ────────────────────────────────────────────────────
+
+// GET /api/admin/orders/labels?ids=<uuid|order_number>,<...>
+// Returns one multi-page PDF, one page per order, in the order the ids were
+// given. Registered above '/:id' so the literal path is not read as an id.
+router.get('/labels', requireAuth, async (req, res, next) => {
+  try {
+    const ids = String(req.query.ids ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      res.status(422).json({ error: { message: 'No order ids supplied', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    // Cap the batch — each page is a DB row plus PDF layout work, and this runs
+    // on the same 1 GB box as everything else.
+    if (ids.length > 100) {
+      res.status(422).json({ error: { message: 'Maximum 100 orders per label batch', code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    const ok = await streamShippingLabelPdf(ids, res);
+    if (!ok) {
+      res.status(404).json({ error: { message: 'No matching orders found', code: 'NOT_FOUND' } });
+      return;
     }
   } catch (err) { next(err); }
 });
@@ -1257,6 +1289,18 @@ router.get('/:id/pdf', requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
     const ok = await streamInvoicePdf(id, res);
+    if (!ok) {
+      res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
+      return;
+    }
+  } catch (err) { next(err); }
+});
+
+
+router.get('/:id/label', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const ok = await streamShippingLabelPdf([id], res);
     if (!ok) {
       res.status(404).json({ error: { message: 'Order not found', code: 'NOT_FOUND' } });
       return;

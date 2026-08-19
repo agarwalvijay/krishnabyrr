@@ -869,33 +869,58 @@ function OrderDetail({ orderId, onClose }: { orderId: string; onClose: () => voi
             </button>
           </div>
           {order && (
-            <button
-              onClick={async () => {
-                try {
-                  const resp = await api.get(`/admin/orders/${orderId}/pdf`, { responseType: 'blob' });
-                  const url  = URL.createObjectURL(new Blob([resp.data as BlobPart], { type: 'application/pdf' }));
-                  const a    = document.createElement('a');
-                  a.href     = url;
-                  a.download = `order-${order.order_number}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                } catch {
-                  toast.error('Could not download PDF');
-                }
-              }}
-              className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-gray-200 text-sm text-kb-muted hover:bg-gray-50 hover:border-gray-300 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              </svg>
-              Download Order PDF
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => downloadPdf(
+                  `/admin/orders/${orderId}/label`,
+                  `label-${order.order_number}.pdf`,
+                  'Could not download shipping label',
+                )}
+                className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-kb-teal/30 bg-kb-teal/5 text-sm text-kb-teal font-medium hover:bg-kb-teal/10 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a1 1 0 001-1v-4a1 1 0 00-1-1H9a1 1 0 00-1 1v4a1 1 0 001 1zm7-13V4a1 1 0 00-1-1H9a1 1 0 00-1 1v4h8z" />
+                </svg>
+                Print Shipping Label
+              </button>
+              <button
+                onClick={() => downloadPdf(
+                  `/admin/orders/${orderId}/pdf`,
+                  `order-${order.order_number}.pdf`,
+                  'Could not download PDF',
+                )}
+                className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-gray-200 text-sm text-kb-muted hover:bg-gray-50 hover:border-gray-300 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+                Download Order PDF
+              </button>
+            </div>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+// ── PDF download helper ───────────────────────────────────────────────────────
+// Shared by the invoice and shipping-label buttons. Both endpoints stream a PDF
+// blob, so the only thing that varies is the URL and the suggested filename.
+async function downloadPdf(url: string, filename: string, errorMsg: string): Promise<void> {
+  try {
+    const resp = await api.get(url, { responseType: 'blob' });
+    const objectUrl = URL.createObjectURL(new Blob([resp.data as BlobPart], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(objectUrl);
+  } catch {
+    toast.error(errorMsg);
+  }
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -906,9 +931,13 @@ export default function OrdersPage() {
   const [paymentFilter, setPaymentFilter]     = useState('');
   const [fulfillFilter, setFulfillFilter]     = useState('');
   const [search, setSearch]                   = useState('');
+  const [selectedIds, setSelectedIds]         = useState<string[]>([]);
   const debouncedSearch                       = useDebounce(search, 400);
 
   useEffect(() => { setPage(1); }, [debouncedSearch]);
+  // Selection is per-page: ids not visible can't be reviewed before printing,
+  // so changing page or filter clears it rather than silently accumulating.
+  useEffect(() => { setSelectedIds([]); }, [page, paymentFilter, fulfillFilter, debouncedSearch]);
 
   const hasFilters = debouncedSearch || paymentFilter || fulfillFilter;
 
@@ -927,6 +956,19 @@ export default function OrdersPage() {
 
   const orders = data?.data ?? [];
   const meta   = data?.meta;
+
+  const allSelected = orders.length > 0 && selectedIds.length === orders.length;
+  const toggleOne = (id: string) =>
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  const toggleAll = () =>
+    setSelectedIds(allSelected ? [] : orders.map((o) => o.id));
+
+  const printLabels = () =>
+    downloadPdf(
+      `/admin/orders/labels?ids=${selectedIds.join(',')}`,
+      `labels-${selectedIds.length}-orders.pdf`,
+      'Could not generate shipping labels',
+    );
 
   const clearFilters = () => { setSearch(''); setPaymentFilter(''); setFulfillFilter(''); setPage(1); };
 
@@ -983,6 +1025,28 @@ export default function OrdersPage() {
         )}
       </div>
 
+      {/* Bulk actions */}
+      {selectedIds.length > 0 && (
+        <div className="flex items-center gap-3 mb-3 px-4 py-2.5 rounded-lg bg-kb-teal/5 border border-kb-teal/20">
+          <span className="text-sm text-kb-charcoal font-medium">
+            {selectedIds.length} order{selectedIds.length === 1 ? '' : 's'} selected
+          </span>
+          <button
+            onClick={printLabels}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-kb-teal text-white text-sm font-medium hover:opacity-90"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a1 1 0 001-1v-4a1 1 0 00-1-1H9a1 1 0 00-1 1v4a1 1 0 001 1zm7-13V4a1 1 0 00-1-1H9a1 1 0 00-1 1v4h8z" />
+            </svg>
+            Print {selectedIds.length} Label{selectedIds.length === 1 ? '' : 's'}
+          </button>
+          <button onClick={() => setSelectedIds([])} className="ml-auto text-xs text-kb-muted hover:underline">
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         {isLoading ? (
@@ -995,6 +1059,15 @@ export default function OrdersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-kb-cream/60">
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    aria-label="Select all orders on this page"
+                    className="accent-kb-teal cursor-pointer"
+                  />
+                </th>
                 <th className="text-left px-4 py-3 font-medium text-kb-muted">Order</th>
                 <th className="text-left px-4 py-3 font-medium text-kb-muted">Customer</th>
                 <th className="text-left px-4 py-3 font-medium text-kb-muted">Date</th>
@@ -1010,6 +1083,15 @@ export default function OrdersPage() {
                   className="hover:bg-gray-50 cursor-pointer transition-colors"
                   onClick={() => setSelectedOrderId(order.id)}
                 >
+                  <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(order.id)}
+                      onChange={() => toggleOne(order.id)}
+                      aria-label={`Select order ${order.order_number}`}
+                      className="accent-kb-teal cursor-pointer"
+                    />
+                  </td>
                   <td className="px-4 py-3 align-top">
                     <div className="font-medium text-kb-teal">{order.order_number}</div>
                     {(order.razorpay_payment_id || order.phonepe_payment_id || order.phonepe_transaction_id) && (

@@ -32,6 +32,7 @@ function StoreTab({ settings }: { settings: Record<string, unknown> }) {
   const [merchantState, setMerchantState]       = useState(String(settings.merchant_state ?? ''));
   const [merchantGstin, setMerchantGstin]       = useState(String(settings.merchant_gstin ?? ''));
   const [merchantAddress, setMerchantAddress]   = useState(String(settings.merchant_address ?? ''));
+  const [storePhone, setStorePhone]             = useState(String(settings.store_phone ?? ''));
 
   const gstinValid = !merchantGstin || GSTIN_REGEX.test(merchantGstin.toUpperCase());
 
@@ -79,13 +80,23 @@ function StoreTab({ settings }: { settings: Record<string, unknown> }) {
               </p>
             )}
           </Field>
-          <Field label="Merchant Address" hint="Appears on tax invoices below the store name.">
+          <Field label="Merchant Address" hint="Appears on tax invoices below the store name, and as the FROM address on shipping labels.">
             <textarea
               value={merchantAddress}
               onChange={(e) => setMerchantAddress(e.target.value)}
               className={`${inputCls} resize-none`}
               rows={3}
               placeholder="Shop No. X, Block Y, Lajpat Nagar, New Delhi 110024"
+            />
+          </Field>
+          <Field label="Return / Pickup Phone" hint="Printed as the FROM contact on shipping labels — couriers call this number on a failed delivery or RTO.">
+            <input
+              type="text"
+              value={storePhone}
+              onChange={(e) => setStorePhone(e.target.value)}
+              className={inputCls}
+              placeholder="+91 98450 00000"
+              maxLength={20}
             />
           </Field>
         </div>
@@ -125,6 +136,7 @@ function StoreTab({ settings }: { settings: Record<string, unknown> }) {
             merchant_state:   merchantState.trim() || null,
             merchant_gstin:   merchantGstin.trim() || null,
             merchant_address: merchantAddress.trim() || null,
+            store_phone:      storePhone.trim() || null,
           })}
           disabled={saveMutation.isPending || !gstinValid}
           className="px-5 py-2.5 bg-kb-teal text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
