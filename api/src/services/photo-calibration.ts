@@ -68,13 +68,22 @@ export async function measureGreyCard(buffer: Buffer): Promise<Calibration> {
   const meta = await sharp(buffer).metadata();
   if (!meta.width || !meta.height) throw new CalibrationError('Could not read image dimensions');
 
-  const cropW = Math.round(meta.width  * 0.6);
-  const cropH = Math.round(meta.height * 0.6);
+  // The crop runs AFTER .rotate(), so it must use post-rotation dimensions.
+  // EXIF orientations 5-8 rotate by 90 degrees and swap width/height; computing
+  // the box from the stored dimensions overflowed the rotated frame and failed
+  // with "extract_area: bad extract area". Orientation 3 (180 degrees) keeps
+  // the dimensions, which is why this only surfaced on a card shot sideways.
+  const upright = (meta.orientation ?? 1) >= 5;
+  const srcW = upright ? meta.height : meta.width;
+  const srcH = upright ? meta.width  : meta.height;
+
+  const cropW = Math.round(srcW * 0.6);
+  const cropH = Math.round(srcH * 0.6);
   const { data, info } = await sharp(buffer)
     .rotate()
     .extract({
-      left: Math.round((meta.width  - cropW) / 2),
-      top:  Math.round((meta.height - cropH) / 2),
+      left: Math.round((srcW - cropW) / 2),
+      top:  Math.round((srcH - cropH) / 2),
       width: cropW, height: cropH,
     })
     .resize({ width: 240, height: 240, fit: 'fill' })
