@@ -1,7 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # KrishnaByrr — Production Deploy
 #
-# Triggers on every push to main (or manually via workflow_dispatch).
+# Manual trigger only (workflow_dispatch). This is deliberate — pushing to
+# main must never deploy on its own; production changes are an explicit act.
 # Builds all workspaces in CI, rsyncs artifacts to the GCP VM, writes the
 # API .env from GitHub Secrets, runs migrations, and reloads pm2.
 #
@@ -206,12 +207,15 @@ jobs:
           SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
           HOST="${{ secrets.GCP_HOST }}"
 
-          # Root: package manifests + deploy/
+          # Root: package manifests + deploy/ + scripts/ (one-off maintenance
+          # scripts like generate-image-tiles.mjs are run by hand on the VM, so
+          # they have to be shipped)
           rsync -az --no-owner --no-group -e "$SSH" \
             --include='package.json' \
             --include='package-lock.json' \
             --include='tsconfig.json' \
             --include='deploy/***' \
+            --include='scripts/***' \
             --exclude='*' \
             ./ "${HOST}:~/krishnabyrr/"
 
