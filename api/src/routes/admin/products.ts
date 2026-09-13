@@ -22,7 +22,9 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 // Use memory storage so we can run sharp before writing to disk
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB raw; compressed output will be much smaller
+  // Keep in step with MAX_UPLOAD_MB in apps/admin ProductForm.tsx — a smaller
+  // limit here means files clear the browser check then fail at the API.
+  limits: { fileSize: 12 * 1024 * 1024 }, // 12MB raw; compressed output is far smaller
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);

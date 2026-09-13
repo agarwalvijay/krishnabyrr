@@ -4,11 +4,16 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, type FileRejection } from 'react-dropzone';
 import toast from 'react-hot-toast';
 import AdminLayout from '../../components/Layout/AdminLayout';
 import { api, imageUrl } from '../../lib/api';
 import { formatINR, discountPct } from '../../lib/format';
+
+// Upload ceiling. Must not exceed the server's multer limit in
+// api/src/routes/admin/products.ts, or files pass the browser check and then
+// fail at the API. 12MP phone photos land around 5-6MB.
+const MAX_UPLOAD_MB = 12;
 
 // ── Zod schema ────────────────────────────────────────────────────────────────
 const schema = z.object({
@@ -215,7 +220,22 @@ function ImageGrid({
     onSuccess: onRefresh,
   });
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+  const onDrop = useCallback(async (acceptedFiles: File[], fileRejections: FileRejection[] = []) => {
+    // react-dropzone diverts anything failing maxSize/accept into fileRejections.
+    // Reading only acceptedFiles made oversized files vanish with no request and
+    // no message — the upload simply appeared to do nothing.
+    if (fileRejections.length > 0) {
+      for (const rej of fileRejections) {
+        const tooBig = rej.errors.some((e) => e.code === 'file-too-large');
+        toast.error(
+          tooBig
+            ? `${rej.file.name} is ${(rej.file.size / 1024 / 1024).toFixed(1)}MB — the limit is ${MAX_UPLOAD_MB}MB`
+            : `${rej.file.name}: ${rej.errors[0]?.message ?? 'not accepted'}`,
+          { duration: 7000 },
+        );
+      }
+    }
+    if (acceptedFiles.length === 0) return;
     if (acceptedFiles.length === 0) return;
 
     // Resolve the product ID (auto-saves draft if this is a brand-new product).
@@ -284,7 +304,7 @@ function ImageGrid({
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp'] },
-    maxSize: 5 * 1024 * 1024,
+    maxSize: MAX_UPLOAD_MB * 1024 * 1024,
     multiple: true,
   });
 
@@ -380,7 +400,7 @@ function ImageGrid({
         <p className="text-sm text-kb-charcoal font-medium">
           {isDragActive ? 'Drop images here…' : 'Drag & drop images here'}
         </p>
-        <p className="text-xs text-kb-muted mt-1">JPG, PNG, WebP · Max 5MB per file · Up to 10 images</p>
+        <p className="text-xs text-kb-muted mt-1">JPG, PNG, WebP · Max {MAX_UPLOAD_MB}MB per file · Up to 10 images</p>
       </div>
 
       {/* Image grid (pending uploads first, then saved images) */}
