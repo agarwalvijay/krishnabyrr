@@ -7,8 +7,8 @@ import sharp from 'sharp';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { toSlug, uniqueProductSlug, autoSku } from '../../utils/slug';
-import { processGeminiImage, applyBrandStamp } from '../../utils/gemini-cleanup';
-import { getActiveCalibration, applyCalibration } from '../../services/photo-calibration';
+import { processGeminiImage, buildStampLogo } from '../../utils/gemini-cleanup';
+import { getActiveCalibration } from '../../services/photo-calibration';
 import { ProductSchema } from '@krishnabyrr/shared';
 
 const router = Router();
@@ -18,6 +18,12 @@ const UPLOAD_DIR = path.resolve(__dirname, '../../../uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
+
+// Output geometry. 1200px covers a ~300-400px storefront tile at 3x retina.
+const MAX_DIM              = 1200;
+const WEBP_QUALITY         = 75;
+const STAMP_FRACTION       = 0.10;   // of the final frame's longest edge
+const STAMP_PAD_FRACTION   = 0.025;
 
 // Use memory storage so we can run sharp before writing to disk
 const upload = multer({
@@ -430,33 +436,50 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     );
     const displayOrder = max_order ? parseInt(max_order, 10) + 1 : 0;
 
-    // Three independent steps. Sparkle removal and the brand stamp used to be
-    // welded together, which meant wanting the stamp on a real photograph also
-    // ran Gemini's sparkle detection over it — and that detection hunts small
-    // bright regions, which on fabric means zari and gold thread.
+    // Three independent steps.
     //
-    //   process_gemini   — AI-generated source: inpaint the sparkle. Camera
-    //                      calibration is meaningless here, there was no camera.
+    //   process_gemini   — AI-generated source: inpaint the sparkle. Needs raw
+    //                      pixel access, so it keeps its own pass.
     //   calibration      — real photography: white balance + exposure from the
-    //                      active grey card. Applied unless opted out.
+    //                      active grey card.
     //   brand_stamp      — orthogonal to both; defaults on.
+    //
+    // The photo path runs as ONE sharp pipeline: a single decode and a single
+    // encode. Chaining separate toBuffer() steps re-encoded the JPEG at default
+    // quality before any real work (a 5.7MB original came out at 1.7MB) and the
+    // stamp step produced a 19MB PNG intermediate — costly on a 1GB box.
     const processGemini   = req.body.process_gemini === 'true' || req.body.process_gemini === true;
     const skipCalibration = req.body.skip_calibration === 'true' || req.body.skip_calibration === true;
     // Default on: absent means stamp it, only an explicit 'false' turns it off.
     const brandStamp      = !(req.body.brand_stamp === 'false' || req.body.brand_stamp === false);
 
-    // Bake EXIF orientation in BEFORE any processing. Every path below round
-    // -trips through sharp, which drops EXIF, so a later .rotate() would have no
-    // orientation left to act on and phone photos would upload sideways or
-    // upside down.
-    let imageBuffer: Buffer = await sharp(file.buffer).rotate().toBuffer();
+    const outputFilename = `${randomUUID()}.webp`;
+    const outputPath = path.join(UPLOAD_DIR, outputFilename);
+
+    // Header-only read; does not decode pixels.
+    const meta = await sharp(file.buffer).metadata();
+    // EXIF orientations 5-8 rotate by 90 degrees, so the post-rotate frame has
+    // width and height swapped relative to the stored pixels.
+    const upright = (meta.orientation ?? 1) >= 5;
+    const srcW = (upright ? meta.height : meta.width) ?? 0;
+    const srcH = (upright ? meta.width  : meta.height) ?? 0;
+
+    // Final dimensions after fit:'inside' into MAX_DIM, matching the resize below.
+    const scale  = Math.min(1, MAX_DIM / Math.max(srcW || 1, srcH || 1));
+    const finalW = Math.round(srcW * scale);
+    const finalH = Math.round(srcH * scale);
 
     if (processGemini) {
       console.log(`[images] Gemini sparkle cleanup for product ${id} (stamp=${brandStamp})`);
-      // Placed over the inpainted sparkle when stamping — that is the whole
-      // point of the Gemini path, so it keeps its own stamp handling.
-      imageBuffer = await processGeminiImage(imageBuffer, { stamp: brandStamp });
+      // Does its own EXIF rotate and returns lossless PNG; resize/encode below.
+      const cleaned = await processGeminiImage(file.buffer, { stamp: brandStamp });
+      await sharp(cleaned)
+        .resize({ width: MAX_DIM, height: MAX_DIM, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: WEBP_QUALITY, effort: 5 })
+        .toFile(outputPath);
     } else {
+      let pipeline = sharp(file.buffer).rotate();
+
       if (!skipCalibration) {
         const calibration = await getActiveCalibration();
         if (calibration) {
@@ -465,25 +488,30 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
             `(gains ${calibration.gain_r.toFixed(3)}/${calibration.gain_g.toFixed(3)}/${calibration.gain_b.toFixed(3)}, ` +
             `${calibration.exposure_stops.toFixed(2)} stops)`
           );
-          imageBuffer = await applyCalibration(imageBuffer, calibration);
+          const exposure = Math.pow(Math.pow(2, calibration.exposure_stops), 1 / 2.2);
+          pipeline = pipeline.linear(
+            [calibration.gain_r * exposure, calibration.gain_g * exposure, calibration.gain_b * exposure],
+            [0, 0, 0],
+          );
         }
       }
-      if (brandStamp) {
-        imageBuffer = await applyBrandStamp(imageBuffer);
-      }
-    }
 
-    // Compress and resize with sharp before saving to disk.
-    // Output: WebP at quality 82, max 1200px on the longest side. Storefront
-    // displays products at ~300-400px, so 1200px is plenty for 3x retina
-    // and 4x the storage savings vs the previous 1920px / JPEG defaults.
-    const outputFilename = `${randomUUID()}.webp`;
-    const outputPath = path.join(UPLOAD_DIR, outputFilename);
-    await sharp(imageBuffer)
-      .rotate()                    // auto-rotate based on EXIF orientation
-      .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 75, effort: 5 })
-      .toFile(outputPath);
+      pipeline = pipeline.resize({ width: MAX_DIM, height: MAX_DIM, fit: 'inside', withoutEnlargement: true });
+
+      if (brandStamp && finalW > 0 && finalH > 0) {
+        // sharp composites AFTER resize regardless of call order, so the mark is
+        // sized against the final frame, not the source.
+        const size = Math.max(48, Math.round(Math.max(finalW, finalH) * STAMP_FRACTION));
+        const pad  = Math.round(Math.max(finalW, finalH) * STAMP_PAD_FRACTION);
+        pipeline = pipeline.composite([{
+          input: await buildStampLogo(size),
+          left:  Math.max(0, finalW - size - pad),
+          top:   Math.max(0, finalH - size - pad),
+        }]);
+      }
+
+      await pipeline.webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(outputPath);
+    }
 
     const gcsPath = outputPath;
     const altText = req.body.alt_text ?? null;

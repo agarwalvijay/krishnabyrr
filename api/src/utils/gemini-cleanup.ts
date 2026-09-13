@@ -507,6 +507,20 @@ export async function processGeminiImage(
 }
 
 /**
+ * Returns the brand mark rendered at `size` px square, ready to composite.
+ *
+ * Exposed so the upload pipeline can place the stamp inside a single sharp
+ * chain. Going through applyBrandStamp() instead costs a full decode + PNG
+ * encode of the source — on a 12MP frame that was a 19MB intermediate buffer.
+ *
+ * Results are cached per size, so repeated uploads at one output size render
+ * the mark once per process.
+ */
+export async function buildStampLogo(size: number): Promise<Buffer> {
+  return buildSilhouette(size);
+}
+
+/**
  * Stamps the Krishna's Bliss mark in the bottom-right corner of any image.
  *
  * Split out of processGeminiImage so real photographs can carry the brand mark
