@@ -58,7 +58,7 @@ function QuickViewModal({ product, onClose }: QuickViewProps) {
             <div className="relative w-full sm:w-56 flex-shrink-0 aspect-[3/4]">
               {product.primary_image ? (
                 <Image
-                  src={imageUrl(product.primary_image.gcs_path)}
+                  src={imageUrl(product.primary_image.gcs_path, 'tile')}
                   alt={product.primary_image.alt_text ?? product.name}
                   fill
                   className="object-cover"
@@ -194,8 +194,8 @@ export default function ProductCard({ product, showQuickView = true }: ProductCa
   const status    = getStockStatus(product.stock_qty);
   const isNew     = !hasSale && newBadgeDays > 0 &&
     (Date.now() - new Date(product.created_at).getTime()) / 86_400_000 <= newBadgeDays;
-  const primarySrc  = product.primary_image ? imageUrl(product.primary_image.gcs_path) : '';
-  const secondarySrc = product.second_image  ? imageUrl(product.second_image.gcs_path)  : '';
+  const primarySrc  = product.primary_image ? imageUrl(product.primary_image.gcs_path, 'tile') : '';
+  const secondarySrc = product.second_image  ? imageUrl(product.second_image.gcs_path, 'tile')  : '';
 
   // Fabric + color tags for subtitle
   const fabric = product.tags.find(t => t.group_name === 'fabric')?.value;

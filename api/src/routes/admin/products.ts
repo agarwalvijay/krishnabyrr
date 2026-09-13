@@ -19,11 +19,27 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// Output geometry. 1200px covers a ~300-400px storefront tile at 3x retina.
-const MAX_DIM              = 1200;
-const WEBP_QUALITY         = 75;
-const STAMP_FRACTION       = 0.10;   // of the final frame's longest edge
+// Two output variants, sized from what the storefront actually renders:
+//   FULL — product gallery is aspect-[3/4] at 50vw, so a 1440px-wide desktop
+//          viewport at DPR2 needs 1440 device px. Also covers mobile's
+//          100vw x DPR3 (~1170).
+//   TILE — grid cards are 25vw desktop / 50vw mobile, worst case ~585 device
+//          px on a DPR3 phone.
+// Serving one gallery-sized file to a 20-tile grid cost ~8MB; split, it is ~1MB.
+const FULL_W               = 1440;
+const FULL_H               = 1920;
+const TILE_W               = 600;
+const TILE_H               = 800;
+// q80 measured on this catalogue's fabric: ~+1.3dB over q75 for ~25% more
+// bytes, which is the last step that is clearly visible on woven texture.
+const WEBP_QUALITY         = 80;
+const STAMP_FRACTION       = 0.10;   // of the variant's own longest edge
 const STAMP_PAD_FRACTION   = 0.025;
+
+/** Tile path for a full-size image path: <uuid>.webp -> <uuid>-tile.webp */
+export function tilePathFor(fullPath: string): string {
+  return fullPath.replace(/\.webp$/, '-tile.webp');
+}
 
 // Use memory storage so we can run sharp before writing to disk
 const upload = multer({
@@ -379,6 +395,7 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
       let filesDeleted = 0;
       for (const img of images) {
         try { fs.unlinkSync(img.gcs_path); filesDeleted++; } catch { /* ignore */ }
+        try { fs.unlinkSync(tilePathFor(img.gcs_path)); } catch { /* ignore */ }
       }
 
       res.json({ data: { ...product, files_deleted: filesDeleted } });
@@ -455,6 +472,7 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
 
     const outputFilename = `${randomUUID()}.webp`;
     const outputPath = path.join(UPLOAD_DIR, outputFilename);
+    const tileOutputPath = tilePathFor(outputPath);
 
     // Header-only read; does not decode pixels.
     const meta = await sharp(file.buffer).metadata();
@@ -464,21 +482,43 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     const srcW = (upright ? meta.height : meta.width) ?? 0;
     const srcH = (upright ? meta.width  : meta.height) ?? 0;
 
-    // Final dimensions after fit:'inside' into MAX_DIM, matching the resize below.
-    const scale  = Math.min(1, MAX_DIM / Math.max(srcW || 1, srcH || 1));
-    const finalW = Math.round(srcW * scale);
-    const finalH = Math.round(srcH * scale);
+    /** Dimensions after fit:'inside' into a box, mirroring the resize below. */
+    function fitInside(boxW: number, boxH: number) {
+      const scale = Math.min(1, boxW / (srcW || 1), boxH / (srcH || 1));
+      return { w: Math.round(srcW * scale), h: Math.round(srcH * scale) };
+    }
+
+    /**
+     * Renders one variant. sharp composites AFTER resize regardless of call
+     * order, so the stamp is sized against this variant's own final frame —
+     * the mark stays proportionally identical across tile and full.
+     */
+    async function writeVariant(base: sharp.Sharp, boxW: number, boxH: number, dest: string) {
+      const { w, h } = fitInside(boxW, boxH);
+      let p = base.clone().resize({ width: boxW, height: boxH, fit: 'inside', withoutEnlargement: true });
+      if (brandStamp && w > 0 && h > 0) {
+        const size = Math.max(24, Math.round(Math.max(w, h) * STAMP_FRACTION));
+        const pad  = Math.round(Math.max(w, h) * STAMP_PAD_FRACTION);
+        p = p.composite([{
+          input: await buildStampLogo(size),
+          left:  Math.max(0, w - size - pad),
+          top:   Math.max(0, h - size - pad),
+        }]);
+      }
+      await p.webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(dest);
+    }
 
     if (processGemini) {
       console.log(`[images] Gemini sparkle cleanup for product ${id} (stamp=${brandStamp})`);
-      // Does its own EXIF rotate and returns lossless PNG; resize/encode below.
+      // Does its own EXIF rotate and returns lossless PNG.
       const cleaned = await processGeminiImage(file.buffer, { stamp: brandStamp });
-      await sharp(cleaned)
-        .resize({ width: MAX_DIM, height: MAX_DIM, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: WEBP_QUALITY, effort: 5 })
-        .toFile(outputPath);
+      // The stamp is already burned in by that path, so skip it here.
+      await sharp(cleaned).resize({ width: FULL_W, height: FULL_H, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(outputPath);
+      await sharp(cleaned).resize({ width: TILE_W, height: TILE_H, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(tileOutputPath);
     } else {
-      let pipeline = sharp(file.buffer).rotate();
+      const base = sharp(file.buffer).rotate();
 
       if (!skipCalibration) {
         const calibration = await getActiveCalibration();
@@ -489,28 +529,17 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
             `${calibration.exposure_stops.toFixed(2)} stops)`
           );
           const exposure = Math.pow(Math.pow(2, calibration.exposure_stops), 1 / 2.2);
-          pipeline = pipeline.linear(
+          base.linear(
             [calibration.gain_r * exposure, calibration.gain_g * exposure, calibration.gain_b * exposure],
             [0, 0, 0],
           );
         }
       }
 
-      pipeline = pipeline.resize({ width: MAX_DIM, height: MAX_DIM, fit: 'inside', withoutEnlargement: true });
-
-      if (brandStamp && finalW > 0 && finalH > 0) {
-        // sharp composites AFTER resize regardless of call order, so the mark is
-        // sized against the final frame, not the source.
-        const size = Math.max(48, Math.round(Math.max(finalW, finalH) * STAMP_FRACTION));
-        const pad  = Math.round(Math.max(finalW, finalH) * STAMP_PAD_FRACTION);
-        pipeline = pipeline.composite([{
-          input: await buildStampLogo(size),
-          left:  Math.max(0, finalW - size - pad),
-          top:   Math.max(0, finalH - size - pad),
-        }]);
-      }
-
-      await pipeline.webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(outputPath);
+      // Sequential, not parallel — this box has ~430MB of RAM headroom and two
+      // concurrent 12MP decodes is not worth the seconds saved.
+      await writeVariant(base, FULL_W, FULL_H, outputPath);
+      await writeVariant(base, TILE_W, TILE_H, tileOutputPath);
     }
 
     const gcsPath = outputPath;
@@ -563,6 +592,7 @@ router.delete('/:id/images/:imageId', requireAuth, async (req, res, next) => {
 
     // Try to delete the file from disk (best-effort)
     try { fs.unlinkSync(img.gcs_path); } catch { /* ignore */ }
+    try { fs.unlinkSync(tilePathFor(img.gcs_path)); } catch { /* ignore */ }
 
     const { rows: images } = await pool.query(
       'SELECT * FROM product_images WHERE product_id = $1 ORDER BY display_order',

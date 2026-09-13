@@ -151,7 +151,7 @@ export default function ProductGallery({ images, productName, videoUrl }: Props)
               aria-label={`View image ${i + 1}`}
             >
               <Image
-                src={imageUrl(img.gcs_path)}
+                src={imageUrl(img.gcs_path, 'tile')}
                 alt={img.alt_text ?? `${productName} ${i + 1}`}
                 fill
                 sizes="72px"

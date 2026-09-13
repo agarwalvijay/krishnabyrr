@@ -42,7 +42,7 @@ export default function RecentlyViewed({ currentProductId }: Props) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {items.map(item => {
           const hasSale = item.sale_price != null && item.sale_price < item.mrp;
-          const src = item.primary_image ? imageUrl(item.primary_image) : '';
+          const src = item.primary_image ? imageUrl(item.primary_image, 'tile') : '';
           return (
             <Link key={item.id} href={`/product/${item.slug}`} className="group">
               <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-gray-100 mb-2">

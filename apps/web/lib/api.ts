@@ -183,13 +183,31 @@ const SERVER_API_ORIGIN =
   DEFAULT_API_ORIGIN;
 
 /** Convert a DB gcs_path to a displayable URL. */
-export function imageUrl(gcsPath: string | null | undefined): string {
+/**
+ * Resolve a stored image path to a URL.
+ *
+ * Uploads produce two WebP variants — `<uuid>.webp` for the product gallery
+ * (1440px wide) and `<uuid>-tile.webp` for grid cards and thumbnails (600px).
+ * Next's image optimiser is disabled for RAM reasons, so the file we request
+ * IS the file the browser downloads: asking for the tile in a grid is the
+ * difference between ~8MB and ~1MB across a 20-product page.
+ *
+ * Images predating the tile variant, and any non-WebP legacy upload, fall back
+ * to the full file.
+ */
+export function imageUrl(
+  gcsPath: string | null | undefined,
+  variant: 'full' | 'tile' = 'full',
+): string {
   if (!gcsPath) return '';
-  if (gcsPath.startsWith('http://') || gcsPath.startsWith('https://')) return gcsPath;
-  if (gcsPath.startsWith('/uploads/')) return `${API_ORIGIN}${gcsPath}`;
-  if (gcsPath.startsWith('uploads/')) return `${API_ORIGIN}/${gcsPath}`;
+  const withVariant = variant === 'tile' && gcsPath.endsWith('.webp')
+    ? gcsPath.replace(/\.webp$/, '-tile.webp')
+    : gcsPath;
+  if (withVariant.startsWith('http://') || withVariant.startsWith('https://')) return withVariant;
+  if (withVariant.startsWith('/uploads/')) return `${API_ORIGIN}${withVariant}`;
+  if (withVariant.startsWith('uploads/')) return `${API_ORIGIN}/${withVariant}`;
   // Local dev path like /tmp/kb_uploads/uuid.jpg
-  const filename = gcsPath.split('/').pop() ?? '';
+  const filename = withVariant.split('/').pop() ?? '';
   return `${API_ORIGIN}/uploads/${filename}`;
 }
 
