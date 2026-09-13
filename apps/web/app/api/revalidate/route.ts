@@ -26,6 +26,9 @@ export async function POST(req: NextRequest) {
   revalidatePath('/', 'layout');           // home + all nested layouts
   revalidatePath('/shop', 'page');
   revalidatePath('/shop/[slug]', 'page');
+  // Product detail pages were missing here, so adding or replacing a product's
+  // images never showed on the storefront until the 5-minute ISR entry aged out.
+  revalidatePath('/product/[slug]', 'page');
   revalidateTag('products');
   revalidateTag('collections');
   revalidateTag('categories');
