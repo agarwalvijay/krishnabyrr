@@ -197,6 +197,15 @@ function ImageGrid({
   });
   const calibration = calData?.data?.active ?? null;
 
+  const clearCalibrationMutation = useMutation({
+    mutationFn: () => api.delete('/admin/photo-calibration'),
+    onSuccess: () => {
+      toast.success('Calibration turned off — images will upload uncorrected');
+      calQueryClient.invalidateQueries({ queryKey: ['photo-calibration'] });
+    },
+    onError: () => toast.error('Could not turn calibration off'),
+  });
+
   const calibrateMutation = useMutation({
     mutationFn: (file: File) => {
       const fd = new FormData();
@@ -205,8 +214,15 @@ function ImageGrid({
         headers: { 'Content-Type': 'multipart/form-data' },
       });
     },
-    onSuccess: () => {
-      toast.success('Calibration updated from grey card');
+    onSuccess: (resp) => {
+      const warning = (resp?.data as { data?: { warning?: string } })?.data?.warning;
+      if (warning) {
+        // Deliberately long-lived: a bad calibration silently ruins every
+        // subsequent upload, and the damage is not recoverable.
+        toast.error(warning, { duration: 20000 });
+      } else {
+        toast.success('Calibration updated from grey card');
+      }
       calQueryClient.invalidateQueries({ queryKey: ['photo-calibration'] });
     },
     onError: (err) => {
@@ -365,6 +381,13 @@ function ImageGrid({
               No photo calibration yet — images upload uncorrected. Shoot a grey card and upload it here.
             </span>
           )}
+          {calibration && Math.abs(calibration.exposure_stops) > 0.75 && (
+            <div className="text-xs mt-1 font-medium" style={{ color: '#b45309' }}>
+              ⚠ {calibration.exposure_stops >= 0 ? '+' : ''}{calibration.exposure_stops.toFixed(2)} EV is a large correction.
+              If your products were already correctly exposed this will blow out their highlights.
+              Usually it means exposure was not locked between the card frame and the product frames.
+            </div>
+          )}
           {processGemini && calibration && (
             <div className="text-xs text-kb-muted mt-0.5">
               Not applied to Gemini-generated images — there was no camera to calibrate.
@@ -390,6 +413,16 @@ function ImageGrid({
         >
           {calibrateMutation.isPending ? 'Measuring…' : calibration ? 'Re-calibrate' : 'Upload grey card'}
         </button>
+        {calibration && (
+          <button
+            type="button"
+            onClick={() => clearCalibrationMutation.mutate()}
+            disabled={clearCalibrationMutation.isPending}
+            className="px-3 py-1.5 rounded-md border border-gray-200 bg-white text-sm text-kb-muted hover:bg-gray-50 disabled:opacity-50"
+          >
+            {clearCalibrationMutation.isPending ? 'Turning off…' : 'Turn off'}
+          </button>
+        )}
       </div>
 
       {/* Two independent options. The stamp applies to any image; the Gemini

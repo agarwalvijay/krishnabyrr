@@ -13,6 +13,7 @@ import multer from 'multer';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import sharp from 'sharp';
+import pool from '../../db/client';
 import {
   measureGreyCard,
   saveCalibration,
@@ -70,7 +71,22 @@ router.post('/', upload.single('image'), async (req, res, next) => {
     const note  = typeof req.body.note === 'string' && req.body.note.trim() ? req.body.note.trim() : null;
     const saved = await saveCalibration(calibration, path.join(UPLOAD_DIR, refName), note);
 
-    res.status(201).json({ data: saved });
+    // Surface the measurement warning alongside the stored row.
+    res.status(201).json({ data: { ...saved, warning: calibration.warning } });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/admin/photo-calibration — turn calibration off entirely.
+//
+// Uploads then store images uncorrected. Needed because the newest row always
+// wins, so a bad calibration could otherwise only be displaced by finding
+// another card photo — and an older card carries white balance from whatever
+// lighting it was shot under, which may no longer be the setup in use.
+router.delete('/', async (_req, res, next) => {
+  try {
+    const { rowCount } = await pool.query('DELETE FROM photo_calibrations');
+    console.log(`[calibration] cleared ${rowCount} calibration(s); uploads are now uncorrected`);
+    res.json({ data: { cleared: rowCount } });
   } catch (err) { next(err); }
 });
 

@@ -28,6 +28,12 @@ const TARGET_GREY = 118;
 const MAX_GAIN       = 1.40;
 const MIN_GAIN       = 0.70;
 const MAX_STOPS      = 1.5;
+// Above this, the correction is more likely to mean the card and the product
+// frames were shot at different exposures than that the whole session was dark.
+// Applying it then blows the highlights of correctly-exposed products — measured
+// on one such card: 0% clipped before, 53% after. Warn rather than reject,
+// because a genuinely dark session is possible.
+const SUSPICIOUS_STOPS = 0.75;
 const MIN_SAMPLE_PCT = 15;   // a card filling the centre gives ~90%; products score far lower
 // A real grey card is uniform, so its neutral pixels cluster tightly in
 // luminance. Measured: card IQR 10.7, product photos 26-57. This is what
@@ -35,6 +41,8 @@ const MIN_SAMPLE_PCT = 15;   // a card filling the centre gives ~90%; products s
 const MAX_LUM_IQR    = 22;
 
 export interface Calibration {
+  /** Set when the measurement looks like an exposure mismatch, not a dark session. */
+  warning?:        string;
   id?:             string;
   gain_r:          number;
   gain_g:          number;
@@ -152,11 +160,20 @@ export async function measureGreyCard(buffer: Buffer): Promise<Calibration> {
     );
   }
 
+  const warning = Math.abs(stops) > SUSPICIOUS_STOPS
+    ? `This card needs a ${stops.toFixed(2)} stop exposure correction, which is large. ` +
+      `That usually means the card and the product photos were shot at different ` +
+      `exposures — lock exposure (AE lock) before the card frame and keep it locked. ` +
+      `Applying a correction this big to correctly-exposed products will blow out ` +
+      `their highlights irrecoverably.`
+    : undefined;
+
   return {
     gain_r, gain_g, gain_b,
     exposure_stops: stops,
     measured_r: mr, measured_g: mg, measured_b: mb,
     sample_pct: samplePct,
+    warning,
   };
 }
 
