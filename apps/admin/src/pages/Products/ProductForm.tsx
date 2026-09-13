@@ -14,6 +14,7 @@ import { formatINR, discountPct } from '../../lib/format';
 // api/src/routes/admin/products.ts, or files pass the browser check and then
 // fail at the API. 12MP phone photos land around 5-6MB.
 const MAX_UPLOAD_MB = 12;
+const BRAND_STAMP_LS_KEY = 'kb_brand_stamp';
 
 // ── Zod schema ────────────────────────────────────────────────────────────────
 const schema = z.object({
@@ -159,11 +160,25 @@ function ImageGrid({
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const pendingRef = useRef<PendingUpload[]>([]);
   useEffect(() => { pendingRef.current = pending; }, [pending]);
+  // Default OFF now that product photography is real rather than generated.
+  // The sparkle detection hunts small bright regions, which on fabric means
+  // zari and gold thread — running it over a photograph risks flood-filling
+  // part of the product.
   const [processGemini, setProcessGemini] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    // Default on; respect explicit opt-out only.
-    return window.localStorage.getItem(PROCESS_GEMINI_LS_KEY) !== '0';
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(PROCESS_GEMINI_LS_KEY) === '1';
   });
+  // Default ON — the brand mark is wanted on every product image regardless of
+  // whether it came from a camera or a model.
+  const [brandStamp, setBrandStamp] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem(BRAND_STAMP_LS_KEY) !== '0';
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(BRAND_STAMP_LS_KEY, brandStamp ? '1' : '0');
+  }, [brandStamp]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -265,6 +280,7 @@ function ImageGrid({
       const fd = new FormData();
       fd.append('image', item.file);
       if (processGemini) fd.append('process_gemini', 'true');
+      if (!brandStamp)   fd.append('brand_stamp', 'false');
       try {
         await api.post(`/admin/products/${pid}/images`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
@@ -299,7 +315,7 @@ function ImageGrid({
     if (failCount > 0) {
       toast.error(`${failCount} upload${failCount === 1 ? '' : 's'} failed`);
     }
-  }, [ensureProductId, onRefresh, processGemini]);
+  }, [ensureProductId, onRefresh, processGemini, brandStamp]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -351,7 +367,7 @@ function ImageGrid({
           )}
           {processGemini && calibration && (
             <div className="text-xs text-kb-muted mt-0.5">
-              Not applied while “Add Krishna's Bliss Stamp” is on — that path is for generated imagery.
+              Not applied to Gemini-generated images — there was no camera to calibrate.
             </div>
           )}
         </div>
@@ -376,15 +392,27 @@ function ImageGrid({
         </button>
       </div>
 
-      {/* Krishna's Bliss stamp toggle */}
-      <label className="flex items-center gap-2 text-sm text-kb-charcoal cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={processGemini}
-          onChange={(e) => setProcessGemini(e.target.checked)}
-        />
-        <span>Add Krishna's Bliss Stamp</span>
-      </label>
+      {/* Two independent options. The stamp applies to any image; the Gemini
+          cleanup only makes sense for generated source material. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <label className="flex items-center gap-2 text-sm text-kb-charcoal cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={brandStamp}
+            onChange={(e) => setBrandStamp(e.target.checked)}
+          />
+          <span>Add Krishna's Bliss stamp</span>
+        </label>
+        <label className="flex items-center gap-2 text-sm text-kb-charcoal cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={processGemini}
+            onChange={(e) => setProcessGemini(e.target.checked)}
+          />
+          <span>Gemini-generated image</span>
+          <span className="text-xs text-kb-muted">(removes the AI sparkle — leave off for photographs)</span>
+        </label>
+      </div>
 
       {/* Dropzone */}
       <div

@@ -64,8 +64,15 @@ const CREAM_TOLERANCE = 24;
 // in dev (src/) and prod (dist/).
 const LOGO_PATH = path.resolve(__dirname, '../assets/logo-krishnas-bliss.png');
 
-let cachedSilhouette: Buffer | null = null;  // LOGO_SIZE x LOGO_SIZE, for explicit placement
-let cachedCornerLogo: Buffer | null = null;  // padded variant for `gravity: 'southeast'`
+const silhouetteCache = new Map<number, Buffer>();  // keyed by rendered size
+let cachedCornerLogo: Buffer | null = null;         // padded variant for `gravity: 'southeast'`
+
+// The stamp is sized as a fraction of the image's longest edge. A fixed pixel
+// size only worked while every image was a ~1024px generated square; on a
+// 4032px camera frame the same 110px mark shrinks to 2.7% of the width and
+// vanishes. 10% keeps photographs and generated images looking consistent.
+const STAMP_FRACTION   = 0.10;
+const STAMP_PAD_FRACTION = 0.025;
 
 function isCreamPixel(r: number, g: number, b: number): boolean {
   return (
@@ -163,8 +170,9 @@ function sampleCornersFromEdge(
   }
 }
 
-async function buildSilhouette(): Promise<Buffer> {
-  if (cachedSilhouette) return cachedSilhouette;
+async function buildSilhouette(size: number = LOGO_SIZE): Promise<Buffer> {
+  const cached = silhouetteCache.get(size);
+  if (cached) return cached;
 
   const { data, info } = await sharp(LOGO_PATH).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const out = Buffer.alloc(data.length);
@@ -181,13 +189,14 @@ async function buildSilhouette(): Promise<Buffer> {
       out[i + 3] = Math.round(255 * darkness * LOGO_OPACITY);
     }
   }
-  cachedSilhouette = await sharp(out, {
+  const built = await sharp(out, {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
-    .resize(LOGO_SIZE, LOGO_SIZE)
+    .resize(size, size)
     .png()
     .toBuffer();
-  return cachedSilhouette;
+  silhouetteCache.set(size, built);
+  return built;
 }
 
 async function buildCornerLogo(): Promise<Buffer> {
@@ -399,9 +408,14 @@ function detectSparkle(
  */
 export async function processGeminiImage(
   input: Buffer,
-  options: { corner?: SparkleCorner } = {},
+  options: { corner?: SparkleCorner; stamp?: boolean } = {},
 ): Promise<Buffer> {
   const corner = options.corner ?? 'southeast';
+  // The stamp is a separate concern from sparkle removal — real photographs
+  // want the stamp without the inpainting, and vice versa. Kept default-true so
+  // the existing behaviour (logo placed over the inpainted sparkle) is
+  // unchanged when both are wanted.
+  const stamp  = options.stamp ?? true;
 
   // Honour EXIF orientation up-front so corner positions line up with the
   // visible image. We hand the result through .raw() so the rest of the
@@ -457,12 +471,15 @@ export async function processGeminiImage(
     bilinearFill(buf, w, rect, tl, tr, bl, br);
 
     // Centre the watermark on the sparkle, clamped to keep it inside the image.
+    const patched = sharp(buf, { raw: { width: w, height: h, channels: 4 } });
+    if (!stamp) return patched.png().toBuffer();
+
     const silhouette = await buildSilhouette();
     const halfLogo = Math.floor(LOGO_SIZE / 2);
     const logoLeft = Math.max(0, Math.min(w - LOGO_SIZE, sparkle.cx - halfLogo));
     const logoTop  = Math.max(0, Math.min(h - LOGO_SIZE, sparkle.cy - halfLogo));
 
-    return sharp(buf, { raw: { width: w, height: h, channels: 4 } })
+    return patched
       .composite([{ input: silhouette, left: logoLeft, top: logoTop }])
       .png()
       .toBuffer();
@@ -479,9 +496,38 @@ export async function processGeminiImage(
   const { tl, tr, bl, br } = sampleCornersFromEdge(data, w, h, rect, corner);
   bilinearFill(buf, w, rect, tl, tr, bl, br);
 
+  const filled = sharp(buf, { raw: { width: w, height: h, channels: 4 } });
+  if (!stamp) return filled.png().toBuffer();
+
   const cornerLogo = await buildCornerLogo();
-  return sharp(buf, { raw: { width: w, height: h, channels: 4 } })
+  return filled
     .composite([{ input: cornerLogo, gravity: 'southeast' }])
+    .png()
+    .toBuffer();
+}
+
+/**
+ * Stamps the Krishna's Bliss mark in the bottom-right corner of any image.
+ *
+ * Split out of processGeminiImage so real photographs can carry the brand mark
+ * without going anywhere near the Gemini sparkle inpainting — that detection
+ * hunts small bright regions, which on fabric means zari and gold thread, and a
+ * false positive would flood-fill part of the actual product.
+ *
+ * Assumes the caller has already normalised EXIF orientation.
+ */
+export async function applyBrandStamp(input: Buffer): Promise<Buffer> {
+  const meta = await sharp(input).metadata();
+  const w = meta.width, h = meta.height;
+  if (!w || !h) return input;
+
+  const longest = Math.max(w, h);
+  const size    = Math.max(48, Math.round(longest * STAMP_FRACTION));
+  const pad     = Math.round(longest * STAMP_PAD_FRACTION);
+  const logo    = await buildSilhouette(size);
+
+  return sharp(input)
+    .composite([{ input: logo, left: Math.max(0, w - size - pad), top: Math.max(0, h - size - pad) }])
     .png()
     .toBuffer();
 }

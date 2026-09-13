@@ -7,7 +7,7 @@ import sharp from 'sharp';
 import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { toSlug, uniqueProductSlug, autoSku } from '../../utils/slug';
-import { processGeminiImage } from '../../utils/gemini-cleanup';
+import { processGeminiImage, applyBrandStamp } from '../../utils/gemini-cleanup';
 import { getActiveCalibration, applyCalibration } from '../../services/photo-calibration';
 import { ProductSchema } from '@krishnabyrr/shared';
 
@@ -430,37 +430,46 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     );
     const displayOrder = max_order ? parseInt(max_order, 10) + 1 : 0;
 
-    // Two mutually exclusive cleanup paths, both running before the resize/webp
-    // step so they operate at original resolution.
+    // Three independent steps. Sparkle removal and the brand stamp used to be
+    // welded together, which meant wanting the stamp on a real photograph also
+    // ran Gemini's sparkle detection over it — and that detection hunts small
+    // bright regions, which on fabric means zari and gold thread.
     //
-    //   process_gemini   — AI-generated imagery: inpaint the sparkle watermark
-    //                      and stamp our brand mark. Camera calibration is
-    //                      meaningless here, there was no camera.
-    //   otherwise        — real photography: apply the active grey-card
-    //                      calibration (white balance + exposure). Skipped when
-    //                      none has been recorded, or when explicitly opted out.
-    const processGemini    = req.body.process_gemini === 'true' || req.body.process_gemini === true;
-    const skipCalibration  = req.body.skip_calibration === 'true' || req.body.skip_calibration === true;
+    //   process_gemini   — AI-generated source: inpaint the sparkle. Camera
+    //                      calibration is meaningless here, there was no camera.
+    //   calibration      — real photography: white balance + exposure from the
+    //                      active grey card. Applied unless opted out.
+    //   brand_stamp      — orthogonal to both; defaults on.
+    const processGemini   = req.body.process_gemini === 'true' || req.body.process_gemini === true;
+    const skipCalibration = req.body.skip_calibration === 'true' || req.body.skip_calibration === true;
+    // Default on: absent means stamp it, only an explicit 'false' turns it off.
+    const brandStamp      = !(req.body.brand_stamp === 'false' || req.body.brand_stamp === false);
 
-    // Bake EXIF orientation in BEFORE any processing. Both cleanup paths round
-    // -trip through sharp, which drops EXIF, so a later .rotate() would have no
+    // Bake EXIF orientation in BEFORE any processing. Every path below round
+    // -trips through sharp, which drops EXIF, so a later .rotate() would have no
     // orientation left to act on and phone photos would upload sideways or
-    // upside down. Normalising here makes the downstream .rotate() a no-op and
-    // keeps every path consistent.
+    // upside down.
     let imageBuffer: Buffer = await sharp(file.buffer).rotate().toBuffer();
 
     if (processGemini) {
-      console.log(`[images] running Gemini cleanup for product ${id} (${file.size} bytes)`);
-      imageBuffer = await processGeminiImage(imageBuffer);
-    } else if (!skipCalibration) {
-      const calibration = await getActiveCalibration();
-      if (calibration) {
-        console.log(
-          `[images] applying calibration ${calibration.id} to product ${id} ` +
-          `(gains ${calibration.gain_r.toFixed(3)}/${calibration.gain_g.toFixed(3)}/${calibration.gain_b.toFixed(3)}, ` +
-          `${calibration.exposure_stops.toFixed(2)} stops)`
-        );
-        imageBuffer = await applyCalibration(imageBuffer, calibration);
+      console.log(`[images] Gemini sparkle cleanup for product ${id} (stamp=${brandStamp})`);
+      // Placed over the inpainted sparkle when stamping — that is the whole
+      // point of the Gemini path, so it keeps its own stamp handling.
+      imageBuffer = await processGeminiImage(imageBuffer, { stamp: brandStamp });
+    } else {
+      if (!skipCalibration) {
+        const calibration = await getActiveCalibration();
+        if (calibration) {
+          console.log(
+            `[images] applying calibration ${calibration.id} to product ${id} ` +
+            `(gains ${calibration.gain_r.toFixed(3)}/${calibration.gain_g.toFixed(3)}/${calibration.gain_b.toFixed(3)}, ` +
+            `${calibration.exposure_stops.toFixed(2)} stops)`
+          );
+          imageBuffer = await applyCalibration(imageBuffer, calibration);
+        }
+      }
+      if (brandStamp) {
+        imageBuffer = await applyBrandStamp(imageBuffer);
       }
     }
 
