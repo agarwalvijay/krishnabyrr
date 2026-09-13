@@ -26,13 +26,21 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 //   TILE — grid cards are 25vw desktop / 50vw mobile, worst case ~585 device
 //          px on a DPR3 phone.
 // Serving one gallery-sized file to a 20-tile grid cost ~8MB; split, it is ~1MB.
-const FULL_W               = 1440;
-const FULL_H               = 1920;
+// 1200 rather than 1440. 1440 matched a DPR2 desktop gallery exactly, but it
+// tripled encode work versus the previous single 900x1200 output and the
+// e2-micro's sustained CPU is 0.25 vCPU once burst credits drain — uploads went
+// from quick to unusable. 1200 still fully covers the mobile gallery (100vw at
+// DPR3 needs ~1170); a DPR2 desktop upscales 1.2x, which is marginal.
+const FULL_W               = 1200;
+const FULL_H               = 1600;
 const TILE_W               = 600;
 const TILE_H               = 800;
 // q80 measured on this catalogue's fabric: ~+1.3dB over q75 for ~25% more
 // bytes, which is the last step that is clearly visible on woven texture.
 const WEBP_QUALITY         = 80;
+// WebP 'effort' trades encode time against file size only — visual quality at a
+// fixed quality level is unchanged. Dropped from 5 to buy back upload speed.
+const WEBP_EFFORT          = 4;
 const STAMP_FRACTION       = 0.10;   // of the variant's own longest edge
 const STAMP_PAD_FRACTION   = 0.025;
 
@@ -474,6 +482,9 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     const outputPath = path.join(UPLOAD_DIR, outputFilename);
     const tileOutputPath = tilePathFor(outputPath);
 
+    // Set by whichever branch runs; invoked after the response is sent.
+    let deferredTile: (() => Promise<void>) | null = null;
+
     // Header-only read; does not decode pixels.
     const meta = await sharp(file.buffer).metadata();
     // EXIF orientations 5-8 rotate by 90 degrees, so the post-rotate frame has
@@ -512,7 +523,7 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
           top:   Math.max(0, h - size - pad),
         }]);
       }
-      await p.webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(dest);
+      await p.webp({ quality: WEBP_QUALITY, effort: WEBP_EFFORT }).toFile(dest);
     }
 
     if (processGemini) {
@@ -521,9 +532,10 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
       const cleaned = await processGeminiImage(file.buffer, { stamp: brandStamp });
       // The stamp is already burned in by that path, so skip it here.
       await sharp(cleaned).resize({ width: FULL_W, height: FULL_H, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(outputPath);
-      await sharp(cleaned).resize({ width: TILE_W, height: TILE_H, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(tileOutputPath);
+        .webp({ quality: WEBP_QUALITY, effort: WEBP_EFFORT }).toFile(outputPath);
+      deferredTile = () => sharp(cleaned)
+        .resize({ width: TILE_W, height: TILE_H, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: WEBP_QUALITY, effort: WEBP_EFFORT }).toFile(tileOutputPath).then(() => undefined);
     } else {
       let gains: number[] | null = null;
 
@@ -544,10 +556,10 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
         }
       }
 
-      // Sequential, not parallel — this box has ~430MB of RAM headroom and two
-      // concurrent 12MP decodes is not worth the seconds saved.
+      // Only the full image blocks the response. The tile is queued below so
+      // the admin is not kept waiting on work the page does not need yet.
       await writeVariant(gains, FULL_W, FULL_H, outputPath);
-      await writeVariant(gains, TILE_W, TILE_H, tileOutputPath);
+      deferredTile = () => writeVariant(gains, TILE_W, TILE_H, tileOutputPath);
     }
 
     const gcsPath = outputPath;
@@ -566,6 +578,20 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     );
 
     res.status(201).json({ data: { image, images } });
+
+    // Tile generation happens after the response. Producing both variants
+    // synchronously roughly tripled the encode work versus the previous single
+    // output, which this box — 0.25 vCPU sustained once burst credits drain —
+    // could not absorb; uploads went from quick to unusable.
+    //
+    // Safe to defer because nginx serves the full image when a tile is missing,
+    // so the card is heavy for a second rather than broken. If this ever fails,
+    // scripts/generate-image-tiles.mjs regenerates what is missing.
+    if (deferredTile) {
+      deferredTile().catch((err) => {
+        console.error(`[images] tile generation failed for ${outputFilename}:`, err);
+      });
+    }
   } catch (err) {
     next(err);
   }
