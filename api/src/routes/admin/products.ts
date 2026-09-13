@@ -8,6 +8,7 @@ import pool from '../../db/client';
 import { requireAuth } from '../../middleware/auth';
 import { toSlug, uniqueProductSlug, autoSku } from '../../utils/slug';
 import { processGeminiImage } from '../../utils/gemini-cleanup';
+import { getActiveCalibration, applyCalibration } from '../../services/photo-calibration';
 import { ProductSchema } from '@krishnabyrr/shared';
 
 const router = Router();
@@ -427,14 +428,38 @@ router.post('/:id/images', requireAuth, upload.single('image'), async (req, res,
     );
     const displayOrder = max_order ? parseInt(max_order, 10) + 1 : 0;
 
-    // Optional Gemini cleanup: inpaint the AI sparkle watermark and stamp
-    // our brand mark. Runs before the resize/webp step so the cleanup
-    // operates at the original resolution.
-    const processGemini = req.body.process_gemini === 'true' || req.body.process_gemini === true;
-    let imageBuffer: Buffer = file.buffer;
+    // Two mutually exclusive cleanup paths, both running before the resize/webp
+    // step so they operate at original resolution.
+    //
+    //   process_gemini   — AI-generated imagery: inpaint the sparkle watermark
+    //                      and stamp our brand mark. Camera calibration is
+    //                      meaningless here, there was no camera.
+    //   otherwise        — real photography: apply the active grey-card
+    //                      calibration (white balance + exposure). Skipped when
+    //                      none has been recorded, or when explicitly opted out.
+    const processGemini    = req.body.process_gemini === 'true' || req.body.process_gemini === true;
+    const skipCalibration  = req.body.skip_calibration === 'true' || req.body.skip_calibration === true;
+
+    // Bake EXIF orientation in BEFORE any processing. Both cleanup paths round
+    // -trip through sharp, which drops EXIF, so a later .rotate() would have no
+    // orientation left to act on and phone photos would upload sideways or
+    // upside down. Normalising here makes the downstream .rotate() a no-op and
+    // keeps every path consistent.
+    let imageBuffer: Buffer = await sharp(file.buffer).rotate().toBuffer();
+
     if (processGemini) {
       console.log(`[images] running Gemini cleanup for product ${id} (${file.size} bytes)`);
-      imageBuffer = await processGeminiImage(file.buffer);
+      imageBuffer = await processGeminiImage(imageBuffer);
+    } else if (!skipCalibration) {
+      const calibration = await getActiveCalibration();
+      if (calibration) {
+        console.log(
+          `[images] applying calibration ${calibration.id} to product ${id} ` +
+          `(gains ${calibration.gain_r.toFixed(3)}/${calibration.gain_g.toFixed(3)}/${calibration.gain_b.toFixed(3)}, ` +
+          `${calibration.exposure_stops.toFixed(2)} stops)`
+        );
+        imageBuffer = await applyCalibration(imageBuffer, calibration);
+      }
     }
 
     // Compress and resize with sharp before saving to disk.

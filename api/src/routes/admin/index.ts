@@ -15,6 +15,7 @@ import adminCustomersRouter from './customers';
 import adminDashboardRouter from './dashboard';
 import adminBadgesRouter from './badges';
 import adminWhatsappRouter from './whatsapp';
+import adminPhotoCalibrationRouter from './photo-calibration';
 
 const router = Router();
 
@@ -29,6 +30,9 @@ router.use('/tag-groups',  requireAuth, requireRole('catalog_manager'), adminTag
 router.use('/collections', requireAuth, requireRole('catalog_manager'), adminCollectionsRouter);
 router.use('/badges',      requireAuth, requireRole('catalog_manager'), adminBadgesRouter);
 router.use('/homepage',    requireAuth, requireRole('catalog_manager'), adminHomepageRouter);
+// Camera colour calibration — belongs with the catalog since it governs how
+// product photos are processed on upload.
+router.use('/photo-calibration', requireAuth, requireRole('catalog_manager'), adminPhotoCalibrationRouter);
 
 // Order domain — managed by order_manager (and super_admin via passthrough)
 router.use('/orders',    requireAuth, requireRole('order_manager'), adminOrdersRouter);

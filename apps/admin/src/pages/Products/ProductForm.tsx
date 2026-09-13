@@ -110,6 +110,15 @@ function MultiCheckList({
 }
 
 // ── Image grid with drag-to-reorder ──────────────────────────────────────────
+interface Calibration {
+  id:             string;
+  gain_r:         number;
+  gain_g:         number;
+  gain_b:         number;
+  exposure_stops: number;
+  created_at:     string;
+}
+
 interface ImageRecord {
   id: string;
   gcs_path: string;
@@ -155,6 +164,37 @@ function ImageGrid({
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(PROCESS_GEMINI_LS_KEY, processGemini ? '1' : '0');
   }, [processGemini]);
+
+  // ── Photo calibration ─────────────────────────────────────────────────────
+  // The active calibration carries forward from the last grey-card frame, so a
+  // session under unchanged lighting needs no new card. Re-shoot only when the
+  // setup moves.
+  const calQueryClient = useQueryClient();
+  const calFileRef = useRef<HTMLInputElement>(null);
+  const { data: calData } = useQuery<{ data: { active: Calibration | null } }>({
+    queryKey: ['photo-calibration'],
+    queryFn: () => api.get('/admin/photo-calibration').then((r) => r.data),
+  });
+  const calibration = calData?.data?.active ?? null;
+
+  const calibrateMutation = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append('image', file);
+      return api.post('/admin/photo-calibration', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    },
+    onSuccess: () => {
+      toast.success('Calibration updated from grey card');
+      calQueryClient.invalidateQueries({ queryKey: ['photo-calibration'] });
+    },
+    onError: (err) => {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message ?? 'Could not read that grey card';
+      toast.error(msg, { duration: 8000 });
+    },
+  });
 
   // Revoke object URLs on unmount to avoid leaks
   useEffect(() => {
@@ -272,6 +312,50 @@ function ImageGrid({
 
   return (
     <div className="space-y-4">
+      {/* Photo calibration — white balance + exposure from a grey-card frame */}
+      <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50/70">
+        <div className="flex-1 min-w-[220px] text-sm">
+          {calibration ? (
+            <>
+              <span className="font-medium text-kb-charcoal">Photo calibration active</span>
+              <span className="text-kb-muted">
+                {' · '}{new Date(calibration.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                {' · '}{calibration.exposure_stops >= 0 ? '+' : ''}{calibration.exposure_stops.toFixed(2)} EV
+                {' · '}gains {calibration.gain_r.toFixed(3)}/{calibration.gain_g.toFixed(3)}/{calibration.gain_b.toFixed(3)}
+              </span>
+            </>
+          ) : (
+            <span className="text-kb-muted">
+              No photo calibration yet — images upload uncorrected. Shoot a grey card and upload it here.
+            </span>
+          )}
+          {processGemini && calibration && (
+            <div className="text-xs text-kb-muted mt-0.5">
+              Not applied while “Add Krishna's Bliss Stamp” is on — that path is for generated imagery.
+            </div>
+          )}
+        </div>
+        <input
+          ref={calFileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) calibrateMutation.mutate(f);
+            e.target.value = '';
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => calFileRef.current?.click()}
+          disabled={calibrateMutation.isPending}
+          className="px-3 py-1.5 rounded-md border border-kb-teal/40 bg-white text-sm text-kb-teal font-medium hover:bg-kb-teal/5 disabled:opacity-50"
+        >
+          {calibrateMutation.isPending ? 'Measuring…' : calibration ? 'Re-calibrate' : 'Upload grey card'}
+        </button>
+      </div>
+
       {/* Krishna's Bliss stamp toggle */}
       <label className="flex items-center gap-2 text-sm text-kb-charcoal cursor-pointer select-none">
         <input
