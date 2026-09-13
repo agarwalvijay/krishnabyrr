@@ -50,7 +50,6 @@ export default function ProductGallery({ images, productName, videoUrl }: Props)
   const touchStartX = useRef<number | null>(null);
 
   const selected = images[selectedIdx];
-  const displayImages = images.slice(0, 5); // Max 5 thumbnails
 
   const goNext = () => setSelectedIdx(i => (i + 1) % images.length);
   const goPrev = () => setSelectedIdx(i => (i - 1 + images.length) % images.length);
@@ -138,10 +137,13 @@ export default function ProductGallery({ images, productName, videoUrl }: Props)
         )}
       </div>
 
-      {/* Thumbnail strip (desktop) */}
+      {/* Thumbnail strip (desktop). Every image gets a thumbnail and the row
+          scrolls, rather than being capped — adding a seventh or twelfth image
+          needs no code change. Mobile navigates by swipe and the dot indicators,
+          so this row is desktop-only. */}
       {images.length > 1 && (
-        <div className="hidden md:flex gap-2 mt-3">
-          {displayImages.map((img, i) => (
+        <div className="hidden md:flex gap-2 mt-3 overflow-x-auto pb-1 scroll-smooth">
+          {images.map((img, i) => (
             <button
               key={img.id}
               onClick={() => setSelectedIdx(i)}
